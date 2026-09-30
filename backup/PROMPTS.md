@@ -31,6 +31,7 @@
 | v7 | 童年森林远景、中景、近景（连续三镜头） | [`seek-childhood-forest-shot-scale-exploration-v2-prompt.md`](scene/seek-childhood-forest-shot-scale-exploration-v2-prompt.md) |
 | v8 | 广州西关骑楼街巷童年关卡 | [`seek-guangzhou-xiguan-arcade-childhood-exploration-v1-prompt.md`](scene/seek-guangzhou-xiguan-arcade-childhood-exploration-v1-prompt.md) |
 | v9 | 江南临水街巷与运河横版关卡 | [`seek-jiangnan-canalside-level-exploration-v1-prompt.md`](scene/seek-jiangnan-canalside-level-exploration-v1-prompt.md) |
+| v10 | 用户原图构图不变，仅转换动画画风 | [`seek-jiangnan-canalside-user-composition-style-transfer-v2-prompt.md`](scene/seek-jiangnan-canalside-user-composition-style-transfer-v2-prompt.md) |
 
 ## 复用与迭代约定
 
