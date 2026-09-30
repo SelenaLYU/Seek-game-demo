@@ -29,6 +29,7 @@
 | v5 | 记忆之岛枢纽与灰暗/苏醒建筑状态 | [`seek-memory-island-hub-exploration-v1-prompt.md`](scene/seek-memory-island-hub-exploration-v1-prompt.md) |
 | v6 | 家庭记忆房间不同朝向与时段光影（2×2） | [`seek-family-memory-room-angle-lighting-exploration-v2-prompt.md`](scene/seek-family-memory-room-angle-lighting-exploration-v2-prompt.md) |
 | v7 | 童年森林远景、中景、近景（连续三镜头） | [`seek-childhood-forest-shot-scale-exploration-v2-prompt.md`](scene/seek-childhood-forest-shot-scale-exploration-v2-prompt.md) |
+| v8 | 广州西关骑楼街巷童年关卡 | [`seek-guangzhou-xiguan-arcade-childhood-exploration-v1-prompt.md`](scene/seek-guangzhou-xiguan-arcade-childhood-exploration-v1-prompt.md) |
 
 ## 复用与迭代约定
 
