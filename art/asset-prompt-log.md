@@ -1,6 +1,6 @@
 # 试验资产与生成提示词｜backup 分支
 
-本文件记录截至 2026-09-30 的全部 **16 张生成试验稿**：人物 12 张、场景 4 张。提示词从当时的 imagegen 调用记录提取，保留英文原文；有些稿件被用户否定，仍作为过程备份。**备份不代表资产已获最终确认或可直接用于游戏。**
+本文件记录截至 2026-09-30 已放入 `backup` 的 **19 张生成试验稿**：人物 15 张、场景 4 张。提示词从当时的 imagegen 调用记录提取，保留英文原文；有些稿件被用户否定，仍作为过程备份。**备份不代表资产已获最终确认或可直接用于游戏。**
 
 目录：`character/` 人物试验稿；`scene/` 场景试验稿；`element/` 预留独立元素资产。既有 `assets/references/village-art-reference.jpg` 是用户提供的参考图，不是生成资产，因此没有生成提示词。
 
@@ -22,6 +22,9 @@
 | 14 | [character/niannian-model-sheet-v7-wavy-hair.png](../character/niannian-model-sheet-v7-wavy-hair.png) | 保留辫子的微卷碎发 | niannian-model-sheet-v6-brown-eyes.png | true |
 | 15 | [character/niannian-model-sheet-v8-curly-hair.png](../character/niannian-model-sheet-v8-curly-hair.png) | 满头紧卷探索；用户否定 | niannian-model-sheet-v7-wavy-hair.png | true |
 | 16 | [character/niannian-model-sheet-v9-soft-wavy-bob.png](../character/niannian-model-sheet-v9-soft-wavy-bob.png) | 最新波浪卷短发探索 | niannian-model-sheet-v6-brown-eyes.png | true |
+| 17 | [character/character-smart-version-front.png](../character/character-smart-version-front.png) | 古灵精怪版，直视镜头的正面全身稿 | niannian-mischievous-turnaround-v2.png | false |
+| 18 | [character/character-smart-version-actions.png](../character/character-smart-version-actions.png) | 同版跑、跳、低姿落地、蹦跳四动作 | character-smart-version-front.png；niannian-mischievous-turnaround-v2.png；用户提供的动作截图 | false |
+| 19 | [character/character-smart-version-turnaround.png](../character/character-smart-version-turnaround.png) | 基于正面稿的正面、右侧面、背面资产图 | character-smart-version-front.png；niannian-mischievous-turnaround-v2.png | false |
 
 ## 逐图原始提示词
 
@@ -183,4 +186,34 @@ Use case: precise-object-edit. Edit the supplied three-view Nian Nian character 
 
 ```text
 Use case: precise-object-edit. Use the supplied three-view Nian Nian sheet as the ONLY visual edit target (it is the pre-experiment reference with braids). Replace ONLY hairstyle. REMOVE both braids, hair bows, and tied sections entirely. Give her a BEAUTIFUL soft naturally WAVY dark-chestnut SHORT BOB, reaching around jaw to upper neck, with broad loose S-shaped waves organized into several coherent soft hair masses, gentle volume at crown, a slightly tousled airy fringe and just a few fine flyaways. The silhouette should look youthful, attractive, free-spirited, breezy and energetic, as if she plays by the sea; rounded and asymmetrical enough to be memorable but controlled and tasteful. Essential negative constraints: NO tight corkscrew ringlets, NO separate rope-like tendrils, NO worm/noodle strands, NO afro cloud, NO dreadlocks, NO pigtails, NO bows. Hair texture can be suggested by flowing pencil strokes inside large wavy clumps, not individually rendered tubular curls. Show same haircut consistently in front, right profile and back. LOCK all other design: exact gentle CLOSED-MOUTH smile, warm brown eyes, visible small nose, approved freckles, rosy cheeks, face shape and age, cream short-sleeve crossover summer shirt, small green knot, muted sea-green drawstring shorts, bare feet, poses and three-view alignment. LOCK the existing low-saturation colors and textured hand-drawn gouache/pencil animation style; do not make it more glossy or more saturated. Transparent background, no text, new objects or other redesign.
+```
+
+### 17 · `character/character-smart-version-front.png`
+
+内容：古灵精怪版，直视镜头的正面全身稿。
+
+输入参考图：本地 `niannian-mischievous-turnaround-v2.png`。背景参数：`transparent_background=false`。
+
+```text
+Create one single full-body illustration of the EXACT same little girl from the attached latest three-view sheet, standing and looking DIRECTLY STRAIGHT AT THE VIEWER. True frontal head and body: both eyes face camera, centered nose and mouth, symmetrical ears and shoulders; absolutely no three-quarter angle or sideways glance. Preserve her cheeky, clever, slightly mischievous personality through subtly raised brows and small knowing closed-mouth smile. Preserve all established design details: seven-year-old Chinese island girl, warm brown messy loose hair in TWO substantial outward-swinging three-strand braids with muted dusty red bows, fine flyaways, simple brown eyes, small clearly drawn nose, many distinct tiny freckles across nose and both sun-reddened cheeks. Loose warm ivory short-sleeved summer shirt with ONLY one tiny dusty teal Chinese knot at neckline, muted faded blue-green drawstring shorts, bare feet. She stands relaxed with feet apart and hands down or one lightly on her hip, fully visible from hair to toes, generous clean space around figure. Faithfully match reference's fine brown storybook linework, restrained warm watercolor/gouache on cream paper, matte soft low-saturation colors, crisp details. Do not add scenery, text, props, shoes, jewelry, more characters, extra poses, or cast shadows that obscure anatomy. Distinct, attractive and clean reference-quality character design.
+```
+
+### 18 · `character/character-smart-version-actions.png`
+
+内容：跑、跳、低姿落地、蹦跳四动作。
+
+输入参考图：`character-smart-version-front.png`、本地 `niannian-mischievous-turnaround-v2.png`、用户提供的动作截图。背景参数：`transparent_background=false`。
+
+```text
+Make a clean WIDE HORIZONTAL 4-pose character action reference sheet, ALL FOUR full-body poses of the SAME little girl from the attached frontal character image and turnaround, consistent face, freckles, braids, costume, palette, age and body proportions. Place four separated poses left to right with generous spacing and no touching or overlaps: 1) dashing barefoot at full speed with a playful side glance, one knee up and braids flying; 2) a joyful high leap with arms wide and bent legs, impish grin; 3) low springy crouch/landing with one palm braced on the sand like the supplied playful personality reference; 4) skipping or hopping forward with cheeky triumphant energy. Every pose must be dynamic and clearly distinct; preserve expressive brow and knowing mischievous smile without changing her identity. Warm brown tousled hair in TWO small true braids tied with muted dusty-red bows; distinct nose freckles and red sun-kissed cheeks; tiny drawn nose; soft ivory loose short-sleeve shirt with ONE tiny dusty teal Chinese-knot closure; faded blue-green drawstring shorts; bare feet. Same exact hand-painted watercolor/gouache storybook style, fine warm brown lines, matte muted colors, lightly textured cream paper background. No text, frames, other characters, scenery or extra accessories. Full figures including both bare feet and all hair inside the canvas, coherent limbs and fingers, crisp clear silhouettes without blur. This is exploratory character motion art, not animation sprites.
+```
+
+### 19 · `character/character-smart-version-turnaround.png`
+
+内容：基于正面稿的正面、右侧面、背面资产图。
+
+输入参考图：`character-smart-version-front.png`、本地 `niannian-mischievous-turnaround-v2.png`。背景参数：`transparent_background=false`。
+
+```text
+Produce a polished production-oriented three-view full-body character turnaround sheet BASED ON THE PROVIDED APPROVED FRONTAL IMAGE (first reference) as the definitive design. Three equal-height separate figures arranged LEFT to RIGHT: exact TRUE FRONT view looking directly at viewer with both eyes centered, exact right-facing 90-degree SIDE view, exact BACK view. The first front view must reproduce her established face and body closely: impish knowing closed-mouth smile, both brown eyes looking straight at camera, clearly drawn small centered nose, tiny distinct freckles across nose and both red sun-kissed cheeks, messy warm brown flyaway hair with TWO chunky three-strand braided pigtails tied in dusty faded red bows. Slight hand-on-hip personality stance is okay but keep full silhouette clear and back/side anatomy readable. Same seven-year-old Chinese island child in warm ivory loose short-sleeved top with ONE small dusty teal cloth knot at neckline, muted faded blue-green drawstring shorts, entirely barefoot. Side and back are accurate rotations of this exact front design, same scale, hair length, garment seams and color, not different children. Cream lightly textured paper background, fine lively brown lines, matte restrained watercolor/gouache style identical to references, no increase in saturation. Plenty of white space between views, all heads and bare feet fully in frame, coherent five-finger hands and foot anatomy. No text, labels, frames, props, scenery, extra figures, extra limbs, blur or artifacts.
 ```
