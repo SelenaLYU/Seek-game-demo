@@ -7,6 +7,7 @@
 - **角色参考**：团队认可的女孩动作与绘本质感参考图见 `character/teammate-approved-girl-style-reference.jpg`。该图目前没有对应的原始提示词。
 - **场景探索**：江南水岸横版关卡 v2 是当前场景提示词起点，强调清晰手绘线稿、克制平涂、轻微干刷纹理和可读的游戏路线；避免厚重水彩晕染与柔光。详见 [`scene/seek-childhood-jiangnan-coastal-path-exploration-v2-prompt.md`](scene/seek-childhood-jiangnan-coastal-path-exploration-v2-prompt.md)。
 - 角色 v1–v5 是连续探索记录。队友后来提供了更明确的女孩动作参考；早期男孩设定和服装探索不应覆盖该参考。
+- 队友更新的“年年”角色图与记忆之岛图及其原始提示词，单独收录在 [`asset-prompt-log-teammate.md`](asset-prompt-log-teammate.md)；来源和设定差异见 [`TEAMMATE-SYNC.md`](TEAMMATE-SYNC.md)。
 
 ## 角色提示词
 
