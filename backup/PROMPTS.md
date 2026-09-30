@@ -24,6 +24,9 @@
 | --- | --- | --- |
 | v1 | 江南河道连向海湾，水彩绘本背景 | [`seek-childhood-jiangnan-coastal-path-exploration-v1-prompt.md`](scene/seek-childhood-jiangnan-coastal-path-exploration-v1-prompt.md) |
 | v2 | 江南海岸横版关卡，平涂线稿、清晰可玩路线 | [`seek-childhood-jiangnan-coastal-path-exploration-v2-prompt.md`](scene/seek-childhood-jiangnan-coastal-path-exploration-v2-prompt.md) |
+| v3 | 童年森林横版关卡 | [`seek-childhood-forest-level-exploration-v1-prompt.md`](scene/seek-childhood-forest-level-exploration-v1-prompt.md) |
+| v4 | 家庭记忆房间与可交互物件 | [`seek-childhood-family-memory-room-exploration-v1-prompt.md`](scene/seek-childhood-family-memory-room-exploration-v1-prompt.md) |
+| v5 | 记忆之岛枢纽与灰暗/苏醒建筑状态 | [`seek-memory-island-hub-exploration-v1-prompt.md`](scene/seek-memory-island-hub-exploration-v1-prompt.md) |
 
 ## 复用与迭代约定
 
