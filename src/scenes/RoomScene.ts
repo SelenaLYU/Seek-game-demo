@@ -761,7 +761,7 @@ export default class RoomScene extends Phaser.Scene {
       ease: 'Quad.easeOut',
     });
     this.cameras.main.fade(520, 23, 45, 35);
-    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('ending'));
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('island', { completedChapter: 1 }));
   }
 
   // ---------- HUD / 面板公共件 ----------

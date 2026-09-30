@@ -5,6 +5,7 @@ import LoadingScene from './scenes/LoadingScene';
 import ForestScene from './scenes/ForestScene';
 import RoomScene from './scenes/RoomScene';
 import EndingScene from './scenes/EndingScene';
+import IslandScene from './scenes/IslandScene';
 import { preloadMenuRoomMusic, playMenuRoomMusic } from './MenuRoomMusic';
 import {
   BASE_HEIGHT,
@@ -48,7 +49,7 @@ const game = new Phaser.Game({
   },
   render: { antialias: true, powerPreference: 'high-performance' },
   input: { activePointers: 3 },
-  scene: [BootScene, MenuScene, IntroScene, LoadingScene, ForestScene, RoomScene, EndingScene],
+  scene: [BootScene, MenuScene, IntroScene, LoadingScene, ForestScene, RoomScene, IslandScene, EndingScene],
 });
 
 const syncRenderBuffer = () => {

@@ -42,5 +42,13 @@ export default class MenuScene extends Phaser.Scene {
     const begin = () => this.scene.start('intro');
     start.on('pointerup', begin);
     this.input.keyboard?.once('keydown-ENTER', begin);
+    this.add.text(BASE_WIDTH / 2, 407, '查看记忆之岛 · 原型', {
+      fontFamily: 'sans-serif', fontSize: '16px', color: '#b9cfc8',
+      backgroundColor: '#252e2b', padding: { x: 22, y: 12 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+      .on('pointerup', () => this.scene.start('island'));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.keyboard?.off('keydown-ENTER', begin);
+    });
   }
 }
