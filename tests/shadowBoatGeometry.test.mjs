@@ -2,13 +2,23 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   PIECE_IDS, SOLUTION, TARGET, LIGHT_Y, alignment, piecePolygon,
-  illuminatedPolygon, shadowPolygon, projectToWall, WALL_X_OFFSET,
+  illuminatedPolygon, shadowPolygon, projectToWall, WALL_X_OFFSET, contains,
 } from '../src/ui/shadowBoatGeometry.ts';
 
 const area = polygon => Math.abs(polygon.reduce((sum, p, i) => {
   const q = polygon[(i + 1) % polygon.length];
   return sum + p.x * q.y - q.x * p.y;
 }, 0)) / 2;
+
+test('art contours preserve the triangle opening and rounded bag silhouette', () => {
+  const sail = piecePolygon(SOLUTION.sail);
+  assert.equal(contains({ x: SOLUTION.sail.x + 37 * .36, y: SOLUTION.sail.y + 52 * .69 }, sail), false);
+  assert.equal(contains({ x: SOLUTION.sail.x + 37 * .15, y: SOLUTION.sail.y + 52 * .69 }, sail), true);
+  const center = projectToWall({ x: 550, y: 360 }, 320);
+  const hole = projectToWall({ x: SOLUTION.sail.x + 37 * .36, y: SOLUTION.sail.y + 52 * .69 }, 320);
+  assert.equal(contains({ x: center.x + (hole.x-center.x)*.67, y: center.y + (hole.y-center.y)*.67 }, TARGET[1]), false);
+  assert.ok(piecePolygon(SOLUTION.hull).length > 4);
+});
 
 test('each shadow vertex lies beyond its object on the same light ray', () => {
   for (const lightX of [220, 320, 545, 760]) {

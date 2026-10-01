@@ -10,19 +10,25 @@ const OBJECT_DEPTH = 200;
 export const WALL_X_OFFSET = -105;
 export const LIGHT_Y = 500;
 export const SOLUTION_LIGHT_X = 320;
-// Reduce the whole physical assembly around its centre. The target is still
-// generated from real occluders; no independent screen-space shadow scaling.
+// Shared stylized wall scale: connected props must stay connected in shadow.
 const SHADOW_SCALE = .67;
 export const SOLUTION: Record<PieceId, PieceState> = {
   hull: { id: 'hull', x: 527, y: 369.6, rotation: 0 },
   sail: { id: 'sail', x: 550.2, y: 325.6, rotation: 0 },
   mast: { id: 'mast', x: 548.6, y: 322.4, rotation: 0 },
 };
-const SHAPES: Record<PieceId, Point[]> = {
-  hull: [{ x: 0, y: 0 }, { x: 74, y: 0 }, { x: 62, y: 18 }, { x: 14, y: 18 }],
-  sail: [{ x: 0, y: 0 }, { x: 37, y: 52 }, { x: 0, y: 52 }],
-  mast: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 63 }, { x: 0, y: 63 }],
+const ART_CONTOURS: Record<PieceId, [number, number][]> = {
+  // Traced in normalized PNG coordinates, including the triangle's open centre.
+  // The doubled bridge into the hole has zero area and preserves its winding.
+  hull: [[.08,.2],[.16,.24],[.48,.28],[.75,.25],[.97,.2],[.965,.45],[.94,.64],[.9,.75],[.79,.8],[.6,.84],[.35,.83],[.18,.76],[.12,.67],[.09,.49],[.065,.7],[.035,.67],[.045,.48],[.075,.34]],
+  sail: [[.055,.035],[.98,.95],[.055,.95],[.055,.61],[.32,.61],[.32,.75],[.53,.75],[.33,.55],[.32,.61],[.055,.61]],
+  mast: [[.06,.015],[.83,.015],[.86,.08],[.98,.12],[.96,.17],[.89,.16],[.9,.82],[1,.91],[.97,.97],[.67,.98],[.23,.87],[.08,.82]],
 };
+const PIECE_SIZE: Record<PieceId, [number, number]> = { hull: [74,18], sail: [37,52], mast: [4,63] };
+const SHAPES = {} as Record<PieceId, Point[]>;
+for (const id of PIECE_IDS) {
+  SHAPES[id] = ART_CONTOURS[id].map(([x,y]) => ({ x: x * PIECE_SIZE[id][0], y: y * PIECE_SIZE[id][1] }));
+}
 
 // The flashlight aims at the prop stand. Its finite elliptical aperture on
 // the prop plane defines both the visible light volume and shadow clipping.
@@ -33,8 +39,8 @@ export const APERTURE: Point[] = Array.from({ length: 48 }, (_, i) => {
 
 export function piecePolygon(state: PieceState): Point[] {
   const shape = SHAPES[state.id];
-  const cx = Math.max(...shape.map(p => p.x)) / 2;
-  const cy = Math.max(...shape.map(p => p.y)) / 2;
+  const cx = PIECE_SIZE[state.id][0] / 2;
+  const cy = PIECE_SIZE[state.id][1] / 2;
   return shape.map(p => state.rotation === 0
     ? { x: state.x + p.x, y: state.y + p.y }
     : { x: state.x + cx - (p.y - cy), y: state.y + cy + (p.x - cx) });
@@ -76,8 +82,7 @@ export const shadowPolygon = (state: PieceState, lightX: number) =>
   (() => {
     const projected = clipPolygon(illuminatedPolygon(state).map(p => projectToWall(p, lightX)), WALL);
     if (projected.length < 3) return projected;
-    const center = projected.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
-    center.x /= projected.length; center.y /= projected.length;
+    const center = projectToWall({ x: 550, y: 360 }, lightX);
     return projected.map(point => ({
       x: center.x + (point.x - center.x) * SHADOW_SCALE,
       y: center.y + (point.y - center.y) * SHADOW_SCALE,
@@ -99,11 +104,14 @@ export function contains(point: Point, polygon: Point[]): boolean {
 }
 
 const samples: { point: Point; target: boolean; pieces: boolean[] }[] = [];
-for (let y = 58; y < 396; y += 4) {
-  for (let x = 20; x < 940; x += 4) {
-    const point = { x: x + 2, y: y + 2 };
-    const pieces = TARGET.map(polygon => contains(point, polygon));
-    samples.push({ point, target: pieces.some(Boolean), pieces });
+for (let y = 58; y < 396; y += 2) {
+  for (let x = 20; x < 940; x += 2) {
+    const point = { x: x + 1, y: y + 1 };
+    const target = TARGET.some(polygon => contains(point, polygon));
+    // The narrow ruler can fall between grid samples. Give its presence check
+    // the same edge tolerance as the candidate, without inflating its shadow.
+    const pieces = TARGET.map((polygon, i) => i === 2 ? nearPolygon(point, polygon) : contains(point, polygon));
+    samples.push({ point, target, pieces });
   }
 }
 

@@ -6,6 +6,9 @@ import ForestScene from './scenes/ForestScene';
 import RoomScene from './scenes/RoomScene';
 import EndingScene from './scenes/EndingScene';
 import IslandScene from './scenes/IslandScene';
+import ChapterTwoChallengeScene from './scenes/ChapterTwoChallengeScene';
+import ChapterTwoRoomScene from './scenes/ChapterTwoRoomScene';
+import ChapterTwoMemoryScene from './scenes/ChapterTwoMemoryScene';
 import { preloadMenuRoomMusic, playMenuRoomMusic } from './MenuRoomMusic';
 import {
   BASE_HEIGHT,
@@ -33,7 +36,8 @@ class BootScene extends Phaser.Scene {
     room.events.on(Phaser.Scenes.Events.CREATE, playMenuRoomMusic);
     // 调试入口：?scene=room / ?scene=forest 直接进对应场景，跳过首页/开场/加载占位链
     const targetScene = new URLSearchParams(window.location.search).get('scene');
-    this.scene.start(targetScene === 'room' || targetScene === 'forest' ? targetScene : 'menu');
+    const debugScenes = new Set(['room', 'forest', 'island', 'chapter2', 'chapter2-room', 'chapter2-memory']);
+    this.scene.start(targetScene && debugScenes.has(targetScene) ? targetScene : 'menu');
   }
 }
 
@@ -51,7 +55,11 @@ const game = new Phaser.Game({
   },
   render: { antialias: true, powerPreference: 'high-performance' },
   input: { activePointers: 3 },
-  scene: [BootScene, MenuScene, IntroScene, LoadingScene, ForestScene, RoomScene, IslandScene, EndingScene],
+  scene: [
+    BootScene, MenuScene, IntroScene, LoadingScene, ForestScene, RoomScene,
+    IslandScene, ChapterTwoChallengeScene, ChapterTwoRoomScene,
+    ChapterTwoMemoryScene, EndingScene,
+  ],
 });
 
 const syncRenderBuffer = () => {
