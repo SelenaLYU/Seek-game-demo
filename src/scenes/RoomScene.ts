@@ -19,6 +19,7 @@ import {
   showOtherRoomText,
 } from '../ui/RoomInteractionCopy';
 import photoFrameUrl from '../../assets/environment/interactive-family-zoo-photo-frame-384x256.png?url';
+import paintBrushUrl from '../../assets/items/room-paint-brush.png?url';
 import radioStaticUrl from '../../assets/audio/radio-static.mp3?url';
 import radioWindUrl from '../../assets/audio/radio-wind.mp3?url';
 import radioGrandpaUrl from '../../assets/audio/radio-grandpa.mp3?url';
@@ -830,7 +831,7 @@ export default class RoomScene extends Phaser.Scene {
     const previewItems: RoomInventoryItem[] = [
       { id: 'photo-piece', glyph: '拼', label: '照片拼块' },
       { id: 'flashlight-battery', glyph: '电', label: '手电筒电池' },
-      { id: 'paint-brush', glyph: '笔', label: '画笔' },
+      { id: 'paint-brush', glyph: '笔', imageUrl: paintBrushUrl, label: '画笔' },
     ];
     let previewIndex = 0;
     const onPreviewKey = (event: KeyboardEvent) => {
@@ -855,6 +856,7 @@ export default class RoomScene extends Phaser.Scene {
     this.interacting = true;
     this.shadowBoatPanel = showShadowBoatPuzzleUI(this, {
       onAligned: () => this.inventoryBar?.setExpanded(true),
+      onCompleted: () => this.inventoryBar?.removeItem('paint-brush'),
       onClose: () => {
         this.shadowBoatPanel = undefined;
         this.interacting = false;

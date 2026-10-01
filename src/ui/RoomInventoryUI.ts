@@ -2,8 +2,9 @@ import Phaser from 'phaser';
 
 export interface RoomInventoryItem {
   id: string;
-  /** 灰盒阶段显示一个字；正式图标接入后可替换为图片。 */
+  /** 没有 imageUrl 时使用的简短占位字符。 */
   glyph: string;
+  imageUrl?: string;
   label: string;
 }
 
@@ -105,6 +106,10 @@ function installStyle(): void {
       border-radius: 3px; border: 1px solid rgba(255,240,203,.22);
       background: rgba(244,225,179,.075); font: 13px/1 Georgia, serif;
       text-shadow: 0 1px 3px rgba(0,0,0,.45);
+    }
+    .seek-room-inventory__item-image {
+      width: 22px; height: 26px; object-fit: contain; pointer-events: none;
+      filter: drop-shadow(0 1px 3px rgba(0,0,0,.42));
     }
     .seek-room-inventory__label {
       overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
@@ -223,8 +228,21 @@ export function createRoomInventoryUI(
       if (item.id === arrivingId) button.classList.add('is-arriving');
       button.dataset.itemId = item.id;
       button.setAttribute('aria-label', item.label);
-      button.innerHTML = `<span class="seek-room-inventory__glyph" aria-hidden="true">${item.glyph}</span>
-        <span class="seek-room-inventory__label">${item.label}</span>`;
+      const icon = item.imageUrl
+        ? Object.assign(document.createElement('img'), {
+            className: 'seek-room-inventory__item-image',
+            src: item.imageUrl,
+            alt: '',
+          })
+        : Object.assign(document.createElement('span'), {
+            className: 'seek-room-inventory__glyph',
+            textContent: item.glyph,
+          });
+      icon.setAttribute('aria-hidden', 'true');
+      const label = document.createElement('span');
+      label.className = 'seek-room-inventory__label';
+      label.textContent = item.label;
+      button.append(icon, label);
       button.addEventListener('click', () => selectItem(item.id));
       slot.append(button);
       if (item.id === arrivingId) {

@@ -6,7 +6,13 @@ export default class IslandScene extends Phaser.Scene {
   constructor() { super('island'); }
 
   create(data: { completedChapter?: number } = {}): void {
-    const justCompleted = data.completedChapter === 1 && completeChapter(1) ? 1 : undefined;
+    const completedChapter = Number.isInteger(data.completedChapter)
+      && (data.completedChapter ?? 0) >= 1 && (data.completedChapter ?? 0) <= 6
+      ? data.completedChapter
+      : undefined;
+    const justCompleted = completedChapter && completeChapter(completedChapter)
+      ? completedChapter
+      : undefined;
     let alive = true;
     let dispose: (() => void) | undefined;
     const canvas = this.game.canvas;
@@ -35,7 +41,10 @@ export default class IslandScene extends Phaser.Scene {
       dispose = mountMemoryIsland({
         justCompleted,
         onHome: () => this.scene.start('menu'),
-        onChapter: () => this.scene.start('forest'),
+        onChapter: chapter => {
+          if (chapter === 1) this.scene.start('forest');
+          else if (chapter === 2) this.scene.start('chapter2');
+        },
       });
       canvas.style.visibility = 'hidden';
       message.remove();

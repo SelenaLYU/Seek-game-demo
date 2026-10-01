@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { chapterState, completedChapters } from './Progress';
 
-type Options = { justCompleted?: number; onHome: () => void; onChapter: () => void };
+type Options = { justCompleted?: number; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
 
 /** Self-contained Three.js view. The returned cleanup also releases all GPU resources. */
@@ -259,7 +259,7 @@ export function mountMemoryIsland(options: Options): () => void {
   function interact() {
     if (mode !== 'explore' || !nearby) return;
     if (chapterState(nearby.id) === 'locked') { notify('先找回前一段记忆，再来这里。'); return; }
-    if (nearby.id === 1) options.onChapter();
+    if (nearby.id <= 2) options.onChapter(nearby.id);
     else notify(`第 ${nearby.id} 关入口已预留，冒险与房间内容尚未制作。`);
   }
   get('[data-home]').addEventListener('click', options.onHome, { signal });
@@ -300,7 +300,9 @@ export function mountMemoryIsland(options: Options): () => void {
   }
   get('[data-progress]').textContent = `${completedChapters().length} / 6 段记忆已点亮 · 灰色建筑等待找回`;
   setMode('overview');
-  if (options.justCompleted) notify('第一段记忆回来了。童年的街区正在恢复颜色。');
+  if (options.justCompleted) notify(options.justCompleted === 1
+    ? '第一段记忆回来了。童年的街区正在恢复颜色。'
+    : `第 ${options.justCompleted} 段记忆回来了。新的街区正在恢复颜色。`);
   const resize = () => { const { width, height } = root.getBoundingClientRect(); camera.aspect = width / Math.max(height, 1); camera.updateProjectionMatrix(); renderer.setSize(width, height); };
   window.addEventListener('resize', resize, { signal }); resize();
   let frame = 0, last = performance.now(), disposed = false;
@@ -327,7 +329,13 @@ export function mountMemoryIsland(options: Options): () => void {
       if (nearby) {
         const state = chapterState(nearby.id);
         nearbyPanel.querySelector('p')!.textContent = `第 ${nearby.id} 段记忆 · ${state === 'completed' ? '已点亮' : state === 'available' ? '等待探索' : '尚未解锁'}`;
-        interactButton.textContent = state === 'locked' ? '查看解锁条件' : nearby.id === 1 ? 'E · 进入童年冒险' : 'E · 查看下一段旅程';
+        interactButton.textContent = state === 'locked'
+          ? '查看解锁条件'
+          : nearby.id === 1
+            ? 'E · 进入童年冒险'
+            : nearby.id === 2
+              ? 'E · 进入学生时代冒险'
+              : 'E · 查看下一段旅程';
       }
     }
     if (elapsed < 4) districtMaterials.filter(entry => entry.id === options.justCompleted).forEach(entry => entry.material.color.lerpColors(entry.gray, entry.color, Math.min(elapsed / 2.5, 1)));
