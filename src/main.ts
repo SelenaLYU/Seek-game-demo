@@ -31,7 +31,9 @@ class BootScene extends Phaser.Scene {
     const room = this.scene.get('room');
     room.events.off(Phaser.Scenes.Events.CREATE, playMenuRoomMusic);
     room.events.on(Phaser.Scenes.Events.CREATE, playMenuRoomMusic);
-    this.scene.start('menu');
+    // 调试入口：?scene=room / ?scene=forest 直接进对应场景，跳过首页/开场/加载占位链
+    const targetScene = new URLSearchParams(window.location.search).get('scene');
+    this.scene.start(targetScene === 'room' || targetScene === 'forest' ? targetScene : 'menu');
   }
 }
 
