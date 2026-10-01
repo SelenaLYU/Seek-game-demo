@@ -6,6 +6,12 @@ import { showClockPuzzleUI } from '../ui/ClockPuzzleUI';
 import { showRadioPuzzleUI, type RadioPuzzleHandle } from '../ui/RadioPuzzleUI';
 import { createFragmentHud, type FragmentHudHandle } from '../ui/FragmentHud';
 import {
+  createRoomInventoryUI,
+  type RoomInventoryItem,
+  type RoomInventoryUIHandle,
+} from '../ui/RoomInventoryUI';
+import { showShadowBoatPuzzleUI, type ShadowBoatPuzzleHandle } from '../ui/ShadowBoatPuzzleUI';
+import {
   showCalendarText,
   showPhotoMemoryText,
   showFlowerpotText,
@@ -115,6 +121,8 @@ export default class RoomScene extends Phaser.Scene {
   private hintText!: Phaser.GameObjects.Text;
   private hudLayer!: Phaser.GameObjects.Container;
   private fragmentHud?: FragmentHudHandle;
+  private inventoryBar?: RoomInventoryUIHandle;
+  private shadowBoatPanel?: ShadowBoatPuzzleHandle;
   private fragments = new Set<string>();
   private memoryOrb: Phaser.GameObjects.Container | null = null;
   private orbTouched = false;
@@ -170,6 +178,10 @@ export default class RoomScene extends Phaser.Scene {
     this.fragments.clear();
     this.fragmentHud?.destroy();
     this.fragmentHud = undefined;
+    this.inventoryBar?.destroy();
+    this.inventoryBar = undefined;
+    this.shadowBoatPanel?.close();
+    this.shadowBoatPanel = undefined;
     this.memoryOrb = null;
     this.orbTouched = false;
     this.interacting = false;
@@ -206,6 +218,10 @@ export default class RoomScene extends Phaser.Scene {
 
     this.buildObjects();
     this.buildHud();
+
+    if (import.meta.env.DEV) {
+      this.installInventoryGreyboxPreview();
+    }
 
     this.cameras.main.fadeIn(250, 20, 18, 26);
 
@@ -801,6 +817,52 @@ export default class RoomScene extends Phaser.Scene {
     this.showHint('点击房间里的物件', 4500);
 
     this.fragmentHud = createFragmentHud(this);
+    this.inventoryBar = createRoomInventoryUI(this, {
+      onItemSelected: item => {
+        this.shadowBoatPanel?.setBrushEquipped(item?.id === 'paint-brush');
+        if (item) this.showHint(`已选择：${item.label}`, 1800);
+      },
+    });
+  }
+
+  /** 开发模式按 I 模拟收集；只预览物品栏，不改变谜题状态。 */
+  private installInventoryGreyboxPreview(): void {
+    const previewItems: RoomInventoryItem[] = [
+      { id: 'photo-piece', glyph: '拼', label: '照片拼块' },
+      { id: 'flashlight-battery', glyph: '电', label: '手电筒电池' },
+      { id: 'paint-brush', glyph: '笔', label: '画笔' },
+    ];
+    let previewIndex = 0;
+    const onPreviewKey = (event: KeyboardEvent) => {
+      if (event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select') || target?.isContentEditable) return;
+      if (event.code === 'KeyI' || event.key.toLowerCase() === 'i') {
+        this.inventoryBar?.addItem(previewItems[previewIndex % previewItems.length]);
+        previewIndex += 1;
+      } else if (event.code === 'KeyB' || event.key.toLowerCase() === 'b') {
+        this.openShadowBoatGreybox();
+      }
+    };
+    window.addEventListener('keydown', onPreviewKey);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      window.removeEventListener('keydown', onPreviewKey);
+    });
+  }
+
+  private openShadowBoatGreybox(): void {
+    if (this.interacting || this.shadowBoatPanel) return;
+    this.interacting = true;
+    this.shadowBoatPanel = showShadowBoatPuzzleUI(this, {
+      onAligned: () => this.inventoryBar?.setExpanded(true),
+      onClose: () => {
+        this.shadowBoatPanel = undefined;
+        this.interacting = false;
+      },
+    });
+    this.shadowBoatPanel.setBrushEquipped(
+      this.inventoryBar?.getSelectedItem()?.id === 'paint-brush',
+    );
   }
 
   /** 提示显示一段时间后自动淡出（与森林的区域提示一致，不再常驻） */
