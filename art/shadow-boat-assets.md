@@ -14,7 +14,7 @@
 | --- | ---: | --- | --- |
 | `assets/environment/room-shadow-pencil-case.png` | 320×96 | 笔袋／船身 | 74×18 逻辑像素 |
 | `assets/environment/room-shadow-triangle-ruler.png` | 192×256 | 三角尺／船帆 | 37×52 逻辑像素 |
-| `assets/environment/room-shadow-pencil.png` | 48×280 | 细尺／桅杆 | 4×63 逻辑像素 |
+| `assets/environment/room-shadow-pencil.png` | 96×280 | 新版宽尺／桅杆 | 4×63 逻辑像素 |
 | `assets/environment/room-flashlight-off.png` | 224×336 | 手电筒关闭状态 | 与开启状态共用锚点 |
 | `assets/environment/room-flashlight-on.png` | 224×336 | 手电筒开启状态 | 与关闭状态共用锚点 |
 | `assets/items/room-paint-brush.png` | 384×192 | 扁头水彩笔／物品栏与描风 | 独立交互物件 |
@@ -45,8 +45,10 @@
 
 ### `room-shadow-pencil.png`
 
-细长笔直的竹木尺，淡竹色主体、青碧端帽和一处小朱红线结；正视垂直构图，
-外轮廓保持为极窄矩形，用作小船桅杆。透明背景，不弯曲，不增加复杂雕花。
+新版尺子。保持房间模块已经确定的 `280 px` 原生高度与 `63` 逻辑像素投影高度，
+只把原生宽度由 `48 px` 加宽到 `96 px`，导入时仍沿用现有模块的摆放位置与锚点。
+正视垂直构图，珊瑚奶粉色尺身、柔和粉蓝色两端、暗玫棕色短刻度；透明背景，
+水彩手绘纸纹和略有变化的深色轮廓。尺子保持笔直，不弯曲，不出现数字、文字或复杂装饰。
 
 ### `room-flashlight-off.png`
 
