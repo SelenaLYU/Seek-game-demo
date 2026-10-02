@@ -29,13 +29,24 @@ export default class IntroScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const next = this.add
-      .text(BASE_WIDTH - 32, 26, '继续  ›', {
+    const back = this.add
+      .text(32, 26, '← 返回菜单', {
         fontFamily: 'sans-serif',
         fontSize: '14px',
-        color: '#bdbdbd',
+        color: '#d5d5d5',
         backgroundColor: '#242424',
         padding: { x: 12, y: 7 },
+      })
+      .setInteractive({ useHandCursor: true });
+    back.on('pointerup', () => this.scene.start('menu'));
+
+    const next = this.add
+      .text(BASE_WIDTH - 32, 26, '下一步：开始第一关海边 →', {
+        fontFamily: 'sans-serif',
+        fontSize: '14px',
+        color: '#fff3d2',
+        backgroundColor: '#204336',
+        padding: { x: 14, y: 7 },
       })
       .setOrigin(1, 0)
       .setInteractive({ useHandCursor: true });
@@ -43,5 +54,7 @@ export default class IntroScene extends Phaser.Scene {
     const proceed = () => this.scene.start('loading');
     next.on('pointerup', proceed);
     this.input.keyboard?.once('keydown-SPACE', proceed);
+    this.input.keyboard?.once('keydown-ENTER', proceed);
+    this.input.keyboard?.once('keydown-ESC', () => this.scene.start('menu'));
   }
 }

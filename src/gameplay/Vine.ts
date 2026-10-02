@@ -214,7 +214,7 @@ export class Vine {
     }
 
     // 末端握点：发光五彩茉莉花枝（花心=握点，随绳摆动）；程序花瓣环已退役。
-    // 花心对齐约定与 Player.GRAB_FLOWER 的"帧内花心钉握点"共用同一握点坐标
+    // 花心与 Player.GRAB_GRIP（抓取图帧内双手指尖）对齐到同一握点坐标
     if (this.handFlower) {
       this.handFlower.setPosition(handX, handY).setRotation(-this.angle);
     } else if (this.placeholder) {

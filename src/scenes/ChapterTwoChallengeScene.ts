@@ -63,12 +63,8 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   }
 
   preload(): void {
-    if (!this.textures.exists(Player.SHEET)) {
-      this.load.spritesheet(Player.SHEET, Player.SHEET_URL, {
-        frameWidth: Player.FRAME_W,
-        frameHeight: Player.FRAME_H,
-      });
-    }
+    // 与第一关共用同一个年年角色（三套序列帧由 Player 统一下发）
+    Player.preload(this);
   }
 
   create(): void {

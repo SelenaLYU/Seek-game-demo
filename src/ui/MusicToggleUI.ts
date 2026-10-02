@@ -11,7 +11,8 @@ export function createMusicToggleUI(game: Phaser.Game): void {
     style.id = STYLE_ID;
     style.textContent = `
       #${ROOT_ID} {
-        position: fixed; top: 14px; right: 14px; z-index: 2000;
+        /* 让位给 HUD 右上簇（目标条 + 按钮行 + 右侧 beacon）：top 从 14 下移到 92，否则会压住它们的尾巴 */
+        position: fixed; top: 92px; right: 14px; z-index: 2000;
         min-width: 92px; padding: 8px 12px;
         border: 1px solid rgba(239,220,174,.42); border-radius: 8px;
         color: #f5e8c8; background: rgba(17,25,21,.78);
