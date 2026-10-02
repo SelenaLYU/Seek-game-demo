@@ -24,12 +24,21 @@ export function mountMemoryIsland(options: Options): () => void {
     .memory-island .panel{background:#f7f8f0df;border:1px solid #ffffff99;border-radius:16px;padding:17px 22px;backdrop-filter:blur(10px);max-width:420px;box-shadow:0 5px 25px #294a3b0a}
     .memory-island .instructions{font-size:13px;line-height:1.9;margin:6px 0 0;color:#587068}
     .memory-island .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .memory-island .chapter-picker{position:absolute;right:28px;top:112px;width:286px;pointer-events:auto}
+    .memory-island .chapter-picker strong{display:block;margin-bottom:10px;font-size:14px;letter-spacing:.08em}
+    .memory-island .chapter-list{display:grid;gap:8px}
+    .memory-island .chapter-entry{display:grid;grid-template-columns:34px 1fr;align-items:center;gap:10px;width:100%;padding:10px 13px;border-radius:13px;text-align:left}
+    .memory-island .chapter-entry span:first-child{font:18px/1 Georgia,serif;color:#906f45}
+    .memory-island .chapter-entry b{display:block;font-size:13px;font-weight:650}
+    .memory-island .chapter-entry small{display:block;margin-top:3px;color:#60766f;font-size:11px}
+    .memory-island .chapter-entry:disabled{cursor:default;opacity:.52;background:#dfe4ded8}
     .memory-island .nearby{position:absolute;left:50%;bottom:125px;transform:translateX(-50%);text-align:center;min-width:240px;pointer-events:auto}
     .memory-island .nearby p{margin:0 0 12px;font-size:14px}
     .memory-island [hidden]{display:none!important}
     .memory-island .toast{position:absolute;left:50%;top:120px;transform:translateX(-50%);background:#264d43ed;color:#fff;padding:14px 24px;border-radius:28px;text-align:center;max-width:80%;font-size:14px}
-    @media(max-width:650px){.memory-island .hud{padding:15px}.memory-island h1{font-size:24px}.memory-island footer{align-items:stretch;flex-direction:column;gap:10px}.memory-island .panel{padding:12px 16px}.memory-island .nearby{bottom:205px}.memory-island button{padding:10px 14px}.memory-island .subtitle{max-width:210px}}
+    @media(max-width:650px){.memory-island .hud{padding:15px}.memory-island h1{font-size:24px}.memory-island footer{align-items:stretch;flex-direction:column;gap:10px}.memory-island .panel{padding:12px 16px}.memory-island .nearby{bottom:205px}.memory-island button{padding:10px 14px}.memory-island .subtitle{max-width:210px}.memory-island .chapter-picker{right:15px;top:118px;width:245px}}
   </style><div class="hud"><header><div><div class="eyebrow">SEEK / MEMORY ISLAND</div><h1>记忆之岛</h1><p class="subtitle">六段人生，慢慢找回。<br><span data-progress></span></p></div><button data-home>返回首页</button></header>
+  <aside class="chapter-picker panel" data-chapter-picker><strong>记忆入口</strong><div class="chapter-list" data-chapter-list></div></aside>
   <div class="toast" role="status" hidden></div><div class="nearby panel" hidden><p></p><button class="primary" data-interact></button></div>
   <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
   document.body.append(root);
@@ -37,6 +46,8 @@ export function mountMemoryIsland(options: Options): () => void {
   const switchButton = get<HTMLButtonElement>('[data-switch]');
   const nearbyPanel = get<HTMLElement>('.nearby');
   const interactButton = get<HTMLButtonElement>('[data-interact]');
+  const chapterPicker = get<HTMLElement>('[data-chapter-picker]');
+  const chapterList = get<HTMLElement>('[data-chapter-list]');
   const instruction = get<HTMLElement>('.instructions');
   const toast = get<HTMLElement>('.toast');
   const abort = new AbortController();
@@ -240,6 +251,23 @@ export function mountMemoryIsland(options: Options): () => void {
   const desired = new THREE.Vector3();
   const direction = new THREE.Vector3();
   function notify(message: string) { toast.textContent = message; toast.hidden = false; toastUntil = elapsed + 4; }
+  for (const chapter of [1, 2]) {
+    const state = chapterState(chapter);
+    const button = document.createElement('button');
+    button.className = 'chapter-entry';
+    button.disabled = state === 'locked';
+    const title = chapter === 1 ? '童年冒险' : '学生时代 · 骑楼街逃课';
+    const stateCopy = state === 'locked'
+      ? '完成上一段记忆后解锁'
+      : state === 'completed'
+        ? '记忆已点亮 · 可以再次进入'
+        : chapter === 2
+          ? '第二关已解锁 · 点击进入'
+          : '第一关已解锁 · 点击进入';
+    button.innerHTML = `<span>${String(chapter).padStart(2, '0')}</span><span><b>${title}</b><small>${stateCopy}</small></span>`;
+    button.addEventListener('click', () => options.onChapter(chapter), { signal });
+    chapterList.append(button);
+  }
   function setMode(next: typeof mode) {
     keys.clear();
     (document.activeElement as HTMLElement | null)?.blur();
@@ -250,6 +278,7 @@ export function mountMemoryIsland(options: Options): () => void {
       camera.position.copy(overviewPosition); controls.target.copy(overviewTarget); controls.enabled = true; controls.update();
     }
     mode = next; nearby = undefined; nearbyPanel.hidden = true;
+    chapterPicker.hidden = mode !== 'overview';
     get('[data-mode]').textContent = mode === 'overview' ? '岛屿总览' : '第三人称探索';
     instruction.textContent = mode === 'overview' ? '拖动画面旋转 · 滚轮缩放。进入岛屿后，在建筑之间走走。' : 'W A S D 移动 · 按住鼠标拖动转视角 · Shift 奔跑 · E 进入建筑';
     switchButton.textContent = mode === 'overview' ? '进入岛屿' : '查看岛屿';
