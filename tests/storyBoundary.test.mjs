@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { RADIO_PREVIEW_MS, RADIO_PREVIEW_TEXT, CHAPTER_ONE_MEMORY_TEXT } from '../src/story/ChapterOneStory.ts';
+
+const root = resolve(import.meta.dirname, '..');
+const read = path => readFileSync(resolve(root, path), 'utf8');
+function sources(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const path = resolve(dir, entry.name);
+    return entry.isDirectory() ? sources(path) : /\.ts$/.test(path) ? [path] : [];
+  });
+}
+
+test('runtime sources cannot reintroduce predecessor characters or narrative media', () => {
+  for (const path of sources(resolve(root, 'src'))) {
+    assert.doesNotMatch(readFileSync(path, 'utf8'), /外公|外婆|鱼鱼|回南城|动物园|radio-grandpa|family-zoo|radio-song|assets\/animation\/ending\.mp4|assets\/audio\/ending-voice\.wav/, path);
+  }
+});
+
+test('new-story placeholders are explicit and follow the documented childhood memory', () => {
+  assert.equal(RADIO_PREVIEW_MS, 3000);
+  assert.match(RADIO_PREVIEW_TEXT, /静默占位/);
+  assert.match(CHAPTER_ONE_MEMORY_TEXT, /贝壳/);
+  assert.match(CHAPTER_ONE_MEMORY_TEXT, /妈妈/);
+  assert.match(CHAPTER_ONE_MEMORY_TEXT, /爸爸/);
+  assert.match(read('assets/story/seek-childhood-photo-placeholder.svg'), /正式照片待制作/);
+  assert.match(read('src/scenes/EndingScene.ts'), /回忆动画占位/);
+});
+
+// These are source boundary guards, not substitutes for browser interaction tests.
+test('closing the radio has no completion side effect and cancels the preview', () => {
+  const room = read('src/scenes/RoomScene.ts');
+  const close = room.slice(room.indexOf('  private closePanel()'), room.indexOf('  private playRadioPreview()'));
+  assert.doesNotMatch(close, /type: 'radio-message-heard'/);
+  assert.match(close, /this\.stopRadioAudio\(\)/);
+  assert.match(room, /this\.radioPreviewTimer\?\.remove\(false\)/);
+  assert.match(room, /this\.radioPanel\.getChannel\(\) !== 3/);
+});
+
+test('story progress is isolated from predecessor saves', () => {
+  assert.match(read('src/gameplay/ChapterOneRoomProgress.ts'), /seek-life-chapter-one-v1/);
+  assert.match(read('src/island/Progress.ts'), /seek-life-memory-island-v1/);
+});
+
+test('room navigation requires all fragments rather than jumping directly to ending', () => {
+  const room = read('src/scenes/RoomScene.ts');
+  const hud = room.slice(room.indexOf('  private buildHud()'), room.indexOf('  private showHint('));
+  assert.match(hud, /if \(hasAllRoomFragments\(this\.progress\)\) this\.touchMemoryOrb\(\)/);
+});
+
+test('island is a chapter hub, not an ending label', () => {
+  assert.doesNotMatch(read('src/scenes/MenuScene.ts'), /终章|激浪蹦床|高空钥匙/);
+  assert.match(read('src/scenes/MenuScene.ts'), /章节枢纽/);
+});
+
+test('room background is imported through Vite so production includes it', () => {
+  const room = read('src/scenes/RoomScene.ts');
+  assert.match(room, /import roomBackgroundUrl from .*level1-memory-room-night-empty-v2-1920x1080\.png\?url/);
+  assert.match(room, /\['room-bg', roomBackgroundUrl\]/);
+});

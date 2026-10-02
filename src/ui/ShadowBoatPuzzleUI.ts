@@ -13,6 +13,7 @@ import paintBrushUrl from '../../assets/items/room-paint-brush.png?url';
 import wallDrawingUrl from '../../assets/environment/room-wall-drawing-incomplete.png?url';
 import wallDrawingCompleteUrl from '../../assets/environment/room-wall-drawing-complete.png?url';
 import wallBoatUrl from '../../assets/environment/room-wall-boat.png?url';
+import shadowBoatDeskUrl from '../../assets/environment/room-desk-with-shadow-boat-props-v1.png?url';
 
 export interface ShadowBoatPuzzleHandle {
   element: HTMLDivElement;
@@ -104,12 +105,10 @@ function installStyle(): void {
       border: 0; overflow: hidden; touch-action: none;
     }
 
-    /* 真实暗部桌面与实物展示台 */
+    /* 光影小船专用书桌（编号 14）：只在谜题界面出现；房间底图本身已有书桌，不能再叠一张。 */
     .seek-shadow-boat__desk {
-      position: absolute; left: 0; right: 0; bottom: 0; height: 160px;
-      background: linear-gradient(180deg, rgba(34, 28, 20, 0.92) 0%, rgba(18, 14, 10, 0.98) 100%);
-      border-top: 2px solid rgba(138, 112, 77, 0.35);
-      box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.75);
+      position: absolute; left: 0; right: 0; bottom: -125px; height: 440px;
+      background: url("${shadowBoatDeskUrl}") center bottom / 520px auto no-repeat;
       pointer-events: none;
     }
     .seek-shadow-boat__stand {

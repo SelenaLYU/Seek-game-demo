@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="408" height="272" viewBox="0 0 408 272">
+  <rect width="408" height="272" fill="#f1e8ce"/>
+  <rect x="12" y="12" width="384" height="248" rx="8" fill="#b9d9dc" stroke="#786d59" stroke-width="3"/>
+  <path d="M14 175 Q90 150 170 176 T394 175 V258 H14Z" fill="#6dabb4"/>
+  <path d="M14 218 Q130 190 260 223 T394 216 V258 H14Z" fill="#dbcfa7"/>
+  <g stroke="#8a947f" stroke-width="1" opacity=".45"><path d="M102 14V258M204 14V258M306 14V258M14 68H394M14 136H394M14 204H394"/></g>
+  <text x="204" y="92" text-anchor="middle" font-size="23" fill="#304e50">童年 · 海边家庭照片</text>
+  <text x="204" y="126" text-anchor="middle" font-size="16" fill="#304e50">正式照片待制作 · 拼图占位</text>
+</svg>
