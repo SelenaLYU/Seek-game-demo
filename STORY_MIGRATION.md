@@ -2,7 +2,7 @@
 
 ## 权威与边界
 
-- 剧情依据：`GAME_STORY_AND_LEVEL_DESIGN.md`（2026-10-01 团队讨论稿）。主角姓名仍待确认，统一写“主角”。
+- 剧情依据：`GAME_STORY_AND_LEVEL_DESIGN.md`（2026-10-01 团队讨论稿）。主角定名 **韩梅梅**（2026-10-03 确认，见 `decisions/2026-10-03-protagonist-name.md`）；旧素材名“年年”只是资产技术名。
 - `GAME_DESIGN_OVERVIEW.md` 是已被取代的概念方案，不作为当前叙事依据。
 - `CHAPTER1_ROOM_PUZZLE_COLLABORATION.md` 只约束交互与道具链，不批准旧 Demo 人物、台词或音频。
 - 技术复用（状态机、拼图、调频操作、CSS 类名）不等于剧情复用；不做无意义的全局重命名。

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { RADIO_PREVIEW_MS, RADIO_PREVIEW_TEXT, CHAPTER_ONE_MEMORY_TEXT } from '../src/story/ChapterOneStory.ts';
+import { RADIO_PREVIEW_MS, RADIO_PREVIEW_TEXT, CHAPTER_ONE_MEMORY_TEXT, PROTAGONIST_NAME } from '../src/story/ChapterOneStory.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const read = path => readFileSync(resolve(root, path), 'utf8');
@@ -59,4 +59,15 @@ test('room background is imported through Vite so production includes it', () =>
   const room = read('src/scenes/RoomScene.ts');
   assert.match(room, /import roomBackgroundUrl from .*level1-memory-room-night-empty-v2-1920x1080\.png\?url/);
   assert.match(room, /\['room-bg', roomBackgroundUrl\]/);
+});
+
+test('protagonist name is locked in code and the story document, not left as a placeholder', () => {
+  assert.equal(PROTAGONIST_NAME, '韩梅梅');
+  const story = read('GAME_STORY_AND_LEVEL_DESIGN.md');
+  assert.match(story, /主角定名：\*\*韩梅梅\*\*/);
+  assert.doesNotMatch(story, /主角最终姓名|本文统一写作“主角”/);
+  // The placeholder survives only in the header line that records the naming decision.
+  assert.equal((story.match(/主角/g) ?? []).length, 1, 'story document still uses the placeholder name');
+  assert.match(story, /主角定名：\*\*韩梅梅\*\*/);
+  assert.match(read('decisions/2026-10-03-protagonist-name.md'), /## Decision: 主角定名「韩梅梅」/);
 });
