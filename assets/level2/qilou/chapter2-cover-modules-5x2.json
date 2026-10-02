@@ -1,0 +1,215 @@
+{
+  "frames": {
+    "cover-upper-column": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 397,
+        "h": 396
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 397,
+        "h": 396
+      },
+      "sourceSize": {
+        "w": 397,
+        "h": 396
+      }
+    },
+    "cover-cloth-awning": {
+      "frame": {
+        "x": 397,
+        "y": 0,
+        "w": 396,
+        "h": 396
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 396,
+        "h": 396
+      },
+      "sourceSize": {
+        "w": 396,
+        "h": 396
+      }
+    },
+    "cover-shop-sign": {
+      "frame": {
+        "x": 793,
+        "y": 0,
+        "w": 397,
+        "h": 396
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 397,
+        "h": 396
+      },
+      "sourceSize": {
+        "w": 397,
+        "h": 396
+      }
+    },
+    "cover-second-floor-column": {
+      "frame": {
+        "x": 1190,
+        "y": 0,
+        "w": 396,
+        "h": 396
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 396,
+        "h": 396
+      },
+      "sourceSize": {
+        "w": 396,
+        "h": 396
+      }
+    },
+    "cover-old-rain-awning": {
+      "frame": {
+        "x": 1586,
+        "y": 0,
+        "w": 397,
+        "h": 396
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 397,
+        "h": 396
+      },
+      "sourceSize": {
+        "w": 397,
+        "h": 396
+      }
+    },
+    "cover-cargo-stack": {
+      "frame": {
+        "x": 0,
+        "y": 396,
+        "w": 397,
+        "h": 397
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 397,
+        "h": 397
+      },
+      "sourceSize": {
+        "w": 397,
+        "h": 397
+      }
+    },
+    "cover-ground-arcade": {
+      "frame": {
+        "x": 397,
+        "y": 396,
+        "w": 396,
+        "h": 397
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 396,
+        "h": 397
+      },
+      "sourceSize": {
+        "w": 396,
+        "h": 397
+      }
+    },
+    "cover-market-curtain": {
+      "frame": {
+        "x": 793,
+        "y": 396,
+        "w": 397,
+        "h": 397
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 397,
+        "h": 397
+      },
+      "sourceSize": {
+        "w": 397,
+        "h": 397
+      }
+    },
+    "cover-street-column": {
+      "frame": {
+        "x": 1190,
+        "y": 396,
+        "w": 396,
+        "h": 397
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 396,
+        "h": 397
+      },
+      "sourceSize": {
+        "w": 396,
+        "h": 397
+      }
+    },
+    "cover-corner-stall": {
+      "frame": {
+        "x": 1586,
+        "y": 396,
+        "w": 397,
+        "h": 397
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 397,
+        "h": 397
+      },
+      "sourceSize": {
+        "w": 397,
+        "h": 397
+      }
+    }
+  },
+  "meta": {
+    "app": "Seek art handoff",
+    "version": "1.0",
+    "image": "chapter2-cover-modules-5x2.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1983,
+      "h": 793
+    },
+    "scale": "1"
+  }
+}
