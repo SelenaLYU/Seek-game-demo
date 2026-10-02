@@ -87,6 +87,7 @@ export class Player {
   private touchMove = 0;
   private touchJumpHeld = false;
   private touchJumpQueued = false;
+  private touchJumpReleased = false;
 
   /** 触摸方向键按下/抬起（-1 左、0 松、1 右） */
   setTouchMove(dir: -1 | 0 | 1): void {
@@ -97,6 +98,8 @@ export class Player {
   pressTouchJump(held: boolean): void {
     if (held && !this.touchJumpHeld) {
       this.touchJumpQueued = true;
+    } else if (!held && this.touchJumpHeld) {
+      this.touchJumpReleased = true;
     }
     this.touchJumpHeld = held;
   }
@@ -255,8 +258,10 @@ export class Player {
       this.justPressed('UP') ||
       this.touchJumpQueued;
     const jumpReleased =
-      (!this.isDown('SPACE') && !this.isDown('W') && !this.isDown('UP') && !this.touchJumpHeld) &&
-      (this.justReleased('SPACE') || this.justReleased('W') || this.justReleased('UP'));
+      ((!this.isDown('SPACE') && !this.isDown('W') && !this.isDown('UP') && !this.touchJumpHeld) &&
+      (this.justReleased('SPACE') || this.justReleased('W') || this.justReleased('UP'))) ||
+      this.touchJumpReleased;
+    this.touchJumpReleased = false;
 
     // 土狼时间 + 跳跃缓冲（Celeste “& Forgiveness” 同款宽容技巧）
     if (onGround) {
@@ -424,10 +429,31 @@ export class Player {
   private static readonly GRAB_SHEET = 'char-yuyu-grab';
   /** 128×160 × 0.75 = 96×120 全整数目标，与行走帧同档的干净降采样 */
   private static readonly GRAB_SCALE = 0.75;
+  /** 无抓花序列时的退路：用合并图里的"举起双手"帧，把手钉在抓点上 */
+  private static readonly HANG_FRAME = 17;
+  /** 该帧里双手中心的位置（96×112 帧内实测 ≈(53.5, 44.8)）——即握点 */
+  private static readonly HANG_GRIP = { x: 53.5 / 96, y: 44.8 / 112 };
   /** 每帧花心（源像素，实测），换帧时保持花心不跳 */
   private static readonly GRAB_FLOWER: Array<[number, number]> = [
     [85, 30], [88, 29], [85, 29], [74, 28], [66, 28], [76, 28],
   ];
+
+  /**
+   * 供场景在 player.update() 之前调用：玩家在空中、靠近抓点时自动抓住它（或按跳跃抓住）。
+   * 标准横版平台动作手感：空中跳向海鸥触碰即抓住，无需极速连按两次跳跃。
+   */
+  tryGrabVine(vine: Vine, radius = 78): boolean {
+    if (this.frozen || this.attachedVine || !this.body.enable || this.body.onFloor() || !vine.available) {
+      return false;
+    }
+    const handY = this.view.y - this.opts.height / 2;
+    if (Phaser.Math.Distance.Between(this.view.x, handY, vine.handX, vine.handY) > radius) {
+      return false;
+    }
+    this.touchJumpQueued = false;
+    this.attachVine(vine);
+    return true;
+  }
 
   /** 抓住藤蔓：停用物理体，由藤蔓摆荡驱动位置 */
   attachVine(vine: Vine): void {
@@ -454,10 +480,19 @@ export class Player {
   /** 抓花视觉：精灵换抓花图、中心原点，花心对齐容器原点（=花环） */
   private enterGrabVisual(): void {
     this.sprite.anims.stop();
-    this.sprite.setTexture(Player.GRAB_SHEET, 0);
-    this.sprite.setOrigin(0.5, 0.5);
-    this.sprite.setScale(Player.GRAB_SCALE);
-    this.applyGrabFrame(0);
+    if (this.scene.textures.exists(Player.GRAB_SHEET)) {
+      this.sprite.setTexture(Player.GRAB_SHEET, 0);
+      this.sprite.setOrigin(0.5, 0.5);
+      this.sprite.setScale(Player.GRAB_SCALE);
+      this.applyGrabFrame(0);
+      return;
+    }
+    // 没有抓花序列的场景（海边登鸥抓点）：仍用常规合并图，换成"举起双手"帧，
+    // 并把原点挪到双手中心——容器原点=抓点，身体自然挂在抓点下方。
+    this.sprite.setTexture(Player.SHEET, Player.HANG_FRAME);
+    this.sprite.setOrigin(Player.HANG_GRIP.x, Player.HANG_GRIP.y);
+    this.sprite.setScale(SPRITE_SCALE);
+    this.sprite.setPosition(0, 0);
   }
 
   /** 按帧号换帧并把该帧花心钉在容器原点上（镜像由容器 scaleX 负责，公式不变） */
@@ -486,13 +521,16 @@ export class Player {
     }
     const velocity = vine.releaseVelocity();
     this.attachedVine = null;
-    vine.startCooldown();
+    vine.startCooldown(500);
     this.exitGrabVisual();
     this.body.enable = true;
     this.body.setAllowGravity(true);
-    this.body.setVelocity(velocity.vx, velocity.vy);
-    // 松手：面朝甩出方向展开，空中逐帧按新速度播放
-    this.facing = velocity.vx >= 0 ? 1 : -1;
+    // 横版游戏手感保底：只要面朝右侧（目标礁石方向）或切向为正，保证足够的向前冲量与向上浮力
+    const forwardVx = (this.facing > 0 || velocity.vx > 0) ? Math.max(velocity.vx, 260) : velocity.vx;
+    const upwardVy = Math.min(velocity.vy, -240);
+    this.body.setVelocity(forwardVx, upwardVy);
+    this.airJumpsLeft = 1; // 松手后恢复二段跳能力，允许空中微调落点
+    this.facing = forwardVx >= 0 ? 1 : -1;
     this.displayedFacing = this.facing;
     this.view.scaleX = this.facing;
     this.view.setRotation(0);
@@ -510,7 +548,7 @@ export class Player {
     }
     const dirX =
       (this.isDown('D') || this.isDown('RIGHT') ? 1 : 0) -
-      (this.isDown('A') || this.isDown('LEFT') ? 1 : 0);
+      (this.isDown('A') || this.isDown('LEFT') ? 1 : 0) || this.touchMove;
     const climb =
       (this.isDown('W') || this.isDown('UP') ? 1 : 0) -
       (this.isDown('S') || this.isDown('DOWN') ? 1 : 0);
@@ -534,9 +572,14 @@ export class Player {
       }
     }
 
-    // 松手甩出：键盘空格或触摸跳跃键（update() 在挂藤时提前返回，
+    // 松手甩出：键盘空格/W/↑ 或触摸跳跃键（update() 在挂藤时提前返回，
     // 触摸队列只能在这里消费——否则手机抓上花环就再也松不开）
-    if (this.justPressed('SPACE') || this.touchJumpQueued) {
+    if (
+      this.justPressed('SPACE') ||
+      this.justPressed('W') ||
+      this.justPressed('UP') ||
+      this.touchJumpQueued
+    ) {
       this.touchJumpQueued = false;
       this.releaseVine();
     }

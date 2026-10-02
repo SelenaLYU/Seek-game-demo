@@ -3,17 +3,14 @@ import Phaser from 'phaser';
 /**
  * 高清渲染（动态缓冲版）：
  *
- * 渲染缓冲不再固定 1920×1080，而是跟随「画布 CSS 尺寸 × 设备像素比」——
- * 缓冲与屏幕设备像素 1:1，浏览器不再放大画布（实测 dpr=2、CSS 1204px 的窗口
- * 需要设备像素 2408px，固定 1920 的缓冲会被放大约 1.25 倍，这就是发糊根源）。
- * 缓冲宽度 = 960 × 倍率，倍率 clamp 在 [1, 4]（下限保证 zoom≥1 不露世界外，
- * 上限 3840≈4K 防开销失控），16:9 恒定，FIT 的等比缩放不受影响。
+ * 初始渲染缓冲根据浏览器 CSS 宽度 × DPR 取样，上限 3840 像素。
+ * EXPAND 用等比缩放填满窗口，宽屏扩大可视范围，不拉伸角色和场景对象。
  *
- * 相机 zoom = 缓冲宽 / 960（世界逻辑坐标恒为 960×540）；
+ * 相机 zoom = 缓冲高 / 540（保持竖向逻辑视野 540）；
  * scrollFactor 0 的全屏层世界单位 = 缓冲像素（实测 1:1，zoom 不作用于它们），
  * 缓冲变化时必须按 gameSize 重缩放（森林雾/暗角/背景、各场景 hudLayer）。
  *
- * 场景 create() 调 applyHDCamera(this)；它在 Scale RESIZE 时自动重设
+ * 场景 create() 调 applyHDCamera(this)；它在画布尺寸变化时自动重设
  * zoom/视口（跟随相机除外，不抢 centerOn）。缓冲的同步入口在 main.ts。
  */
 export const BASE_WIDTH = 960;
@@ -39,7 +36,13 @@ export function initialBufferSize(): { width: number; height: number } {
 
 /** 当前渲染缓冲倍率（= 相机 zoom） */
 export function bufferScaleOf(scene: Phaser.Scene): number {
-  return scene.scale.gameSize.width / BASE_WIDTH;
+  return scene.scale.gameSize.height / BASE_HEIGHT;
+}
+
+/** 相机保持逻辑高度 540 时的世界坐标视野宽度（不依赖 HD 渲染倍率）。 */
+export function logicalWorldViewportWidth(scene: Phaser.Scene): number {
+  const zoom = scene.scale.gameSize.height / BASE_HEIGHT;
+  return Math.max(1, Math.round(scene.scale.gameSize.width / Math.max(zoom, 1)));
 }
 
 /** 全屏 sf0 层相对“1920×1080 参照缓冲”的重缩放系数 */
@@ -47,12 +50,15 @@ export function screenRefScaleOf(scene: Phaser.Scene): number {
   return scene.scale.gameSize.width / (BASE_WIDTH * 2);
 }
 
-export function applyHDCamera(scene: Phaser.Scene): void {
+export function applyHDCamera(scene: Phaser.Scene, mode: 'cover' | 'expand-horizontal' = 'cover'): void {
   const cam = scene.cameras.main;
   const apply = () => {
     const w = scene.scale.gameSize.width;
     const h = scene.scale.gameSize.height;
-    cam.setZoom(w / BASE_WIDTH);
+    const followsTarget = Boolean((cam as unknown as { _follow?: unknown })._follow);
+    const heightZoom = h / BASE_HEIGHT;
+    const widthZoom = w / BASE_WIDTH;
+    cam.setZoom(mode === 'expand-horizontal' ? heightZoom : Math.max(heightZoom, widthZoom));
     if (cam.width !== w || cam.height !== h) {
       cam.setSize(w, h);
     }
