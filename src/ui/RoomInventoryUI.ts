@@ -2,9 +2,10 @@ import Phaser from 'phaser';
 
 export interface RoomInventoryItem {
   id: string;
-  /** 没有 imageUrl 时使用的简短占位字符。 */
+  /** 没有图片时使用的简短占位字符。 */
   glyph: string;
   imageUrl?: string;
+  iconUrl?: string;
   label: string;
 }
 
@@ -145,10 +146,6 @@ function installStyle(): void {
   document.head.append(style);
 }
 
-/**
- * 房间底部物品栏灰盒。
- * UI 只管理展示与选择；物品是否合法使用、是否消耗由 Gameplay 调用方决定。
- */
 export function createRoomInventoryUI(
   scene: Phaser.Scene,
   options: RoomInventoryUIOptions = {},
@@ -157,70 +154,69 @@ export function createRoomInventoryUI(
   installStyle();
 
   const maxSlots = Math.max(1, options.maxSlots ?? 4);
-  const idleCollapseMs = Math.max(1000, options.idleCollapseMs ?? 3400);
-  const root = document.createElement('div');
-  root.className = 'seek-room-inventory is-empty is-collapsed';
-  root.setAttribute('aria-label', '物品栏');
-  root.innerHTML = `<div class="seek-room-inventory__drawer">
-    <button class="seek-room-inventory__toggle" type="button" aria-label="展开物品栏" aria-expanded="false">
-      <span aria-hidden="true">‹</span>
-    </button>
-    <div class="seek-room-inventory__shelf" role="list" aria-label="已获得的物品">
-      ${Array.from({ length: maxSlots }, (_, index) => `
-        <div class="seek-room-inventory__slot" role="listitem" data-slot="${index}">
-          <span class="seek-room-inventory__slot-number">${index + 1}</span>
-        </div>`).join('')}
-    </div>
-  </div>`;
+  const idleCollapseMs = Math.max(1000, options.idleCollapseMs ?? 4200);
 
-  const drawer = root.querySelector<HTMLElement>('.seek-room-inventory__drawer')!;
+  const root = document.createElement('div');
+  root.className = 'seek-room-inventory is-empty';
+  root.innerHTML = `
+    <div class="seek-room-inventory__drawer">
+      <button class="seek-room-inventory__toggle" type="button" aria-label="收起/展开物品栏"><span>›</span></button>
+      <div class="seek-room-inventory__shelf"></div>
+    </div>
+  `;
+
+  const drawer = root.querySelector<HTMLDivElement>('.seek-room-inventory__drawer')!;
   const toggle = root.querySelector<HTMLButtonElement>('.seek-room-inventory__toggle')!;
-  const slots = [...root.querySelectorAll<HTMLElement>('.seek-room-inventory__slot')];
+  const shelf = root.querySelector<HTMLDivElement>('.seek-room-inventory__shelf')!;
+
   const items: RoomInventoryItem[] = [];
   let selectedId: string | null = null;
-  let collapseTimer: number | undefined;
+  let collapseTimer: number | null = null;
   let destroyed = false;
 
-  const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
-  };
-
   const clearCollapseTimer = () => {
-    window.clearTimeout(collapseTimer);
-    collapseTimer = undefined;
-  };
-
-  const setExpanded = (expanded: boolean) => {
-    if (destroyed || items.length === 0) return;
-    clearCollapseTimer();
-    root.classList.toggle('is-collapsed', !expanded);
-    toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.setAttribute('aria-label', expanded ? '收起物品栏' : '展开物品栏');
+    if (collapseTimer !== null) {
+      window.clearTimeout(collapseTimer);
+      collapseTimer = null;
+    }
   };
 
   const scheduleCollapse = () => {
     clearCollapseTimer();
-    if (destroyed || items.length === 0) return;
-    collapseTimer = window.setTimeout(() => setExpanded(false), idleCollapseMs);
+    collapseTimer = window.setTimeout(() => {
+      setExpanded(false);
+    }, idleCollapseMs);
   };
 
-  const selectItem = (id: string | null) => {
+  const setExpanded = (expanded: boolean) => {
+    root.classList.toggle('is-collapsed', !expanded);
+    toggle.setAttribute('aria-expanded', String(expanded));
+  };
+
+  const selectItem = (id: string) => {
     selectedId = selectedId === id ? null : id;
-    root.querySelectorAll<HTMLElement>('.seek-room-inventory__item').forEach(button => {
-      button.classList.toggle('is-selected', button.dataset.itemId === selectedId);
-    });
-    options.onItemSelected?.(items.find(item => item.id === selectedId) ?? null);
+    render();
+    const current = items.find(item => item.id === selectedId) ?? null;
+    options.onItemSelected?.(current);
     scheduleCollapse();
   };
 
   const render = (arrivingId?: string) => {
-    slots.forEach((slot, index) => {
-      slot.querySelector('.seek-room-inventory__item')?.remove();
-      const item = items[index];
-      if (!item) return;
+    shelf.innerHTML = '';
+    for (let slotIndex = 0; slotIndex < maxSlots; slotIndex += 1) {
+      const slot = document.createElement('div');
+      slot.className = 'seek-room-inventory__slot';
+      const slotNumber = document.createElement('span');
+      slotNumber.className = 'seek-room-inventory__slot-number';
+      slotNumber.textContent = String(slotIndex + 1);
+      slot.append(slotNumber);
+      shelf.append(slot);
+    }
+
+    const slots = shelf.querySelectorAll<HTMLDivElement>('.seek-room-inventory__slot');
+    items.forEach((item, index) => {
+      const slot = slots[index];
+      if (!slot) return;
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'seek-room-inventory__item';
@@ -228,10 +224,11 @@ export function createRoomInventoryUI(
       if (item.id === arrivingId) button.classList.add('is-arriving');
       button.dataset.itemId = item.id;
       button.setAttribute('aria-label', item.label);
-      const icon = item.imageUrl
+      const imgSrc = item.imageUrl || item.iconUrl;
+      const icon = imgSrc
         ? Object.assign(document.createElement('img'), {
             className: 'seek-room-inventory__item-image',
-            src: item.imageUrl,
+            src: imgSrc,
             alt: '',
           })
         : Object.assign(document.createElement('span'), {
@@ -286,36 +283,49 @@ export function createRoomInventoryUI(
   toggle.addEventListener('click', () => {
     setExpanded(root.classList.contains('is-collapsed'));
     if (!root.classList.contains('is-collapsed')) scheduleCollapse();
+    else clearCollapseTimer();
   });
-  drawer.addEventListener('pointerenter', clearCollapseTimer);
-  drawer.addEventListener('pointerleave', scheduleCollapse);
 
-  const onShutdown = () => destroy();
-  const destroy = () => {
-    if (destroyed) return;
-    destroyed = true;
-    clearCollapseTimer();
-    scene.scale.off(Phaser.Scale.Events.RESIZE, position);
-    scene.events.off(Phaser.Scenes.Events.SHUTDOWN, onShutdown);
-    root.remove();
-    activeInventories.delete(scene);
+  drawer.addEventListener('pointerenter', () => clearCollapseTimer());
+  drawer.addEventListener('pointerleave', () => {
+    if (!root.classList.contains('is-collapsed')) scheduleCollapse();
+  });
+
+  const position = () => {
+    const bounds = scene.game.canvas.getBoundingClientRect();
+    root.style.left = `${bounds.left}px`;
+    root.style.top = `${bounds.top}px`;
+    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
   };
 
+  const onShutdown = () => handle.destroy();
+
+  document.body.append(root);
+  position();
+  render();
+  setExpanded(true);
+  scheduleCollapse();
+  scene.scale.on(Phaser.Scale.Events.RESIZE, position);
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, onShutdown);
+
   const handle: RoomInventoryUIHandle = {
-    element: root,
     addItem,
     removeItem,
     hasItem: id => items.some(item => item.id === id),
     getSelectedItem: () => items.find(item => item.id === selectedId) ?? null,
     setExpanded,
-    destroy,
+    destroy: () => {
+      if (destroyed) return;
+      destroyed = true;
+      clearCollapseTimer();
+      scene.scale.off(Phaser.Scale.Events.RESIZE, position);
+      scene.events.off(Phaser.Scenes.Events.SHUTDOWN, onShutdown);
+      root.remove();
+      activeInventories.delete(scene);
+    },
+    element: root,
   };
 
-  document.body.append(root);
-  position();
-  scene.scale.on(Phaser.Scale.Events.RESIZE, position);
-  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, onShutdown);
   activeInventories.set(scene, handle);
   return handle;
 }
-

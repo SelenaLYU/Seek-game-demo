@@ -129,17 +129,63 @@ function nearPolygon(point: Point, polygon: Point[]): boolean {
   });
 }
 
+const TOTALS = [0, 0, 0];
+for (const sample of samples) {
+  sample.pieces.forEach((hit, i) => { if (hit) TOTALS[i]++; });
+}
+
+function polygonBBox(polygon: Point[]): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of polygon) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, maxX, minY, maxY };
+}
+
 export function alignment(polygons: Point[][]): { overlap: number; ready: boolean } {
+  const bboxes = polygons.map(p => (p && p.length >= 3 ? polygonBBox(p) : null));
+  let overallMinX = Infinity, overallMaxX = -Infinity, overallMinY = Infinity, overallMaxY = -Infinity;
+  for (const b of bboxes) {
+    if (!b) continue;
+    if (b.minX < overallMinX) overallMinX = b.minX;
+    if (b.maxX > overallMaxX) overallMaxX = b.maxX;
+    if (b.minY < overallMinY) overallMinY = b.minY;
+    if (b.maxY > overallMaxY) overallMaxY = b.maxY;
+  }
+
   let intersection = 0, union = 0;
-  const coverage = [0, 0, 0], totals = [0, 0, 0];
+  const coverage = [0, 0, 0];
+  const numPolys = polygons.length;
+
   for (const sample of samples) {
-    const shadow = polygons.some(p => contains(sample.point, p));
+    const pt = sample.point;
+    let shadow = false;
+    if (pt.x >= overallMinX && pt.x <= overallMaxX && pt.y >= overallMinY && pt.y <= overallMaxY) {
+      for (let i = 0; i < numPolys; i++) {
+        const b = bboxes[i];
+        if (b && pt.x >= b.minX && pt.x <= b.maxX && pt.y >= b.minY && pt.y <= b.maxY) {
+          if (contains(pt, polygons[i])) {
+            shadow = true;
+            break;
+          }
+        }
+      }
+    }
+
     if (shadow && sample.target) intersection++;
     if (shadow || sample.target) union++;
-    sample.pieces.forEach((hit, i) => {
-      if (hit) { totals[i]++; if (nearPolygon(sample.point, polygons[i] ?? [])) coverage[i]++; }
-    });
+    for (let i = 0; i < 3; i++) {
+      if (sample.pieces[i]) {
+        const b = bboxes[i];
+        if (b && pt.x >= b.minX - 5 && pt.x <= b.maxX + 5 && pt.y >= b.minY - 5 && pt.y <= b.maxY + 5) {
+          if (nearPolygon(pt, polygons[i] ?? [])) coverage[i]++;
+        }
+      }
+    }
   }
   const overlap = union ? intersection / union : 0;
-  return { overlap, ready: overlap >= .78 && coverage.every((n, i) => n / totals[i] >= .78) };
+  return { overlap, ready: overlap >= .78 && coverage.every((n, i) => n / TOTALS[i] >= .78) };
 }
