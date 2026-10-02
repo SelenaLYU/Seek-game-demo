@@ -3,3 +3,11 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# ── 资产探索稿 / 验证截图 / 沙盒运行目录（体积大，不进仓库）──
+backup/character/
+backup/element/
+backup/scene/*.png
+backup/scene/*.jpg
+screenshots/
+.workbuddy/
