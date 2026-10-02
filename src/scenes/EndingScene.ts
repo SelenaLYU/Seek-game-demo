@@ -20,7 +20,7 @@ export default class EndingScene extends Phaser.Scene {
   create(data: { completedChapter?: number } = {}): void {
     applyHDCamera(this);
     this.cameras.main.setBackgroundColor('#101817');
-    const completedChapter = data.completedChapter === 1 ? 1 : undefined;
+    const completedChapter = data.completedChapter === 1 || data.completedChapter === 2 ? data.completedChapter : undefined;
     let leaving = false;
     let disposed = false;
     let audioStarted = false;

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { applyHDCamera } from '../systems/Resolution';
 import { ChapterTwoRoomFlow } from '../gameplay/chapterTwoRoomFlow';
+import { GOODS, FIXED, CLUES, CAP_POINTS, CAP_EDGES } from '../gameplay/bottleCapPuzzle';
 import { createRoomInventoryUI, type RoomInventoryUIHandle } from '../ui/RoomInventoryUI';
 
 export default class ChapterTwoRoomScene extends Phaser.Scene {
@@ -10,9 +11,10 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
   private snackShown = false;
   private inventory?: RoomInventoryUIHandle;
   private onClose?: () => void;
+  private selectedCell = -1;
   constructor() { super('chapter2-room'); }
   create(): void {
-    this.flow = new ChapterTwoRoomFlow(); this.modal = undefined; this.snackShown = false; this.onClose = undefined;
+    this.flow = new ChapterTwoRoomFlow(); this.modal = undefined; this.snackShown = false; this.onClose = undefined; this.selectedCell = -1;
     this.inventory?.destroy();
     this.inventory = createRoomInventoryUI(this, { onItemSelected: item => {
       if (item?.id === 'shelf-map' && !this.modal) this.showMap();
@@ -78,8 +80,6 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     });
     this.box(this.room, 198, 278, 4, 31, 0xe3d4b4);
     this.text(this.room, 143, 163, '冰  箱', 13);
-    const fridge = this.add.rectangle(167, 276, 108, 242, 0xffffff, 0).setInteractive({ useHandCursor: true });
-    this.room.add(fridge); fridge.on('pointerdown', () => { if (!this.modal) this.observe('冰箱', '冰箱嗡嗡地响着，玻璃上凝着小小的水珠。'); });
     // Middle and right shelving rows: near end faces plus receding stocked sides.
     const shelfRow = (x: number, y: number, w: number, h: number, dx: number, dy: number, interactive: boolean) => {
       const left = x - w / 2, right = x + w / 2, top = y - h / 2, bottom = y + h / 2;
@@ -105,10 +105,10 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
         this.box(this.room, x, yy + 13, w - 4, 6, 0xaa8c5c);
         this.text(this.room, x, yy + 17, name, 9).setOrigin(.5, 0);
       });
-      const hit = this.add.rectangle(x + dx / 2, y + dy / 2, w + Math.abs(dx), h + Math.abs(dy), 0xffffff, 0).setInteractive({ useHandCursor: true });
-      this.room.add(hit); hit.on('pointerdown', () => { if (!this.modal) {
-        if (interactive) this.shelf(); else this.observe('靠墙的货架', '零食一排排挤在架子上，熟悉的包装还在原来的地方。');
-      } });
+      if (interactive) {
+        const hit = this.add.rectangle(x + dx / 2, y + dy / 2, w + Math.abs(dx), h + Math.abs(dy), 0xffffff, 0).setInteractive({ useHandCursor: true });
+        this.room.add(hit); hit.on('pointerdown', () => { if (!this.modal) this.shelf(); });
+      }
     };
     shelfRow(823, 260, 110, 204, -112, -53, false);
     const friend = this.add.ellipse(616, 323, 27, 37, 0x927667).setInteractive({ useHandCursor: true });
@@ -195,7 +195,9 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     this.button(p, 705, 437, '交作业', () => {
       if (this.flow.stage === 'homework-done') return;
       if (!this.flow.answer(values[0], values[1])) { result.setText('再算算：头数相加是35，脚数相加要是94。'); return; }
-      result.setText('答对了！作业完成。点击右上角关闭，回到桌边。').setColor('#ffe09e');
+      this.box(p, 480, 270, 754, 414, 0x243a30).setAlpha(.9).setInteractive();
+      this.text(p, 480, 270, '✓', 112, '#cce9ad').setOrigin(.5);
+      this.time.delayedCall(900, () => { if (this.modal === p) this.close(); });
     });
   }
   private magazine(): void {
@@ -209,8 +211,12 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
   }
   private showMap(collect = false): void {
     const map = this.panel('小卖部货架平面图');
-    for (let i = 0; i < 9; i++) this.box(map, 290 + i % 3 * 72, 175 + Math.floor(i / 3) * 65, 64, 57, 0x8b8065);
-    this.text(map, 525, 187, '九格货架\n两个人留下的记号', 19);
+    for (let i = 0; i < 9; i++) {
+      const x = 220 + i % 3 * 65, y = 182 + Math.floor(i / 3) * 60;
+      this.box(map, x, y, 59, 52, 0x8b8065);
+      this.text(map, x, y, FIXED.includes(i) ? GOODS[i].name + '\n固定' : '？', 12).setOrigin(.5);
+    }
+    this.text(map, 425, 150, CLUES.map(s => '· ' + s).join('\n'), 15).setWordWrapWidth(360);
     this.text(map, 175, 366, this.flow.hasMap ? '平面图已在物品栏里。关闭后点击房间里的货架。' : '杂志的夹页里，藏着一张货架平面图。', 16);
     if (collect && !this.flow.hasMap) this.button(map, 480, 423, '收进物品栏', () => {
       this.flow.discoverMap();
@@ -219,23 +225,127 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
       this.showMap();
     }, 210);
   }
-  private shelf(): void {
+  private shelf(message = ''): void {
     this.flow.enterShelf();
-    if (!['shelf', 'collection', 'snack'].includes(this.flow.stage)) { this.observe('小卖部的货架', '汽水、饼干和糖罐挤在一起。\n先看看门框和桌上的东西吧。'); return; }
+    if (!['shelf', 'collection', 'snack'].includes(this.flow.stage)) {
+      this.observe('小卖部的货架', '先看看门框和桌上的东西吧。'); return;
+    }
     if (this.flow.stage !== 'shelf') { this.collection(); return; }
-    const names = ['整理实体货架', '根据货架排列瓶盖', '翻转瓶盖盘', '按路线拉动商品'];
-    const descriptions = ['根据格子大小、罐底印和图上的提示，还原商品位置。', '让瓶盖正面的图案，与货架上的商品位置对应。', '扣上盖子翻转，背面的刻线连成一条路线。', '回到实体货架，依次拉动路线经过的商品，拉绳带开抽屉。'];
-    const step = this.flow.shelfStep; const p = this.panel(`瓶盖流程占位 · ${step + 1}/4`);
-    this.text(p, 151, 151, '本页仅演示衔接，不是正式瓶盖谜题。', 16, '#efcf8c');
-    this.text(p, 151, 211, names[step], 25); this.text(p, 151, 263, descriptions[step], 18);
-    this.button(p, 665, 335, '查看物品：货架图', () => {
-      this.showMap();
-      this.button(this.modal!, 480, 425, '返回货架', () => this.shelf(), 180);
-    }, 235);
-    this.button(p, 480, 406, `测试：完成「${names[step]}」`, () => {
-      this.flow.advanceShelfPreview(); this.close(); this.drawRoom();
-      if (this.flow.stage === 'collection') this.collection(); else this.shelf();
-    }, 370);
+    const puzzle = this.flow.puzzle;
+    if (puzzle.phase === 'trace') { this.traceCaps(); return; }
+    const p = this.panel('整理货架');
+    this.text(p, 145, 131, '点击两件商品交换位置，结合平面图的线索摆好货架。', 14);
+    puzzle.shelf.forEach((id, index) => {
+      const x = 205 + index % 3 * 98, y = 198 + Math.floor(index / 3) * 80;
+      const tile = this.box(p, x, y, 90, 70, GOODS[id].color);
+      if (this.selectedCell === index) tile.setStrokeStyle(4, 0xffe099);
+      this.text(p, x, y, GOODS[id].name, 13, '#252e26').setOrigin(.5);
+      if (FIXED.includes(index)) this.text(p, x + 32, y - 28, '●', 10, '#514b3b');
+      tile.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
+        if (FIXED.includes(index)) { this.selectedCell = -1; this.shelf('中间这件不能换位置。'); return; }
+        if (this.selectedCell < 0) this.selectedCell = index;
+        else { puzzle.swap(this.selectedCell, index); this.selectedCell = -1; }
+        this.shelf();
+      });
+    });
+    this.text(p, 505, 162, '平面图上的记号\n\n' + CLUES.join('\n'), 14).setWordWrapWidth(300);
+    this.text(p, 145, 397, message || '只有一件固定，其余八件都可以交换。', 13, '#f2d79d');
+    this.button(p, 653, 435, '检查货架', () => {
+      this.selectedCell = -1;
+      if (puzzle.checkShelf()) this.traceCaps();
+      else this.shelf('还有线索没有对上，再检查商品之间的位置。');
+    }, 220);
+  }
+  /*
+    const puzzle = this.flow.puzzle;
+    const p = this.panel('货架摆好了 · 在瓶盖上画出这条线');
+    this.text(p, 144, 134, '照着左边的路线，从起点按住鼠标或手指，一笔画到终点后松开。', 14);
+    const ref = (i: number) => [202 + i % 3 * 72, 210 + Math.floor(i / 3) * 65];
+    const cap = (i: number) => [540 + i % 3 * 112, 204 + Math.floor(i / 3) * 83];
+    const guide = this.add.graphics().lineStyle(4, 0xf8e2aa); p.add(guide);
+    puzzle.shelf.forEach((id, i) => {
+      const [rx, ry] = ref(i);
+      this.box(p, rx, ry, 64, 57, GOODS[id].color);
+      this.text(p, rx, ry - 15, GOODS[id].name, 9, '#293326').setOrigin(.5);
+      const [cx, cy] = cap(i);
+      p.add(this.add.circle(cx, cy, 32, GOODS[id].color).setStrokeStyle(3, 0xcfbf97));
+      this.text(p, cx, cy - 16, GOODS[id].mark, 12, '#293326').setOrigin(.5);
+    });
+    // Draw reference after the cards so it remains fully visible.
+    p.bringToTop(guide);
+    ROUTE.forEach((id, n) => {
+      const [x, y] = ref(id), next = ROUTE[n + 1];
+      if (next !== undefined) {
+        const [nx, ny] = ref(next); guide.lineBetween(x, y, nx, ny);
+        this.text(p, (x + nx) / 2, (y + ny) / 2, nx > x ? '→' : nx < x ? '←' : '↓', 18, '#1f3027').setOrigin(.5);
+      }
+    });
+    for (const [id, label] of [[ROUTE[0], '起'], [ROUTE[ROUTE.length - 1], '终']] as const) {
+      const [x, y] = cap(id); this.text(p, x, y + 13, label, 14, '#1d3826').setOrigin(.5);
+    }
+    this.text(p, 190, 369, '货架上的路线', 15);
+    const hint = this.text(p, 145, 408, '瓶盖已按货架摆好，不用再翻面或记商品顺序。', 14, '#f2d79d');
+    const ink = this.add.graphics().lineStyle(6, 0xd94b4b); p.add(ink);
+    let previous: { x: number; y: number } | undefined;
+    let activeId = -1, finished = false;
+    const world = (pointer: Phaser.Input.Pointer) => {
+      const point = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      return { x: (point.x - 540) / 112, y: (point.y - 204) / 83 };
+    };
+    const sample = (pointer: Phaser.Input.Pointer) => {
+      if (!puzzle.drawing || pointer.id !== activeId || !previous) return;
+      const now = world(pointer), from = previous;
+      const steps = Math.max(1, Math.ceil(Math.hypot(now.x - from.x, now.y - from.y) / .06));
+      for (let j = 1; j <= steps; j++) {
+        if (!puzzle.tracePoint(from.x + (now.x - from.x) * j / steps, from.y + (now.y - from.y) * j / steps)) {
+          ink.clear(); previous = undefined; hint.setText('偏离路线了。从「起」重新画一笔就好。'); return;
+        }
+      }
+      ink.lineStyle(6, 0xfff5d3).lineBetween(540 + from.x * 112, 204 + from.y * 83, 540 + now.x * 112, 204 + now.y * 83);
+      previous = now;
+    };
+    const down = (pointer: Phaser.Input.Pointer) => {
+      if (finished || this.modal !== p || puzzle.drawing) return;
+      const point = world(pointer);
+      if (point.x < -.4 || point.x > 2.4 || point.y < -.4 || point.y > 2.4) return;
+      ink.clear();
+      if (!puzzle.beginTrace(point.x, point.y)) { hint.setText('从标有「起」的瓶盖开始，按住画线。'); return; }
+      previous = point; activeId = pointer.id; hint.setText('沿路线画下去，到「终」后松开。');
+    };
+    const up = (pointer: Phaser.Input.Pointer) => {
+      if (pointer.id !== activeId || finished || !puzzle.drawing) return;
+      sample(pointer);
+      if (puzzle.endTrace()) {
+        finished = true; this.flow.finishShelf(); hint.setText('画好了！收藏抽屉打开了。');
+        this.time.delayedCall(650, () => { if (this.modal === p) { this.close(); this.collection(); } });
+      } else { ink.clear(); hint.setText('需要一笔画到终点，中途松开可以重新来。'); }
+      previous = undefined; activeId = -1;
+    };
+    this.input.on('pointerdown', down); this.input.on('pointermove', sample);
+    this.input.on('pointerup', up); this.input.on('pointerupoutside', up);
+    p.once('destroy', () => {
+      puzzle.cancelTrace(); this.input.off('pointerdown', down); this.input.off('pointermove', sample);
+      this.input.off('pointerup', up); this.input.off('pointerupoutside', up);
+    });
+  }
+  */
+  private traceCaps(): void {
+    const puzzle = this.flow.puzzle;
+    const p = this.panel('货架摆好了 · 瓶盖一笔挑战');
+    this.text(p, 144, 134, '每条连线只能走一次。自己选起点和岔路，不能抬手，也不能重复走同一条线。', 14);
+    this.text(p, 190, 176, '瓶盖已经按货架摆好，现在只看连线。', 15);
+    const nodes = CAP_POINTS.map(([x, y], i) => { const c = this.add.circle(x, y, 28, GOODS[puzzle.shelf[i]].color).setStrokeStyle(3, 0xcfbf97); p.add(c); this.text(p, x, y, GOODS[puzzle.shelf[i]].mark, 11, '#293326').setOrigin(.5); return { x, y }; });
+    const network = this.add.graphics().lineStyle(3, 0x9eaa8d); p.add(network); CAP_EDGES.forEach(([a,b]) => network.lineBetween(nodes[a].x, nodes[a].y, nodes[b].x, nodes[b].y));
+    const ink = this.add.graphics().lineStyle(8, 0xff0000); p.add(ink);
+    const hint = this.text(p, 145, 438, '点住任意瓶盖开始，沿着相邻瓶盖走。', 14, '#f2d79d');
+    let activeId = -1, finished = false, previous: { x: number; y: number } | undefined;
+    const nearest = (pointer: Phaser.Input.Pointer) => { const q = this.cameras.main.getWorldPoint(pointer.x, pointer.y); let best = -1, dist = 35; nodes.forEach((n, i) => { const d = Phaser.Math.Distance.Between(q.x, q.y, n.x, n.y); if (d < dist) { best = i; dist = d; } }); return best; };
+    const pointerPoint = (pointer: Phaser.Input.Pointer) => { const q = this.cameras.main.getWorldPoint(pointer.x, pointer.y); return { x: q.x, y: q.y }; };
+    const down = (pointer: Phaser.Input.Pointer) => { if (finished || this.modal !== p || puzzle.drawing) return; const node = nearest(pointer); if (node < 0 || !puzzle.beginTrace(node)) { hint.setText('从任意瓶盖开始，想好下一条连接。'); return; } activeId = pointer.id; previous = pointerPoint(pointer); ink.clear(); hint.setText('继续走相邻瓶盖；每条线只能经过一次。'); };
+    const move = (pointer: Phaser.Input.Pointer) => { if (pointer.id !== activeId || !puzzle.drawing || !previous) return; const now = pointerPoint(pointer); ink.lineBetween(previous.x, previous.y, now.x, now.y); previous = now; const node = nearest(pointer), last = puzzle.path.at(-1); if (node >= 0 && node !== last && puzzle.visit(node)) hint.setText(`已走 ${puzzle.used.size}/${CAP_EDGES.length} 条连接`); };
+    const up = (pointer: Phaser.Input.Pointer) => { if (pointer.id !== activeId || finished || !puzzle.drawing) return; if (puzzle.endTrace()) { finished = true; this.flow.finishShelf(); hint.setText('路线完成了！收藏抽屉打开了。'); this.time.delayedCall(650, () => { if (this.modal === p) { this.close(); this.collection(); } }); } else { ink.clear(); hint.setText('还没走完所有连线，从任意瓶盖重新尝试。'); } activeId = -1; previous = undefined; };
+    this.input.on('pointerdown', down); this.input.on('pointermove', move); this.input.on('pointerup', up); this.input.on('pointerupoutside', up);
+    p.once('destroy', () => { puzzle.cancelTrace(); this.input.off('pointerdown', down); this.input.off('pointermove', move); this.input.off('pointerup', up); this.input.off('pointerupoutside', up); });
   }
   private collection(): void {
     const p = this.panel('五年来，两个人的小收藏');

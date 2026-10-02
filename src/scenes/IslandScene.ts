@@ -45,6 +45,7 @@ export default class IslandScene extends Phaser.Scene {
         onChapter: chapter => {
           if (chapter === 1) this.scene.start('forest');
           else if (chapter === 2) this.scene.start('chapter2');
+          else if (chapter === 3) this.scene.start('chapter3-preview');
         },
       });
       canvas.style.visibility = 'hidden';

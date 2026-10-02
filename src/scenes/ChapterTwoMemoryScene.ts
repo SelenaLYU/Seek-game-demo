@@ -23,7 +23,8 @@ export default class ChapterTwoMemoryScene extends Phaser.Scene {
     const magazine = this.add.rectangle(490, 307, 162, 64, 0x76a3a6).setVisible(false);
     const reaction = this.add.text(480, 116, '', { fontSize: '28px', color: '#ffe295' }).setOrigin(.5);
     const caption = this.add.text(480, 389, '', { fontSize: '20px', color: '#f1e8d4', align: 'center', lineSpacing: 9, wordWrap: { width: 820 } }).setOrigin(.5, 0);
-    const next = this.add.text(480, 492, '下一幕', { fontSize: '17px', color: '#f2e6ce', backgroundColor: '#596f60', padding: { x: 25, y: 10 } }).setOrigin(.5).setInteractive({ useHandCursor: true });
+    const next = this.add.text(480, 492, '', { fontSize: '17px', color: '#f2e6ce', backgroundColor: '#596f60', padding: { x: 25, y: 10 } }).setOrigin(.5).setInteractive({ useHandCursor: true }).setVisible(false);
+    const skip = this.add.text(862, 34, '跳过动画', { fontSize: '14px', color: '#efe5cd', backgroundColor: '#596f60', padding: { x: 12, y: 8 } }).setOrigin(.5).setInteractive({ useHandCursor: true });
     const count = this.add.text(873, 34, '', { fontSize: '14px', color: '#cfbea1' });
     const captions = [
       '两人凑在柜台旁，偷偷拆开一包辣辣王子。',
@@ -34,25 +35,32 @@ export default class ChapterTwoMemoryScene extends Phaser.Scene {
       '两人抓起辣条跑出画面。\n桌上的杂志还停在那片海。',
     ];
     let index = 0, leaving = false;
+    let timer: Phaser.Time.TimerEvent | undefined;
     const render = () => {
       caption.setText(captions[index]); count.setText(`${index + 1} / 6`);
       reaction.setText(index === 1 ? '……！' : index === 2 ? '好吃！  好辣！' : index === 4 ? '糟了！' : '');
       magazine.setVisible(index >= 3);
-      if (index === 2) this.tweens.add({ targets: children, y: -8, yoyo: true, repeat: 2, duration: 140 });
+      this.tweens.killTweensOf(children);
+      this.tweens.add({ targets: children, y: index === 2 ? -8 : 0, yoyo: true, repeat: index === 2 ? 3 : -1, duration: index === 2 ? 140 : 720, ease: 'Sine.inOut' });
+      this.tweens.add({ targets: packet, scale: index === 0 ? 1.08 : 1, yoyo: true, repeat: index === 0 ? 3 : 0, duration: 220 });
+      if (index >= 3) this.tweens.add({ targets: magazine, angle: -2, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.inOut' });
       if (index === 5) {
         this.tweens.add({ targets: children, x: 800, duration: 850 });
         this.tweens.add({ targets: [packet, packetText], x: 1200, duration: 850 });
         next.setText('返回记忆之岛');
       }
     };
+    const schedule = () => { timer?.remove(false); timer = this.time.delayedCall(3000, () => { leaving = true; this.scene.start('island', { completedChapter: 2 }); }); };
     const advance = () => {
       if (leaving) return;
-      if (index < captions.length - 1) { index++; render(); }
+      if (index < captions.length - 1) { index++; render(); schedule(); }
       else { leaving = true; this.scene.start('island', { completedChapter: 2 }); }
     };
     next.on('pointerdown', advance);
+    skip.on('pointerdown', () => { if (!leaving) { leaving = true; timer?.remove(false); this.scene.start('island', { completedChapter: 2 }); } });
     this.input.keyboard?.on('keydown-SPACE', advance);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.input.keyboard?.off('keydown-SPACE', advance));
-    render();
+    render(); schedule();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { timer?.remove(false); skip.destroy(); });
   }
 }

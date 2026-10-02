@@ -1,9 +1,10 @@
 export type RoomStage = 'growth' | 'growth-done' | 'homework' | 'homework-done' | 'magazine' | 'map' | 'shelf' | 'collection' | 'snack' | 'memory';
+import { BottleCapPuzzle } from './bottleCapPuzzle.ts';
 /** Optional observations never advance this sequence. */
 export class ChapterTwoRoomFlow {
   stage: RoomStage = 'growth';
   readonly ages = new Set<number>();
-  shelfStep = 0;
+  readonly puzzle = new BottleCapPuzzle();
   hasMap = false;
   observeAge(age: number): void {
     if (this.stage !== 'growth' || ![5, 7, 12].includes(age)) return;
@@ -20,10 +21,7 @@ export class ChapterTwoRoomFlow {
     if (this.stage === 'magazine') { this.hasMap = true; this.stage = 'map'; }
   }
   enterShelf(): void { if (this.stage === 'map' && this.hasMap) this.stage = 'shelf'; }
-  /** Graybox only; replace with actual puzzle completion next iteration. */
-  advanceShelfPreview(): void {
-    if (this.stage === 'shelf' && ++this.shelfStep === 4) this.stage = 'collection';
-  }
+  finishShelf(): void { if (this.stage === 'shelf' && this.puzzle.phase === 'done') this.stage = 'collection'; }
   viewCollection(): void { if (this.stage === 'collection') this.stage = 'snack'; }
   takeSnack(): boolean {
     if (this.stage !== 'snack') return false;
