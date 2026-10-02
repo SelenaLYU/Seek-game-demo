@@ -332,7 +332,10 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       else if (lit && moved && this.detectionMs >= 350) this.warn('已经被注意到了！再不停下就会被抓住。');
       else if (lit && moved) this.warn('老师的灯跟上来了——马上站定！');
       else if (lit) this.hint('站住了。保持不动，等灯光移开。');
-      else if (this.alert === 0) this.hint(this.checkpointIndex === 1 ? '第二层向左走，穿过骑楼再下到底层。' : '趁灯光移开，向下一处阴影前进。');
+      // 这一条必须是兜底 else：exposure 还在衰减（alert > 0）但人已经不在灯里、也不在遮蔽里时，
+      // 用 `alert === 0` 做条件会一帧都命中不了，文案会停在上一条（实测站在空地上仍显示
+      // 「骑楼遮住了老师的光，现在可以移动。」）。导航提示走 hint，保护期内不会抢关键反馈。
+      else this.hint(this.checkpointIndex === 1 ? '第二层向左走，穿过骑楼再下到底层。' : '趁灯光移开，向下一处阴影前进。');
     }
     this.wasLit = lit && moved && canCatch;
     if (this.detectionMs >= DETECTION_MS) this.restartFromCheckpoint('被老师看见了');
