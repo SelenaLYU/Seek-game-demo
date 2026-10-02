@@ -4,10 +4,11 @@
 
 ## 文档入口
 
-- **剧情依据**：[GAME_STORY_AND_LEVEL_DESIGN.md](GAME_STORY_AND_LEVEL_DESIGN.md)
+- **当前状态与下一步**：[HANDOFF.md](HANDOFF.md) ← 只看这一份就够
+- **剧情依据**：[GAME_STORY_AND_LEVEL_DESIGN.md](GAME_STORY_AND_LEVEL_DESIGN.md)（主角定名韩梅梅）
 - **新旧故事边界与未完成内容**：[STORY_MIGRATION.md](STORY_MIGRATION.md)
-- **房间玩法**：[CHAPTER1_ROOM_PUZZLE_COLLABORATION.md](CHAPTER1_ROOM_PUZZLE_COLLABORATION.md)（只定义交互，不定义人物台词）
-- `GAME_DESIGN_OVERVIEW.md`、`HANDOFF.md`、`BUGS_AND_UX_REVIEW.md` 含历史口径，不作为当前完成度或剧情依据。
+- **第一关房间玩法**：[CHAPTER1_ROOM_PUZZLE_COLLABORATION.md](CHAPTER1_ROOM_PUZZLE_COLLABORATION.md)（只定义交互，不定义人物台词）
+- **历史文档**：全部收进 [`archive/`](archive/)，只作追溯，不作为当前状态、验收或剧情依据。
 
 ## 本地运行
 
