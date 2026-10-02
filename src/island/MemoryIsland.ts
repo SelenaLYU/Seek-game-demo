@@ -251,21 +251,33 @@ export function mountMemoryIsland(options: Options): () => void {
   const desired = new THREE.Vector3();
   const direction = new THREE.Vector3();
   function notify(message: string) { toast.textContent = message; toast.hidden = false; toastUntil = elapsed + 4; }
-  for (const chapter of [1, 2]) {
+  for (const chapter of [1, 2, 3]) {
     const state = chapterState(chapter);
     const button = document.createElement('button');
     button.className = 'chapter-entry';
     button.disabled = state === 'locked';
-    const title = chapter === 1 ? '童年冒险' : '学生时代 · 骑楼街逃课';
+    const title = chapter === 1 ? '童年冒险' : chapter === 2 ? '学生时代 · 骑楼街逃课' : '第三关 · 待闯关';
     const stateCopy = state === 'locked'
       ? '完成上一段记忆后解锁'
       : state === 'completed'
         ? '记忆已点亮 · 可以再次进入'
         : chapter === 2
           ? '第二关已解锁 · 点击进入'
-          : '第一关已解锁 · 点击进入';
+          : chapter === 3
+            ? '第三关已解锁 · 等待闯关'
+            : '第一关已解锁 · 点击进入';
     button.innerHTML = `<span>${String(chapter).padStart(2, '0')}</span><span><b>${title}</b><small>${stateCopy}</small></span>`;
-    button.addEventListener('click', () => options.onChapter(chapter), { signal });
+    button.addEventListener('click', () => {
+      if (chapter !== 3) { options.onChapter(chapter); return; }
+      notify('第三关：未完待续');
+      window.setTimeout(() => {
+        if (signal.aborted) return;
+        nearbyPanel.hidden = false;
+        nearbyPanel.querySelector('p')!.textContent = '是否查看后续关卡预告？';
+        interactButton.textContent = '查看后续关卡预告';
+        interactButton.onclick = () => options.onChapter(3);
+      }, 650);
+    }, { signal });
     chapterList.append(button);
   }
   function setMode(next: typeof mode) {
