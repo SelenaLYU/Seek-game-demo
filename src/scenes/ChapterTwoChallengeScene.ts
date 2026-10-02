@@ -54,6 +54,8 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private leaving = false;
   private restarting = false;
   private tutorialSafe = true;
+  /** 关键反馈的保护期：期间每帧导航提示不得抢屏（教学/检查点/重试/拾取） */
+  private statusHoldMs = 0;
 
   constructor() {
     super({
@@ -80,6 +82,8 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.restarting = false;
     this.tutorialSafe = true;
     this.wasLit = false;
+    // 开场教学文案自带保护期；否则第一帧就会被 updateSearchlight 的导航提示覆盖
+    this.statusHoldMs = 4500;
     this.searchlight = initialSearchlight();
 
     applyHDCamera(this);
@@ -149,6 +153,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    this.statusHoldMs = Math.max(0, this.statusHoldMs - delta);
     if (!this.leaving && !this.restarting) this.player.update(delta);
     if (!this.restarting && !this.leaving && belowStreet(this.player.view.x, this.player.view.y + 34)) {
       this.restartFromCheckpoint('离开了街道路面');
@@ -255,12 +260,12 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       token.destroy(); tokenGlow.destroy(); tokenLabel.destroy(); tokenHit.destroy();
       door.setFillStyle(0x789b88).setStrokeStyle(5, 0xd5c589);
       doorSign.setText('门已开启');
-      this.status.setText('拿到旧票根了。老师停下了，继续向右进入第二记忆房。');
+      this.announce('拿到旧票根了。老师停下了，继续向右进入第二记忆房。', 3600);
       this.tweens.add({ targets: door, alpha: { from: .64, to: 1 }, duration: 420, yoyo: true });
     });
     this.physics.add.overlap(this.player.view, doorHit, () => {
       if (this.restarting) return;
-      if (!this.tokenCollected) { this.status.setText('门还没有回应。先拿到街口的旧票根。'); return; }
+      if (!this.tokenCollected) { this.warn('门还没有回应。先拿到街口的旧票根。'); return; }
       if (this.leaving) return;
       this.leaving = true;
       this.cameras.main.fadeOut(450, 21, 34, 31);
@@ -284,7 +289,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     const checkpoint = CHECKPOINTS[this.checkpointIndex];
     const direction = this.checkpointIndex === 1 ? '第二层向左 ←' : '底层向右 →';
     this.checkpointText.setText(`检查点 · ${checkpoint.label} · ${direction}`);
-    this.status.setText(`到达${checkpoint.label}。先观察灯光和动态障碍。`);
+    this.announce(`到达${checkpoint.label}。先观察灯光和动态障碍。`);
     this.tweens.add({ targets: this.checkpointText, alpha: { from: .35, to: 1 }, duration: 280, yoyo: true });
   }
 
@@ -323,11 +328,11 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       : .6 + .4 * Math.pow((progress - .37) / .63, 1.1);
 
     if (!this.tokenCollected && !this.restarting) {
-      if (inCover) this.status.setText('骑楼遮住了老师的光，现在可以移动。');
-      else if (lit && moved && this.detectionMs >= 350) this.status.setText('已经被注意到了！再不停下就会被抓住。');
-      else if (lit && moved) this.status.setText('老师的灯跟上来了——马上站定！');
-      else if (lit) this.status.setText('站住了。保持不动，等灯光移开。');
-      else if (this.alert === 0) this.status.setText(this.checkpointIndex === 1 ? '第二层向左走，穿过骑楼再下到底层。' : '趁灯光移开，向下一处阴影前进。');
+      if (inCover) this.hint('骑楼遮住了老师的光，现在可以移动。');
+      else if (lit && moved && this.detectionMs >= 350) this.warn('已经被注意到了！再不停下就会被抓住。');
+      else if (lit && moved) this.warn('老师的灯跟上来了——马上站定！');
+      else if (lit) this.hint('站住了。保持不动，等灯光移开。');
+      else if (this.alert === 0) this.hint(this.checkpointIndex === 1 ? '第二层向左走，穿过骑楼再下到底层。' : '趁灯光移开，向下一处阴影前进。');
     }
     this.wasLit = lit && moved && canCatch;
     if (this.detectionMs >= DETECTION_MS) this.restartFromCheckpoint('被老师看见了');
@@ -368,7 +373,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.searchlight = initialSearchlight();
     this.wasLit = false;
     body.setVelocity(0, 0).setAllowGravity(false);
-    this.status.setText(`${reason}——回到最近的安全位置。`);
+    this.announce(`${reason}——回到最近的安全位置。`, 800);
     this.cameras.main.flash(190, 241, 186, 150);
     this.tweens.add({ targets: this.player.view, alpha: .16, duration: 170, yoyo: true, repeat: 1 });
     this.time.delayedCall(470, () => {
@@ -376,23 +381,43 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       this.player.teleportTo(checkpoint.x, checkpoint.y);
       this.player.view.setAlpha(1);
       this.previousPlayer.set(checkpoint.x, checkpoint.y);
-      this.status.setText(`从${checkpoint.label}重试。先看灯光，再看街道障碍。`);
+      this.announce(`从${checkpoint.label}重试。先看灯光，再看街道障碍。`);
       this.restarting = false;
     });
   }
 
+  /** 关键反馈（教学 / 检查点 / 重试 / 拾取）：holdMs 内不被每帧导航提示覆盖 */
+  private announce(message: string, holdMs = 2600): void {
+    this.status.setText(message);
+    this.statusHoldMs = holdMs;
+  }
+
+  /** 导航提示：关键反馈还在保护期内时不抢屏 */
+  private hint(message: string): void {
+    if (this.statusHoldMs > 0) return;
+    this.status.setText(message);
+  }
+
+  /** 紧迫警告（被灯锁定 / 即将被抓）：立即抢占，不等保护期 */
+  private warn(message: string): void {
+    this.statusHoldMs = 0;
+    this.status.setText(message);
+  }
+
   private layoutHud(time: number): void {
+    // worldView 随窗口比例变化（applyHDCamera 用 cover 模式，宽度 = 540 × 宽高比），
+    // 所以 HUD 必须贴 view 的四条边定位，不能写死 960×540 的绝对坐标。
     const view = this.cameras.main.worldView;
     this.title.setPosition(view.x + 145, view.y + 24);
-    this.status.setPosition(view.x + 18, view.y + 474);
-    this.checkpointText.setPosition(view.x + 18, view.y + 532);
-    const x = view.x + 646;
+    this.status.setPosition(view.x + 18, view.y + view.height - 66);
+    this.checkpointText.setPosition(view.x + 18, view.y + view.height - 8);
+    const x = view.x + view.width - 36 - 278;
     const y = view.y + 26;
     const pulse = this.alert > .5 ? .85 + Math.sin(time * .015) * .15 : 1;
     this.hudGraphics.clear();
     if (this.alert > .005) {
-      this.hudGraphics.fillStyle(0x8f1f1b, this.alert * .07).fillRect(view.x, view.y, 960, 540);
-      this.hudGraphics.lineStyle(8 + this.alert * 12, 0xd5483e, .24 + this.alert * .5).strokeRect(view.x + 4, view.y + 4, 952, 532);
+      this.hudGraphics.fillStyle(0x8f1f1b, this.alert * .07).fillRect(view.x, view.y, view.width, view.height);
+      this.hudGraphics.lineStyle(8 + this.alert * 12, 0xd5483e, .24 + this.alert * .5).strokeRect(view.x + 4, view.y + 4, view.width - 8, view.height - 8);
     }
     this.hudGraphics.fillStyle(0x17231f, .84).fillRoundedRect(x, y, 278, 44, 9);
     this.hudGraphics.fillStyle(0xebe1bf, .22).fillRoundedRect(x + 76, y + 16, 178, 11, 5);
