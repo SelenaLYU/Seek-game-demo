@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { chapterState, completedChapters } from './Progress';
 
-type Options = { justCompleted?: number; onHome: () => void; onChapter: (chapter: number) => void };
+type Options = { justCompleted?: number; completionSaved?: boolean; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
 
 /** Self-contained Three.js view. The returned cleanup also releases all GPU resources. */
@@ -329,9 +329,15 @@ export function mountMemoryIsland(options: Options): () => void {
   }
   get('[data-progress]').textContent = `${completedChapters().length} / 6 段记忆已点亮 · 灰色建筑等待找回`;
   setMode('overview');
-  if (options.justCompleted) notify(options.justCompleted === 1
-    ? '第一段记忆回来了。童年的街区正在恢复颜色。'
-    : `第 ${options.justCompleted} 段记忆回来了。新的街区正在恢复颜色。`);
+  if (options.justCompleted) {
+    if (options.completionSaved === false) {
+      notify(`第 ${options.justCompleted} 段记忆已点亮，但浏览器无法保存；刷新后可能需要重新完成。`);
+    } else {
+      notify(options.justCompleted === 1
+        ? '第一段记忆回来了。童年的街区正在恢复颜色。'
+        : `第 ${options.justCompleted} 段记忆回来了。新的街区正在恢复颜色。`);
+    }
+  }
   const resize = () => { const { width, height } = root.getBoundingClientRect(); camera.aspect = width / Math.max(height, 1); camera.updateProjectionMatrix(); renderer.setSize(width, height); };
   window.addEventListener('resize', resize, { signal }); resize();
   let frame = 0, last = performance.now(), disposed = false;

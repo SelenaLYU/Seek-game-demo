@@ -9,7 +9,7 @@
       body {
         margin: 0;
         height: 100%;
-        /* 页面自身不滚动：FIT 已按窗口等比缩放（小窗口曾出现整页滚动条） */
+        /* 页面自身不滚动：EXPAND 负责等比铺满窗口，小窗口也不出现滚动条 */
         overflow: hidden;
         background: #111111;
       }
@@ -19,6 +19,7 @@
         inset: 0;
         width: 100%;
         height: 100%;
+        background: #111111;
       }
       /* 触摸屏：禁掉画布上的浏览器手势（滚动/双击缩放/长按菜单），输入全部交给游戏 */
       #game canvas {
@@ -26,6 +27,7 @@
         -webkit-user-select: none;
         user-select: none;
         -webkit-touch-callout: none;
+        background-color: #111111;
       }
     </style>
   </head>

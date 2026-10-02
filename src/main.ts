@@ -10,10 +10,8 @@ import ChapterTwoChallengeScene from './scenes/ChapterTwoChallengeScene';
 import ChapterTwoRoomScene from './scenes/ChapterTwoRoomScene';
 import ChapterTwoMemoryScene from './scenes/ChapterTwoMemoryScene';
 import { preloadMenuRoomMusic, playMenuRoomMusic } from './MenuRoomMusic';
+import { createMusicToggleUI } from './ui/MusicToggleUI';
 import {
-  BASE_HEIGHT,
-  BASE_WIDTH,
-  computeBufferScale,
   initialBufferSize,
 } from './systems/Resolution';
 
@@ -48,10 +46,11 @@ const game = new Phaser.Game({
   width: initialBuffer.width,
   height: initialBuffer.height,
   backgroundColor: '#111111',
+  // EXPAND 保持比例填满父容器；超出 16:9 的部分交由场景按更宽视野展示。
   scale: {
-    mode: Phaser.Scale.FIT,
+    mode: Phaser.Scale.EXPAND,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    autoRound: true,
+    autoRound: false,
   },
   render: { antialias: true, powerPreference: 'high-performance' },
   input: { activePointers: 3 },
@@ -62,38 +61,7 @@ const game = new Phaser.Game({
   ],
 });
 
-const syncRenderBuffer = () => {
-  const cssWidth =
-    game.canvas?.getBoundingClientRect().width ||
-    game.scale.canvasBounds.width ||
-    game.scale.parentSize.width;
-  const width = Math.round(BASE_WIDTH * computeBufferScale(cssWidth));
-  const height = Math.round((width * BASE_HEIGHT) / BASE_WIDTH);
-  if (game.scale.gameSize.width !== width) {
-    game.scale.setGameSize(width, height);
-  }
-};
-
-let syncBufferTimer: number | undefined;
-const queueSyncBuffer = () => {
-  window.clearTimeout(syncBufferTimer);
-  syncBufferTimer = window.setTimeout(syncRenderBuffer, 150);
-};
-
-game.events.once(Phaser.Core.Events.READY, syncRenderBuffer);
-game.scale.on(Phaser.Scale.Events.RESIZE, queueSyncBuffer);
-window.addEventListener('resize', queueSyncBuffer);
-
-const watchDpr = () => {
-  const query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-  const onChange = () => {
-    query.removeEventListener('change', onChange);
-    queueSyncBuffer();
-    watchDpr();
-  };
-  query.addEventListener('change', onChange);
-};
-watchDpr();
+createMusicToggleUI(game);
 
 if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__game = game;

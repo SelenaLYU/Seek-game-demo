@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-export type FragmentKind = 'photo' | 'radio' | 'clock';
+export type FragmentKind = 'photo' | 'radio' | 'shadowBoat';
 
 export interface FragmentHudHandle {
   collect: (kind: FragmentKind) => void;
@@ -17,7 +17,7 @@ const PETAL = 'M 36 38 C 24 26 23 12 36 5 C 49 12 48 26 36 38 Z';
 const pieces: Record<FragmentKind, number[]> = {
   photo: [0, 60],
   radio: [120, 180],
-  clock: [240, 300],
+  shadowBoat: [240, 300],
 };
 
 function flowerMarkup(): string {

@@ -7,14 +7,34 @@ export interface VineSwingInput {
   climb: number;
 }
 
+export interface VineOptions {
+  length?: number;
+  minLength?: number;
+  maxLength?: number;
+  /**
+   * 摆动刚度（越大回正越快）。藤蔓默认 1400；
+   * 抓着飞行的海鸥时调低，读作"被载着轻轻荡"而不是急促摆动。
+   */
+  stiffness?: number;
+  /**
+   * 是否绘制程序占位的绳身/花瓣（默认 true）。
+   * 抓点自带美术时（海鸥双脚）设 false：只保留握点光环，其余交给场景贴图。
+   */
+  placeholder?: boolean;
+}
+
 /**
  * 藤蔓：单摆物理的摆荡绳（参考《双人成行》绳子桥段、《阿凡达》藤蔓意象）。
  * 抓住后 A/D 摆荡蓄力、W/S 上下爬，松手时按当前摆速切向甩出。
  * 画面为程序化占位（茎+叶片），B 的素材到货后 redraw 换纹理即可，物理不动。
  */
 export class Vine {
-  readonly anchorX: number;
-  readonly anchorY: number;
+  /** 锚点（摆动的支点）。抓点自身会移动时用 setAnchor 每帧更新 */
+  anchorX: number;
+  anchorY: number;
+
+  /** 锚点自身的水平移动速度；松手时叠加进甩出速度（载具场景用） */
+  driftVx = 0;
 
   /** 当前摆角（0 = 垂直向下，正值为向右） */
   angle = 0;
@@ -25,6 +45,8 @@ export class Vine {
 
   private readonly minLength: number;
   private readonly maxLength: number;
+  private readonly stiffness: number;
+  private readonly placeholder: boolean;
   private readonly visual: Phaser.GameObjects.Graphics;
   /** 茉莉藤蔓贴图身体（跟随摆角旋转、绳长缩放；无贴图时退回线条绘制） */
   private readonly bodyImage: Phaser.GameObjects.Image | null;
@@ -41,13 +63,15 @@ export class Vine {
     private readonly scene: Phaser.Scene,
     anchorX: number,
     anchorY: number,
-    options?: { length?: number; minLength?: number; maxLength?: number },
+    options?: VineOptions,
   ) {
     this.anchorX = anchorX;
     this.anchorY = anchorY;
     this.length = options?.length ?? 190;
     this.minLength = options?.minLength ?? Math.max(110, this.length - 60);
     this.maxLength = options?.maxLength ?? this.length + 30;
+    this.stiffness = options?.stiffness ?? 1400;
+    this.placeholder = options?.placeholder ?? true;
     this.visual = scene.add.graphics().setDepth(3);
     this.bodyImage = scene.textures.exists('env-jasmine-vine')
       ? scene.add.image(anchorX, anchorY, 'env-jasmine-vine').setOrigin(0.5, 0).setDepth(2)
@@ -81,6 +105,12 @@ export class Vine {
 
   get available(): boolean {
     return this.scene.time.now >= this.cooldownUntil;
+  }
+
+  /** 移动锚点：抓点被带着飞（海鸥载玩家过水面）等场合每帧调用 */
+  setAnchor(x: number, y: number): void {
+    this.anchorX = x;
+    this.anchorY = y;
   }
 
   /** 玩家接近：握点光环亮起并轻摆预告（未抓住时由场景每帧调用 idleUpdate） */
@@ -123,7 +153,7 @@ export class Vine {
     const dt = Math.min(deltaMs, 50) / 1000;
 
     // 单摆：切向重力 + 玩家发力（靠近最低点发力最有效，像真实荡秋千）
-    const gravity = -(1400 / this.length) * Math.sin(this.angle);
+    const gravity = -(this.stiffness / this.length) * Math.sin(this.angle);
     const pump = input.dirX * 3.6 * Math.max(Math.cos(this.angle), 0.12);
     this.angVel += (gravity + pump) * dt;
     this.angVel *= 0.996;
@@ -145,11 +175,11 @@ export class Vine {
     this.redraw();
   }
 
-  /** 松手时的甩出速度：切向速度 + 向上助力 */
+  /** 松手时的甩出速度：切向速度 + 锚点自身速度 + 向上助力 */
   releaseVelocity(): { vx: number; vy: number } {
     const tangential = this.angVel * this.length;
     return {
-      vx: Math.cos(this.angle) * tangential * 1.25,
+      vx: Math.cos(this.angle) * tangential * 1.25 + this.driftVx,
       vy: -Math.sin(this.angle) * tangential * 1.25 - 260,
     };
   }
@@ -165,7 +195,7 @@ export class Vine {
       // 贴图身体：顶端挂在锚点，随摆角旋转、按绳长缩放
       this.bodyImage.setRotation(-this.angle);
       this.bodyImage.setDisplaySize(this.length * 0.26, this.length);
-    } else {
+    } else if (this.placeholder) {
       // 主茎：带一点弧度（三段折线近似）
       g.lineStyle(6, 0x3f6b4f, 1);
       const midX = (this.anchorX + handX) / 2 - Math.sin(this.angle) * 8;
@@ -187,7 +217,7 @@ export class Vine {
     // 花心对齐约定与 Player.GRAB_FLOWER 的"帧内花心钉握点"共用同一握点坐标
     if (this.handFlower) {
       this.handFlower.setPosition(handX, handY).setRotation(-this.angle);
-    } else {
+    } else if (this.placeholder) {
       // 无贴图回退：花瓣环 + 亮花心 + 描边圈，明确"这里能抓"
       g.fillStyle(0xe9f5e4, 1);
       for (let i = 0; i < 6; i++) {

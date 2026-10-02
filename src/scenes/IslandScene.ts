@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { completeChapter } from '../island/Progress';
+import { completeChapter, wasLastChapterSavePersistent } from '../island/Progress';
 
 /** Three.js owns its own canvas while this Phaser scene is active. */
 export default class IslandScene extends Phaser.Scene {
@@ -10,9 +10,9 @@ export default class IslandScene extends Phaser.Scene {
       && (data.completedChapter ?? 0) >= 1 && (data.completedChapter ?? 0) <= 6
       ? data.completedChapter
       : undefined;
-    const justCompleted = completedChapter && completeChapter(completedChapter)
-      ? completedChapter
-      : undefined;
+    const didComplete = Boolean(completedChapter && completeChapter(completedChapter));
+    const justCompleted = didComplete ? completedChapter : undefined;
+    const completionSaved = !didComplete || wasLastChapterSavePersistent();
     let alive = true;
     let dispose: (() => void) | undefined;
     const canvas = this.game.canvas;
@@ -40,6 +40,7 @@ export default class IslandScene extends Phaser.Scene {
       if (!alive) return;
       dispose = mountMemoryIsland({
         justCompleted,
+        completionSaved,
         onHome: () => this.scene.start('menu'),
         onChapter: chapter => {
           if (chapter === 1) this.scene.start('forest');
