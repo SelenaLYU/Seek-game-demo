@@ -12,6 +12,8 @@ import ChapterTwoMemoryScene from './scenes/ChapterTwoMemoryScene';
 import ChapterThreePreviewScene from './scenes/ChapterThreePreviewScene';
 import { preloadMenuRoomMusic, playMenuRoomMusic } from './MenuRoomMusic';
 import { createMusicToggleUI } from './ui/MusicToggleUI';
+import level1BackgroundUrl from '../scene/level1-watercolor-game-background-v1-1900x540.png?url';
+import roomBackgroundUrl from '../scene/level1-memory-room-night-empty-v2-1920x1080.png?url';
 import {
   initialBufferSize,
 } from './systems/Resolution';
@@ -27,6 +29,13 @@ class BootScene extends Phaser.Scene {
 
   preload(): void {
     preloadMenuRoomMusic(this);
+    // 预热第一关两张大背景：避免 menu/loading → forest/room 首次进入时才解码，造成黑屏等待。
+    if (!this.textures.exists('level1-background')) {
+      this.load.image('level1-background', level1BackgroundUrl);
+    }
+    if (!this.textures.exists('room-bg')) {
+      this.load.image('room-bg', roomBackgroundUrl);
+    }
   }
 
   create(): void {
@@ -54,6 +63,10 @@ const game = new Phaser.Game({
     autoRound: false,
   },
   render: { antialias: true, powerPreference: 'high-performance' },
+  // 本机 Chromium 的 XHR+blob 对 ~24MB 响应直接网络错误（arraybuffer/fetch 正常），
+  // 而 Phaser 图片默认走 XHR+blob——第二关背景因此一直加载失败渲染成绿棋盘。
+  // 切到 HTMLImageElement 路径绕开该 bug。
+  loader: { imageLoadType: 'HTMLImageElement' },
   input: { activePointers: 3 },
   scene: [
     BootScene, MenuScene, IntroScene, LoadingScene, ForestScene, RoomScene,

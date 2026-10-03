@@ -5,6 +5,32 @@ import grabSheetUrl from '../../assets/character/char-niannian-grab-up-right-128
 import { Effects } from './Effects';
 import { Vine } from './Vine';
 
+/** 摆动障碍共用的 ω（rad/ms）：scene 与规则测试共用；竹竿周期 ≈ 2992ms。 */
+export const SWING_OMEGA = .0021;
+
+/** 第二层「甩动竹竿」真源：支点、杆长、相位与摆幅（scene SWINGS[1] 引用）；周期 2π/Ω ≈ 2992ms。 */
+export const BAMBOO = { x: 930, y: 492, length: 112, phase: 1.7, amplitude: .6 } as const;
+
+/** 竹竿摆角 θ(t) = amplitude·sin(Ωt + phase)。 */
+export function bambooAngle(timeMs: number): number {
+  return Math.sin(timeMs * SWING_OMEGA + BAMBOO.phase) * BAMBOO.amplitude;
+}
+
+/** 点到线段距离（scene 与测试共用；同 Phaser.Math.Dist.Family 线段公式）。 */
+export function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const abx = bx - ax, aby = by - ay;
+  const lengthSquared = abx * abx + aby * aby;
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lengthSquared));
+  return Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
+}
+
+/** 玩家中心到竹竿杆身（支点→杆端）的最小距离，timeMs 为场景 time 口径。 */
+export function bambooClearance(px: number, py: number, timeMs: number): number {
+  const angle = bambooAngle(timeMs);
+  return distanceToSegment(px, py, BAMBOO.x, BAMBOO.y,
+    BAMBOO.x + Math.sin(angle) * BAMBOO.length, BAMBOO.y + Math.cos(angle) * BAMBOO.length);
+}
+
 export type PlayerState = 'idle' | 'run' | 'jump' | 'fall';
 
 /** Player 用到的音效接口，Sfx 模块实现；测试或静音时可注入空实现 */
@@ -36,6 +62,8 @@ export interface PlayerOptions {
   softLandThreshold?: number;
   /** 重落地阈值（触发镜头微震） */
   hardLandThreshold?: number;
+  /** 是否渲染脚下接触阴影（第一关真实场景建议关掉） */
+  showGroundShadow?: boolean;
   sfx?: PlayerSfx;
 }
 
@@ -262,6 +290,7 @@ export class Player {
       maxFallSpeed: 1000,
       softLandThreshold: 220,
       hardLandThreshold: 700,
+      showGroundShadow: true,
       ...options,
     };
 
@@ -269,6 +298,7 @@ export class Player {
 
     // 脚下软阴影：贴着脚底位置（与精灵底部对齐），落地实、空中淡
     this.shadow = scene.add.ellipse(0, this.opts.height / 2, 30, 9, 0x0b170f, 0.28);
+    if (!this.opts.showGroundShadow) this.shadow.setVisible(false);
     // 年年正式序列帧；初始用跳图第 0 帧（干净静立），脚底按它自己的 146 对齐
     this.sprite = scene.add.sprite(
       0,
@@ -793,9 +823,11 @@ export class Player {
     if (onGround) {
       this.lastGroundY = feet;
     }
-    const heightRatio = Phaser.Math.Clamp((feet - this.lastGroundY) / 150, 0, 1);
-    this.shadow.setAlpha(Phaser.Math.Linear(0.3, 0.05, heightRatio));
-    this.shadow.setScale(Phaser.Math.Linear(1, 0.62, heightRatio), 1);
+    if (this.opts.showGroundShadow) {
+      const heightRatio = Phaser.Math.Clamp((feet - this.lastGroundY) / 150, 0, 1);
+      this.shadow.setAlpha(Phaser.Math.Linear(0.3, 0.05, heightRatio));
+      this.shadow.setScale(Phaser.Math.Linear(1, 0.62, heightRatio), 1);
+    }
     const speedRatio =
       this.opts.speed === 0 ? 0 : Math.min(1, Math.abs(this.body.velocity.x) / this.opts.speed);
 
