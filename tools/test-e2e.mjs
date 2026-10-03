@@ -731,6 +731,7 @@ async function run() {
   if (escapeInfo.lives !== livesAfterRide) {
     throw new Error(`撤离成功仍被扣命：${livesAfterRide} → ${escapeInfo.lives}`);
   }
+  await captureScreenshot('test-niannian-wave-landing-reef');
 
   console.log(`--- 11. 验证踩浪不跳 → 浪散落水重生（${W1.id}@${W1.ridgeCenter}） ---`);
   // 生命数归一化到 3：保证走的是普通扣命分支（1 命时会是「生命耗尽」文案，属另一条线）
@@ -816,6 +817,7 @@ async function run() {
       doorVisible: Boolean(s.door?.visible),
       keyObjectExists: s.children.list.some(o => o.texture?.key === 'level1-golden-jasmine-key'),
       keyBeaconExists: Boolean(s.keyBeacon),
+      doorHintExists: Boolean(s.doorHint),
       lives: s.progress.lives,
     };
   })()`, { label: '走到石门前站定' });
@@ -826,8 +828,8 @@ async function run() {
   if (!beforeKey.doorExists || !beforeKey.doorVisible) {
     throw new Error('阶段 3 石门应常显（锁着等待钥匙），当前 door 缺失或不可见');
   }
-  if (!beforeKey.keyObjectExists || beforeKey.keyBeaconExists) {
-    throw new Error('应只显示可拾取的实体钥匙，不应再生成额外光柱/UI');
+  if (!beforeKey.keyObjectExists || beforeKey.keyBeaconExists || beforeKey.doorHintExists) {
+    throw new Error('应只显示可拾取的实体钥匙，不应再生成额外光柱/提示牌/UI');
   }
   await captureScreenshot('test-niannian-door-key');
 
@@ -844,12 +846,13 @@ async function run() {
       keyCollected: s.keyCollected,
       playerY: Math.round(s.player.view.y),
       keyBeaconExists: Boolean(s.keyBeacon),
+      doorHintExists: Boolean(s.doorHint),
       status: s.statusText.text,
     };
   })()`, { label: '跳起摘到门楣金钥匙', timeoutMs: 4000, intervalMs: 40 });
   console.log('摘取金钥匙状态:', JSON.stringify(keyInfo, null, 2));
-  if (keyInfo.keyBeaconExists) {
-    throw new Error('取到钥匙后不应重新出现额外钥匙光柱/UI');
+  if (keyInfo.keyBeaconExists || keyInfo.doorHintExists) {
+    throw new Error('取到钥匙后不应重新出现额外钥匙光柱/提示牌/UI');
   }
 
   console.log(`--- 13. 验证落地后可推开石门进入记忆之房（开口中心 ${LAYOUT.door.openingCenterX}） ---`);

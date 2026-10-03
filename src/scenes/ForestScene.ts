@@ -414,7 +414,6 @@ export default class ForestScene extends Phaser.Scene {
   private waves: WaveEntity[] = [];
 
   private door?: Phaser.GameObjects.Image;
-  private doorHint?: Phaser.GameObjects.Text;
   private get progress(): ChapterOneRoomProgress {
     return this.progressSession.state;
   }
@@ -1043,17 +1042,14 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   private markKeyCollected(announce: boolean): void {
+    // 不额外显示钥匙方向/状态牌：门楣上只保留可拾取的实体钥匙。
     this.gameHud?.setObjective('带着金钥匙落地，走进右侧石门');
-    // 门牌也要跟着改：旧存档（keyCollected=true 直接进场）走的是这条不带 announce 的路径，
-    // 不改的话门牌会一直挂着「先摘门楣上的金钥匙」，与实际状态矛盾
-    this.doorHint?.setText('钥匙已到手 · 落地走近石门');
     if (announce) this.setStatus('摘到了门楣上的金钥匙！落地后走近石门就能进去。');
   }
 
-  /** 摘到钥匙的反馈：门已存在，只把它点亮/换成已解锁文案 */
+  /** 摘到钥匙的反馈：门已存在，只闪烁提示解锁（不额外显示钥匙提示牌） */
   private pulseDoor(): void {
     if (!this.door) return;
-    this.doorHint?.setText('钥匙已到手 · 落地走近石门');
     Effects.ring(this, this.door.x, this.door.y, 0xffe6a3);
     this.tweens.killTweensOf(this.door);
     this.tweens.add({
@@ -1081,16 +1077,6 @@ export default class ForestScene extends Phaser.Scene {
     const openingHeight = (DOOR.openingBottom - DOOR.openingTop) * DOOR.scale;
     const openingCenterX = imageLeft + ((DOOR.openingLeft + DOOR.openingRight) / 2) * DOOR.scale;
     const openingCenterY = imageTop + ((DOOR.openingTop + DOOR.openingBottom) / 2) * DOOR.scale;
-    this.doorHint = this.add
-      .text(openingCenterX, openingCenterY - openingHeight / 2 - 26, '🔒 记忆之房 · 先摘门楣上的金钥匙', {
-        fontFamily: 'sans-serif',
-        fontSize: '13px',
-        color: '#f4e8c8',
-        backgroundColor: '#24352ddd',
-        padding: { x: 8, y: 5 },
-      })
-      .setOrigin(0.5)
-      .setDepth(5);
     const doorZone = this.add.zone(openingCenterX, openingCenterY, openingWidth, openingHeight);
     this.physics.add.existing(doorZone, true);
     this.physics.add.overlap(this.player.view, doorZone, () => {
@@ -1112,7 +1098,6 @@ export default class ForestScene extends Phaser.Scene {
       this.enteredRoom = true;
       this.applyProgressEvent({ type: 'forest-door-entered' });
       this.saveProgress();
-      this.doorHint?.setText('回家的路，打开了…');
       this.setStatus('石门开启，发现记忆之房！');
       this.sfx.door();
       this.player.freeze();

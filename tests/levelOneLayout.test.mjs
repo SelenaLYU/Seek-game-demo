@@ -426,6 +426,12 @@ test('从爬升礁全速走落要稳稳落到冲刺礁（余量 ≥ 10px）', ()
   assert.ok(r.margin >= 10, `落在冲刺礁上的余量只有 ${Math.round(r.margin)}px（要求 ≥10px），宽度/落差退化会导致玩家被掸下去`);
 });
 
+test('第一关只显示实体钥匙：不额外绘制寻钥匙光柱、提示牌或海面矩形覆盖', () => {
+  assert.doesNotMatch(SOURCE, /targetBeacon|keyBeacon|private doorHint\b/, '不应有独立的钥匙导航标记或门上提示牌');
+  assert.doesNotMatch(SOURCE, /SEA_SURFACE|createSeaSurface/, '不应绘制额外的海面蓝色矩形覆盖');
+  assert.match(SOURCE, /\.image\(LAYOUT\.key\.x, LAYOUT\.key\.y, ART\.key\)/, '实体金钥匙仍应正常显示');
+});
+
 test('浪的几何：只保留一朵长距离滚浪，并在岸侧配置实体落脚礁', () => {
   const waves = chain.filter(p => p.role === 'wave');
   assert.equal(waves.length, 1, `应当只有 1 朵浪，实测 ${waves.length}`);
