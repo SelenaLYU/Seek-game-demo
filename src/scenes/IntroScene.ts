@@ -30,7 +30,7 @@ export default class IntroScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     const next = this.add
-      .text(BASE_WIDTH - 32, 26, '继续  ›', {
+      .text(BASE_WIDTH - 32, 26, '跳过动画', {
         fontFamily: 'sans-serif',
         fontSize: '14px',
         color: '#bdbdbd',
@@ -40,8 +40,18 @@ export default class IntroScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setInteractive({ useHandCursor: true });
 
-    const proceed = () => this.scene.start('loading');
+    let leaving = false;
+    const proceed = () => {
+      if (leaving) return;
+      leaving = true;
+      this.scene.start('loading');
+    };
     next.on('pointerup', proceed);
     this.input.keyboard?.once('keydown-SPACE', proceed);
+    const autoAdvance = this.time.delayedCall(3000, proceed);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      autoAdvance.remove(false);
+      this.input.keyboard?.off('keydown-SPACE', proceed);
+    });
   }
 }
