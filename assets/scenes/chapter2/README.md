@@ -4,3 +4,4 @@
 
 完整接入说明见 `art/chapter2-qilou-street-assets.md`。
 
+`chapter2-convenience-store-stocked-night-v3-style-corrected-1920x1080.png` 为第二关小卖部最终确认的 1920×1080 夜景背景，已包含非交互商品陈列；交互物件与观察资产保存在 `assets/level2/convenience-store/`。
