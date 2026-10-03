@@ -134,6 +134,8 @@ export class Player {
   private prevFallSpeed = 0;
   private frozen = false;
   private squashing = false;
+  /** 当前压扁还原 tween 的引用：只销毁这一个，不再殃及场景挂在 view 上的其他补间 */
+  private squashTween?: Phaser.Tweens.Tween;
   private stepTimer = 0;
   private skidDustAt = 0;
   private displayedFacing: -1 | 1 = 1;
@@ -608,9 +610,12 @@ export class Player {
 
   private squash(scaleX: number, scaleY: number): void {
     this.squashing = true;
-    this.scene.tweens.killTweensOf(this.view);
     this.view.setScale(this.facing * scaleX, scaleY);
-    this.scene.tweens.add({
+    // 不能用 killTweensOf(this.view)：那会连带杀掉场景挂在角色 view 上的重生淡入/
+    // 淡出补间。落地压扁的时机正好落在传送复活后的淡入窗口内，alpha 会停在补间最后
+    // 写入的值（实测 0.91 / 0.59），表现为「角色永久变透明」，直到下一次死亡才恢复。
+    this.squashTween?.destroy();
+    this.squashTween = this.scene.tweens.add({
       targets: this.view,
       scaleX: this.facing,
       scaleY: 1,
