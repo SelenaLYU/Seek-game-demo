@@ -10,6 +10,10 @@ const assetsRoot = resolve(projectRoot, 'assets');
 // emits imported files, so preserve those literal paths in the published site.
 function runtimeAssetPaths() {
   const paths = new Set();
+  // 必须排除注释行：文档里写 'assets/….png' 这类示例（或省略号）会被当成真路径，
+  // 直接导致 closeBundle 抛 "Invalid Phaser asset path" 而构建失败。
+  const commentOnly = (line) => /^\s*(\/\/|\/\*|\*)/.test(line);
+  const looksLikeFile = (value) => !/[\u2026]/.test(value) && /^[\w./@-]+\.[a-z0-9]+$/i.test(value);
   const visit = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const file = resolve(directory, entry.name);
@@ -17,8 +21,12 @@ function runtimeAssetPaths() {
         visit(file);
       } else if (entry.isFile() && /\.tsx?$/.test(entry.name)) {
         const source = readFileSync(file, 'utf8');
-        for (const match of source.matchAll(/(['"`])(assets\/[^'"`\r\n]+)\1/g)) {
-          paths.add(match[2]);
+        for (const [index, line] of source.split('\n').entries()) {
+          if (commentOnly(line)) continue;
+          for (const match of line.matchAll(/(['"`])(assets\/[^'"`\r\n]+)\1/g)) {
+            if (looksLikeFile(match[2])) paths.add(match[2]);
+            else throw new Error(`Suspicious Phaser asset path at ${file}:${index + 1}: ${match[2]}`);
+          }
         }
       }
     }

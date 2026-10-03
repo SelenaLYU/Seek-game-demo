@@ -31,6 +31,8 @@ import {
 } from '../ui/RoomInteractionCopy';
 import { createGameHud, type GameHudHandle } from '../ui/GameHud';
 import { showRoomDeskPopup, type RoomDeskPopupHandle } from '../ui/RoomDeskPopup';
+import { resolveImageUrl } from '../assets';
+import { loadAudioInBackground } from '../systems/DeferredAudio';
 import roomBackgroundUrl from '../../scene/level1-memory-room-night-empty-v2-1920x1080.png?url';
 import photoFrameUrl from '../../assets/story/seek-childhood-photo-placeholder.svg?url';
 import { RADIO_PREVIEW_MS } from '../story/ChapterOneStory';
@@ -158,6 +160,8 @@ export default class RoomScene extends Phaser.Scene {
   private radioLight?: Phaser.GameObjects.Light;
   private radioSound?: Phaser.Sound.BaseSound;
   private radioPreviewTimer?: Phaser.Time.TimerEvent;
+  /** 电台音频按需加载的请求序号：切频道/关面板时 +1，作废在飞的回调 */
+  private radioRequestId = 0;
 
   private get progress(): ChapterOneRoomProgress {
     return this.progressSession.state;
@@ -168,7 +172,7 @@ export default class RoomScene extends Phaser.Scene {
   }
 
   preload(): void {
-    const images: Array<[string, string]> = [
+    const images: Array<[string, string]> = ([
       ['room-bg', roomBackgroundUrl],
       ['room-radio-art', 'assets/environment/room-vintage-cassette-recorder-perspective-v1.png'],
       ['room-book-art', 'assets/items/room-fairytale-book-perspective-v1.png'],
@@ -183,20 +187,21 @@ export default class RoomScene extends Phaser.Scene {
       ['room-flashlight-off', flashlightOffUrl],
       ['room-flashlight-on', flashlightOnUrl],
       ['room-paint-brush', paintBrushUrl],
-    ];
+    ] as Array<[string, string]>).map(([key, path]) => [key, resolveImageUrl(path)] as [string, string]);
     for (const [key, url] of images) {
       if (!this.textures.exists(key)) {
         this.load.image(key, url);
       }
     }
-    const radioAudio: Array<[string, string]> = [
-      ['radio-static', radioStaticUrl],
-      ['radio-wind', radioWindUrl],
-    ];
-    for (const [key, url] of radioAudio) {
-      if (!this.cache.audio.exists(key)) this.load.audio(key, url);
-    }
+    // 电台音频（radio-static 206KB + radio-wind 453KB）不进 preload：
+    // 玩家不去碰录音机就不该付这份下载。openRadio() 里按需后台加载。
   }
+
+  /** 录音机两个频道的音频源（按需加载用；key 与 playRadioAudio 一致） */
+  private static readonly RADIO_AUDIO: Record<string, string> = {
+    'radio-static': radioStaticUrl,
+    'radio-wind': radioWindUrl,
+  };
 
   create(): void {
     this.stopRadioAudio();
@@ -788,6 +793,11 @@ export default class RoomScene extends Phaser.Scene {
   private openRadio(): void {
     this.interacting = true;
     this.pauseRoomBgm(true);
+    // 打开面板的同帧就把两个频道排进后台队列：玩家拧旋钮时大概率已经下好，
+    // 但不阻塞面板出现（见 systems/DeferredAudio）。
+    for (const [key, url] of Object.entries(RoomScene.RADIO_AUDIO)) {
+      loadAudioInBackground(this, key, url);
+    }
     // 收音机“发声”时从机身泛出一圈暖光（有来源的光）
     this.radioLight = this.lights.addLight(505, 335, 210, 0xffc98a, 0.55);
     this.radioPanel = showRadioPuzzleUI(this, {
@@ -1325,20 +1335,34 @@ export default class RoomScene extends Phaser.Scene {
     });
   }
 
-  /** Switching channels or closing the panel interrupts the previous recording. */
+  /**
+   * Switching channels or closing the panel interrupts the previous recording.
+   *
+   * 音频按需后台加载：还没下完时先记下「当前该播哪个频道」，下完再接上；
+   * 用 requestId 作废上一次请求，避免快速切频道时旧回调把已经过期的音频播出来。
+   */
   private playRadioAudio(key: string): void {
     this.stopRadioAudio();
-    if (!this.cache.audio.exists(key)) return;
-    const sound = this.sound.add(key, { volume: 0.75 });
-    this.radioSound = sound;
-    sound.once(Phaser.Sound.Events.COMPLETE, () => {
-      if (this.radioSound === sound) this.radioSound = undefined;
-      sound.destroy();
-    });
-    sound.play();
+    const requestId = ++this.radioRequestId;
+    const play = (): void => {
+      if (requestId !== this.radioRequestId || !this.radioPanel) return;
+      if (!this.cache.audio.exists(key)) return;
+      const sound = this.sound.add(key, { volume: 0.75 });
+      this.radioSound = sound;
+      sound.once(Phaser.Sound.Events.COMPLETE, () => {
+        if (this.radioSound === sound) this.radioSound = undefined;
+        sound.destroy();
+      });
+      sound.play();
+    };
+    const url = RoomScene.RADIO_AUDIO[key];
+    if (this.cache.audio.exists(key) || !url) play();
+    else loadAudioInBackground(this, key, url, play);
   }
 
   private stopRadioAudio(): void {
+    // 作废在飞的后台加载回调（切频道/关面板都算）
+    this.radioRequestId += 1;
     this.radioPreviewTimer?.remove(false);
     this.radioPreviewTimer = undefined;
     const sound = this.radioSound;

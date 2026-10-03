@@ -13,6 +13,8 @@ import {
   type ChapterOneRoomEvent,
 } from '../gameplay/ChapterOneRoomRules';
 import { createGameHud, screenSpaceOrigin, type GameHudHandle } from '../ui/GameHud';
+import { resolveImageUrl } from '../assets';
+import { loadAudioInBackground } from '../systems/DeferredAudio';
 
 import level1BackgroundUrl from '../../scene/level1-watercolor-game-background-v1-1900x540.png?url';
 import footstepUrl from '../../assets/audio/sfx-footstep.wav?url';
@@ -35,7 +37,7 @@ const LEVEL1_FILES: Array<[string, string]> = [
   [ART.wave, 'assets/level1/level1-jump-wave-crest-v2.png'],
   [ART.key, 'assets/level1/level1-golden-jasmine-key-v1.png'],
   [ART.door, 'assets/level1/level1-memory-room-stone-door-v3.png'],
-];
+].map(([key, path]) => [key, resolveImageUrl(path)] as [string, string]);
 
 /**
  * 礁石素材契约（`assets/level1/level1-stepping-reef-v1.png`，1774×887 RGBA）：
@@ -79,8 +81,11 @@ const WAVE_RIDE = {
   warnSeconds: 0.9,
 };
 
-/** 浪脊亮条：把可站立的浪脊从水彩背景里标示出来 */
-const RIDGE_BAR = { width: 78, height: 4, alpha: 0.75 };
+/**
+ * 浪脊亮条（可选）：队友反馈像“进度条”，默认关闭；如需视觉辅助再打开。
+ * 这里只保留几何常量，alpha=0 时不会渲染可见条。
+ */
+const RIDGE_BAR = { width: 78, height: 4, alpha: 0 };
 
 /** 重生重入锁 ms：同一帧可能被多条死亡路径命中，防重复扣命 */
 const RESPAWN_LOCK_MS = 800;
@@ -184,7 +189,8 @@ type LayoutSpec = {
  *  若在浪后放一块落脚礁，玩家可以一次二段跳直接绕过两朵限时滚浪（"不踩也能过"）；
  *  把右岸左缘放到 2570（缝 694px > 648）才能让"必须踩浪"成立。 */
 const REEFS: readonly ReefPlacement[] = [
-  { standCenter: 410, top: 415, scale: 0.14, label: '初级低礁', role: 'warmup-low' },
+  // 第一块下沉并左移：避免视觉上“叠在后面的礁石上”，起步也更像从海里踏上第一块礁石
+  { standCenter: 420, top: 430, scale: 0.14, label: '初级低礁', role: 'warmup-low' },
   { standCenter: 620, top: 320, scale: 0.165, label: '耸立高礁', role: 'warmup-tall' },
   { standCenter: 830, top: 395, scale: 0.14, label: '低位平礁', role: 'warmup-flat' },
   { standCenter: 1040, top: 250, scale: 0.185, label: '▲ 起跳高台', role: 'gull-launch' },
@@ -275,21 +281,22 @@ export const reefSpriteOrigin = (reef: ReefSpec): { x: number; y: number } => ({
 
 /** 连续两朵浪：踩上即起滚，被托着前移；滚到尽头开始消散，没跳走就落水 */
 const WAVES: readonly WaveSpec[] = [
-  { id: 'W1', ridgeCenter: 2000, top: 360, amplitude: 12, periodMs: 3200, rollSpeed: 42, rollDistance: 75 },
-  { id: 'W2', ridgeCenter: 2240, top: 345, amplitude: 16, periodMs: 2800, rollSpeed: 42, rollDistance: 75 },
+  // 两朵浪整体右移并略下沉：避开浪前礁石，读起来更像在海面滚而不是叠在石头上
+  { id: 'W1', ridgeCenter: 2060, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 42, rollDistance: 75 },
+  { id: 'W2', ridgeCenter: 2320, top: 384, amplitude: 16, periodMs: 2800, rollSpeed: 42, rollDistance: 75 },
 ];
 
 /**
  * 完整高低起伏跑酷关卡路线（世界 2870×540）：
  * 阶段 1：海岸沙滩 (0..280) → 错落礁石阶梯（低 415 → 陡峭高崖 320 → 俯冲平石 395 → 巍峨起跳塔 250！）
  * 阶段 2：自高台跳起抓唯一一只飞鸥（1100~1460）→ 翱翔掠过深洋 → 甩向海心落脚礁（1620）
- * 阶段 3：浪前爬升礁（1750，+60 爬升）→ 浪前冲刺礁（1850）→ 连续两朵浪（W1 2000 / W2 2200）→ 右岸大陆（2570）
+ * 阶段 3：浪前爬升礁（1750，+60 爬升）→ 浪前冲刺礁（1850）→ 连续两朵浪（W1 2060 / W2 2320）→ 右岸大陆（2600）
  * 阶段 4：右岸大陆（2500..2870）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 走回石门（openingCenterX 2680）进入记忆之房！
  */
 export const LAYOUT: LayoutSpec = {
   startBeach: { left: 0, right: 280, top: 440 },
   reefs: REEFS.map(placement => ({ ...placement, stand: reefStand(placement.role) })),
-  gull: { fromX: 1100, toX: 1460, fromY: 215, toY: 235, speed: 95 },
+  gull: { fromX: 1100, toX: 1460, fromY: 195, toY: 215, speed: 95 },
   waves: WAVES,
   key: { x: 2680, y: 196 },
   landing: { left: 2600, right: 2870, top: 440 },
@@ -433,16 +440,18 @@ export default class ForestScene extends Phaser.Scene {
   preload(): void {
     // 年年三套正式序列帧（Run / Jump / Grab）由 Player 统一下发
     Player.preload(this);
+    // 只预载两个**立刻就要用**的短音效（共 ~240KB）。
+    // 背景音乐 3.9MB 挪到 create 之后后台加载（见 systems/DeferredAudio）：
+    // 否则“进第一关”要先把整首曲子下完，而音乐晚 1 秒响完全不影响玩法。
     const audio: Array<[string, string]> = [
       ['sfx-footstep', footstepUrl],
       ['sfx-jump', jumpSfxUrl],
-      ['forest-bgm', forestBgmUrl],
     ];
     for (const [key, url] of audio) {
       if (!this.cache.audio.exists(key)) this.load.audio(key, url);
     }
     if (!this.textures.exists(ART.background)) {
-      this.load.image(ART.background, level1BackgroundUrl);
+      this.load.image(ART.background, resolveImageUrl(level1BackgroundUrl));
     }
     for (const [key, url] of LEVEL1_FILES) {
       if (!this.textures.exists(key)) this.load.image(key, url);
@@ -514,7 +523,13 @@ export default class ForestScene extends Phaser.Scene {
     }
 
     // 角色创建（尺寸放大 1.25×，更清晰显眼）
-    this.player = new Player(this, { x: START_POINT.x, y: START_POINT.y, sfx: this.sfx });
+    this.player = new Player(this, {
+      x: START_POINT.x,
+      y: START_POINT.y,
+      sfx: this.sfx,
+      // 真实海边场景：角色空中不应在背景上投“贴图阴影”
+      showGroundShadow: false,
+    });
     this.physics.add.collider(this.player.view, this.terrain.solids);
 
     this.createWaves();
@@ -539,7 +554,9 @@ export default class ForestScene extends Phaser.Scene {
     camera.startFollow(this.player.view, true, 0.1, 0.1);
     camera.setDeadzone(Math.min(180, this.viewportWidth * 0.22), 100);
 
-    if (!this.sound.isPlaying('forest-bgm')) {
+    // 背景音乐后台加载：场景已经能玩了，曲子 3.9MB 下完再自己响起。
+    loadAudioInBackground(this, 'forest-bgm', forestBgmUrl, () => {
+      if (this.sound.isPlaying('forest-bgm')) return;
       const music = this.sound.add('forest-bgm', { loop: true, volume: 0.3 });
       const unregisterMusic = registerBackgroundMusic(music);
       const startMusic = () => {
@@ -554,7 +571,7 @@ export default class ForestScene extends Phaser.Scene {
       this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanupMusic);
       if (this.sound.locked) this.sound.once(Phaser.Sound.Events.UNLOCKED, startMusic);
       else startMusic();
-    }
+    });
 
     this.createInWorldGuidance();
     this.createTouchControls();
@@ -693,8 +710,6 @@ export default class ForestScene extends Phaser.Scene {
       100,
     );
     this.gameHud.setProgressPercent(prog, `海岸探索 ${Math.round(prog)}%`);
-    this.gameHud.setScore(this.progress.score);
-    this.gameHud.setLives(this.progress.lives);
 
     // 浪滚走了就往左后方复位：否则主路线被永久切断（不能跳过去就卡死）
     this.resetWavesLeftBehind();
@@ -847,7 +862,7 @@ export default class ForestScene extends Phaser.Scene {
     wave.rolled = 0;
     this.sfx.bounce();
     Effects.dust(this, wave.body.x + wave.body.width / 2, wave.body.y, 6, 22);
-    this.setStatus('踩上滚浪！趁它散开之前跳到下一朵浪或浪后礁石上。');
+    this.setStatus('踩上滚浪！趁它散开之前跳到下一朵浪或右岸。');
   }
 
   private updateWaves(): void {
@@ -1397,6 +1412,9 @@ export default class ForestScene extends Phaser.Scene {
   private saveProgress(): void {
     if (this.progressSession.save()) {
       this.progressStorageUnavailable = false;
+      // 统一在保存成功后刷新 HUD，避免每帧重复写 UI 文本/宽度。
+      this.gameHud?.setScore(this.progress.score);
+      this.gameHud?.setLives(this.progress.lives);
     } else {
       this.progressStorageUnavailable = true;
       this.setStatus('进度写入失败，关闭页面后可能丢失。');

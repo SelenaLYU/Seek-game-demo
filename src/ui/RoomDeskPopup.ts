@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { resolveImageUrl } from '../assets';
 import emptyDeskUrl from '../../assets/environment/room-desk-decorated-empty-slots-v1.png?url';
 import propsDeskUrl from '../../assets/environment/room-desk-with-shadow-boat-props-v1.png?url';
 
@@ -88,7 +89,7 @@ export function showRoomDeskPopup(scene: Phaser.Scene, options: RoomDeskPopupOpt
   closeButton.textContent = '×';
   const desk = document.createElement('img');
   desk.className = 'seek-room-desk-popup__desk';
-  desk.src = emptyDeskUrl;
+  desk.src = resolveImageUrl(emptyDeskUrl);
   desk.alt = '书桌上的书本和三个空出的摆放位置';
   const hint = document.createElement('p');
   hint.className = 'seek-room-desk-popup__hint';
@@ -104,7 +105,7 @@ export function showRoomDeskPopup(scene: Phaser.Scene, options: RoomDeskPopupOpt
   let closed = false;
   const showProps = () => {
     propsVisible = true;
-    desk.src = propsDeskUrl;
+    desk.src = resolveImageUrl(propsDeskUrl);
     desk.alt = '书桌上摆着船形笔袋、细尺和三角尺';
     hint.textContent = options.puzzleAvailable
       ? '船形笔袋、细尺和三角尺——点击下方按钮开始组合光影小船。'

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { RADIO_PREVIEW_TEXT } from '../story/ChapterOneStory';
+import { resolveImageUrl } from '../assets';
 import radioUrl from '../../assets/environment/room-vintage-cassette-recorder-v1.png?url';
 
 export interface RadioPuzzleHandle {
@@ -116,7 +117,7 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
   root.innerHTML = `
     <div class="recall-radio__backdrop"></div>
     <div class="recall-radio__object">
-      <img class="recall-radio__image" src="${radioUrl}" alt="卧室里的录音机">
+      <img class="recall-radio__image" src="${resolveImageUrl(radioUrl)}" alt="卧室里的录音机">
       <button class="recall-radio__knob" type="button" aria-label="旋转收音机旋钮，切换频道"><span class="recall-radio__knob-mark"></span></button>
     </div>
     <section class="recall-radio__panel">

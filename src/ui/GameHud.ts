@@ -333,23 +333,31 @@ export function createGameHud(config: GameHudConfig): GameHudHandle {
   }
 
   function setScore(newScore: number): void {
-    score = Math.max(0, newScore);
+    const next = Math.max(0, newScore);
+    if (next === score) return;
+    score = next;
     scoreText.setText(`🏆 积分: ${formatNumber(score)}`);
   }
 
   function setLives(newLives: number): void {
-    lives = Math.max(0, Math.min(3, newLives));
+    const next = Math.max(0, Math.min(3, newLives));
+    if (next === lives) return;
+    lives = next;
     renderLives();
   }
 
   function setProgressPercent(percent: number, text?: string): void {
-    progressPercent = Phaser.Math.Clamp(percent, 0, 100);
+    const nextPercent = Phaser.Math.Clamp(percent, 0, 100);
+    const nextLabel = text ?? `本关进度 ${Math.round(nextPercent)}%`;
+    if (nextPercent === progressPercent && nextLabel === progressLabel) return;
+    progressPercent = nextPercent;
     barFill.setSize((barW * progressPercent) / 100, barH);
-    progressLabel = text ?? `本关进度 ${Math.round(progressPercent)}%`;
+    progressLabel = nextLabel;
     barText.setText(progressLabel);
   }
 
   function setObjective(text: string): void {
+    if (text === objective) return;
     objective = text;
     objectiveText.setText(text);
     // 文案变长后重新收进可用宽度（否则会顶到中栏/右上角音乐开关）

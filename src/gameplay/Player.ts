@@ -36,6 +36,8 @@ export interface PlayerOptions {
   softLandThreshold?: number;
   /** 重落地阈值（触发镜头微震） */
   hardLandThreshold?: number;
+  /** 是否渲染脚下接触阴影（第一关真实场景建议关掉） */
+  showGroundShadow?: boolean;
   sfx?: PlayerSfx;
 }
 
@@ -262,6 +264,7 @@ export class Player {
       maxFallSpeed: 1000,
       softLandThreshold: 220,
       hardLandThreshold: 700,
+      showGroundShadow: true,
       ...options,
     };
 
@@ -269,6 +272,7 @@ export class Player {
 
     // 脚下软阴影：贴着脚底位置（与精灵底部对齐），落地实、空中淡
     this.shadow = scene.add.ellipse(0, this.opts.height / 2, 30, 9, 0x0b170f, 0.28);
+    if (!this.opts.showGroundShadow) this.shadow.setVisible(false);
     // 年年正式序列帧；初始用跳图第 0 帧（干净静立），脚底按它自己的 146 对齐
     this.sprite = scene.add.sprite(
       0,
@@ -793,9 +797,11 @@ export class Player {
     if (onGround) {
       this.lastGroundY = feet;
     }
-    const heightRatio = Phaser.Math.Clamp((feet - this.lastGroundY) / 150, 0, 1);
-    this.shadow.setAlpha(Phaser.Math.Linear(0.3, 0.05, heightRatio));
-    this.shadow.setScale(Phaser.Math.Linear(1, 0.62, heightRatio), 1);
+    if (this.opts.showGroundShadow) {
+      const heightRatio = Phaser.Math.Clamp((feet - this.lastGroundY) / 150, 0, 1);
+      this.shadow.setAlpha(Phaser.Math.Linear(0.3, 0.05, heightRatio));
+      this.shadow.setScale(Phaser.Math.Linear(1, 0.62, heightRatio), 1);
+    }
     const speedRatio =
       this.opts.speed === 0 ? 0 : Math.min(1, Math.abs(this.body.velocity.x) / this.opts.speed);
 
