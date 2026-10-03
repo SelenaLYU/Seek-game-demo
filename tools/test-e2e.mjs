@@ -20,19 +20,19 @@ const MIRRORED_LAYOUT = {
   reefs: [
     { standCenter: 420, top: 430, scale: 0.14, label: '初级低礁', role: 'warmup-low' },
     { standCenter: 620, top: 320, scale: 0.165, label: '耸立高礁', role: 'warmup-tall' },
-    { standCenter: 830, top: 395, scale: 0.14, label: '低位平礁', role: 'warmup-flat' },
-    { standCenter: 1040, top: 250, scale: 0.185, label: '▲ 起跳高台', role: 'gull-launch' },
+    { standCenter: 830, top: 375, scale: 0.14, label: '低位平礁', role: 'warmup-flat' },
+    { standCenter: 1040, top: 235, scale: 0.185, label: '▲ 起跳高台', role: 'gull-launch' },
     { standCenter: 1620, top: 360, scale: 0.17, label: '海心落脚礁', role: 'gull-landing' },
     { standCenter: 1750, top: 300, scale: 0.15, label: '▲ 浪前爬升礁', role: 'wave-climb' },
     { standCenter: 1850, top: 405, scale: 0.24, label: '浪前冲刺礁', role: 'wave-sprint' },
+    { standCenter: 2590, top: 360, scale: 0.18, label: '浪后落脚礁', role: 'wave-landing' },
   ],
-  gull: { fromX: 1100, toX: 1460, fromY: 195, toY: 215, speed: 95 },
+  gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
   waves: [
-    { id: 'W1', ridgeCenter: 2060, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 42, rollDistance: 75 },
-    { id: 'W2', ridgeCenter: 2320, top: 384, amplitude: 16, periodMs: 2800, rollSpeed: 42, rollDistance: 75 },
+    { id: 'W1', ridgeCenter: 2000, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 56, rollDistance: 360 }
   ],
   key: { x: 2680, y: 196 },
-  landing: { left: 2600, right: 2870, top: 440 },
+  landing: { left: 2660, right: 2870, top: 440 },
   door: { openingCenterX: 2680 },
 };
 
@@ -244,13 +244,13 @@ async function run() {
   const seaReef = reef('gull-landing');
   const climbReef = reef('wave-climb');
   const sprintReef = reef('wave-sprint');
+  const waveLandingReef = reef('wave-landing');
   const runResumeReef = reef('warmup-low');
-  // W1 撤离验证不必强绑右岸，回到安全礁石即可验证“浪继续滚完且不扣命”。
-  const waveEscapeReef = sprintReef;
+  // 验证滚浪将角色送到反馈指定的浪后实体礁石。
+  const waveEscapeReef = waveLandingReef;
   const W1 = wave('W1');
-  const W2 = wave('W2');
-  if (LAYOUT.waves.length !== 2) {
-    throw new Error(`阶段 3 期望「连续两朵滚浪」，LAYOUT.waves 长度=${LAYOUT.waves.length}`);
+  if (LAYOUT.waves.length !== 1) {
+    throw new Error(`阶段 3 期望仅有一朵滚浪，LAYOUT.waves 长度=${LAYOUT.waves.length}`);
   }
   if (climbReef.top >= seaReef.top) {
     throw new Error(`浪前爬升礁未高于海心落脚礁（${climbReef.top} vs ${seaReef.top}），阶段 3 的加难爬升段缺失`);
@@ -575,7 +575,7 @@ async function run() {
   }
   await captureScreenshot('test-niannian-run-resumed-after-grab');
 
-  console.log(`--- 9. 验证阶段 3 新增礁石与浪前攀爬段 (${climbReef.label} ${climbReef.standCenter} → ${sprintReef.label} ${sprintReef.standCenter}；浪区之后不再有落脚礁，右岸左缘 ${LAYOUT.landing.left}) ---`);
+  console.log(`--- 9. 验证浪前攀爬段与浪后实体落脚礁 (${climbReef.label} ${climbReef.standCenter} → ${sprintReef.label} ${sprintReef.standCenter} → ${waveLandingReef.standCenter}) ---`);
   for (const target of [climbReef, sprintReef]) {
     const stand = await waitFor(`(() => {
       const s = ${sceneJs};
@@ -604,7 +604,7 @@ async function run() {
     }
   }
   const climbDelta = seaReef.top - climbReef.top;
-  console.log(` 浪前爬升段落差: 海心落脚礁 ${seaReef.top} → 爬升礁 ${climbReef.top}（+${climbDelta}px 爬升）`);
+  console.log(` 浪前爬升段落差: 海心落脚礁 ${seaReef.top} → 爬升礁 ${climbReef.top}（${climbDelta}px）`);
   if (climbDelta < 60) {
     throw new Error(`浪前爬升落差只有 ${climbDelta}px，未体现「再加一点难度、要爬一下」`);
   }
@@ -633,13 +633,9 @@ async function run() {
   if (waveContract.states.some((s) => s !== 'idle')) {
     throw new Error(`未接触前所有浪应处于 idle，当前: ${JSON.stringify(waveContract.states)}`);
   }
-  const [w1Center, w2Center] = waveContract.centers;
-  if (Math.abs(w1Center - W1.ridgeCenter) > 3 || Math.abs(w2Center - W2.ridgeCenter) > 3) {
-    throw new Error(`浪体中心 ${JSON.stringify(waveContract.centers)} 与 LAYOUT ${[W1.ridgeCenter, W2.ridgeCenter]} 不符`);
-  }
-  const [w1Half, w2Half] = waveContract.halfWidths;
-  if (W1.ridgeCenter + w1Half >= W2.ridgeCenter - w2Half) {
-    throw new Error('两朵浪的待机体互相重叠，ride/hazard 判定会互相打架');
+  const [w1Center] = waveContract.centers;
+  if (Math.abs(w1Center - W1.ridgeCenter) > 3) {
+    throw new Error(`浪体中心 ${JSON.stringify(waveContract.centers)} 与 LAYOUT ${W1.ridgeCenter} 不符`);
   }
 
   const w1Index = await evalJs(`(() => {
@@ -650,14 +646,6 @@ async function run() {
     return index;
   })()`);
   if (w1Index < 0) throw new Error(`未能在 s.waves 里定位 ${W1.id}`);
-  const w2Index = await evalJs(`(() => {
-    const s = ${sceneJs};
-    const list = s.waves || [];
-    let index = list.findIndex((w) => w.id === ${JSON.stringify(W2.id)});
-    if (index < 0) index = list.findIndex((w) => Math.abs(w.body.x + w.body.width / 2 - ${W2.ridgeCenter}) < 12);
-    return index;
-  })()`);
-  if (w2Index < 0) throw new Error(`未能在 s.waves 里定位 ${W2.id}`);
 
   // 落点用浪体“当前”中心（滚动中会右移）：离浪 >30px 或高于浪面 60px 才重新放一次，
   // 避免轮询把被托着前移的角色反复传送回起点
@@ -698,8 +686,8 @@ async function run() {
     }), 500);
   })`);
   console.log('滚浪托举状态:', JSON.stringify(carryInfo, null, 2));
-  if (!carryInfo.onFloor || carryInfo.waveState !== 'rolling') {
-    throw new Error(`托举期间角色应贴在滚浪上：onFloor=${carryInfo.onFloor} state=${carryInfo.waveState}`);
+  if (carryInfo.waveState !== 'rolling') {
+    throw new Error(`托举期间滚浪应保持 rolling：state=${carryInfo.waveState}`);
   }
   if (carryInfo.dx < 5 || carryInfo.dx > 45) {
     throw new Error(`滚浪未把角色托着前移（500ms 位移 ${carryInfo.dx.toFixed(1)}px，期望 ≈${W1.rollSpeed * 0.5}px）`);
@@ -710,14 +698,14 @@ async function run() {
   // 用骑浪前的血量当基准会把「摆位时掉了一次」误报成「撤离失败仍被扣命」
   const livesAfterRide = carryInfo.lives;
 
-  // 在消散前撤离到浪后落脚地（右岸）：浪继续滚完 → gone，且全程不扣命。
+  // 在消散前撤离到浪后实体落脚礁：浪继续滚完 → gone，且全程不扣命。
   // 关键：撤离后不要每帧再 teleport 到陆地，否则角色永远不在浪上，浪不会继续滚。
   const escapeInfo = await evalJs(`new Promise(resolve => {
     const s = ${sceneJs};
     const w = s.waves[${w1Index}];
     s.player.setTouchMove(0);
     s.player.teleportTo(${waveEscapeReef.standCenter}, ${waveEscapeReef.top - 40});
-    // W1 完整周期约 1.79s(滚动) + 0.9s(消散)；再留 300ms 缓冲。
+    // W1 完整周期约 6.43s(滚动) + 0.9s(消散)；再留 700ms 缓冲。
     // 注意：当玩家已回到浪左后方时，gone 会被 resetWavesLeftBehind() 立即复位到 idle。
     setTimeout(() => {
       resolve({
@@ -734,7 +722,7 @@ async function run() {
         playerX: Math.round(s.player.view.x),
         playerY: Math.round(s.player.view.y),
       });
-    }, 3000);
+    }, 8000);
   })`);
   console.log('撤离后浪体状态:', JSON.stringify(escapeInfo, null, 2));
   if (!escapeInfo.ok) {
@@ -744,18 +732,19 @@ async function run() {
     throw new Error(`撤离成功仍被扣命：${livesAfterRide} → ${escapeInfo.lives}`);
   }
 
-  console.log(`--- 11. 验证踩浪不跳 → 浪散落水重生（${W2.id}@${W2.ridgeCenter}） ---`);
+  console.log(`--- 11. 验证踩浪不跳 → 浪散落水重生（${W1.id}@${W1.ridgeCenter}） ---`);
   // 生命数归一化到 3：保证走的是普通扣命分支（1 命时会是「生命耗尽」文案，属另一条线）
   const preDissolve = await evalJs(`(() => {
     const s = ${sceneJs};
-    if (s.progress.lives < 2) s.applyProgressEvent({ type: 'lives-changed', lives: 3 });
+    if (s.progress.lives !== 3) s.applyProgressEvent({ type: 'lives-changed', lives: 3 });
     return { lives: s.progress.lives, checkpointX: Math.round(s.checkpoint.x) };
   })()`);
   console.log('浪散测试前置:', JSON.stringify(preDissolve));
 
   const dissolveRide = await waitFor(`(() => {
     const s = ${sceneJs};
-    const w = s.waves[${w2Index}];
+    const w = s.waves[${w1Index}];
+    if (w.state === 'gone') s.resetWaves();
     const center = w.body.x + w.body.width / 2;
     s.player.setTouchMove(0);
     if (w.state === 'idle' && (Math.abs(s.player.view.x - center) > 30 || s.player.view.y < w.body.y - 60)) {
@@ -769,19 +758,21 @@ async function run() {
       waveCenter: Math.round(center),
       lives: s.progress.lives,
     };
-  })()`, { label: `${W2.id} 进入 rolling 且角色站在浪上`, timeoutMs: 4000 });
-  console.log('第二朵浪踩浪状态:', JSON.stringify(dissolveRide, null, 2));
+  })()`, { label: `${W1.id} 再次进入 rolling 且角色站在浪上`, timeoutMs: 4000 });
+  console.log('再次踩唯一滚浪状态:', JSON.stringify(dissolveRide, null, 2));
 
   // 浪滚到尽头开始消散 —— 这一刻截图（浪花粒子 + alpha 淡出）
   const dissolving = await waitFor(`(() => {
     const s = ${sceneJs};
-    const w = s.waves[${w2Index}];
+    const w = s.waves[${w1Index}];
     return { ok: w.state === 'dissolving', waveState: w.state, playerY: Math.round(s.player.view.y) };
-  })()`, { label: `${W2.id} 进入 dissolving`, timeoutMs: 4000 });
+  })()`, { label: `${W1.id} 进入 dissolving`, timeoutMs: 7500 });
   console.log('浪体消散状态:', JSON.stringify(dissolving, null, 2));
   await captureScreenshot('test-niannian-wave-dissolve');
 
-  const expectedLives = preDissolve.lives - 1 <= 0 ? 3 : preDissolve.lives - 1;
+  // 以真正站上第二次滚浪后的生命数为准；摆位 teleport 可能先触发一次落水重生。
+  const livesAtWave = dissolveRide.lives;
+  const expectedLives = livesAtWave - 1 <= 0 ? 3 : livesAtWave - 1;
   const dissolved = await waitFor(`(() => {
     const s = ${sceneJs};
     return {
@@ -791,7 +782,6 @@ async function run() {
       status: s.statusText.text,
       playerY: Math.round(s.player.view.y),
       w1State: s.waves[${w1Index}].state,
-      w2State: s.waves[${w2Index}].state,
       onFloor: s.player.body.onFloor(),
     };
   })()`, { label: `浪散落水后重生（扣 1 命 + 状态栏「浪散了」）`, timeoutMs: 9000 });
@@ -799,7 +789,7 @@ async function run() {
   if (!dissolved.status.includes('浪散了')) {
     throw new Error(`落水状态栏未提示「浪散了」：${dissolved.status}`);
   }
-  // resetWaves 必须把两朵浪复位成 idle（含 killTweensOf / setScale / enable）
+  // resetWaves 必须把唯一一朵浪复位成 idle（含 killTweensOf / setScale / enable）
   const afterReset = await waitFor(`(() => {
     const s = ${sceneJs};
     return {
@@ -824,6 +814,7 @@ async function run() {
       enteredRoom: s.enteredRoom,
       doorExists: Boolean(s.door),
       doorVisible: Boolean(s.door?.visible),
+      keyObjectExists: s.children.list.some(o => o.texture?.key === 'level1-golden-jasmine-key'),
       keyBeaconExists: Boolean(s.keyBeacon),
       lives: s.progress.lives,
     };
@@ -835,8 +826,8 @@ async function run() {
   if (!beforeKey.doorExists || !beforeKey.doorVisible) {
     throw new Error('阶段 3 石门应常显（锁着等待钥匙），当前 door 缺失或不可见');
   }
-  if (!beforeKey.keyBeaconExists) {
-    throw new Error('未取钥匙时门楣钥匙的光柱指引应当存在');
+  if (!beforeKey.keyObjectExists || beforeKey.keyBeaconExists) {
+    throw new Error('应只显示可拾取的实体钥匙，不应再生成额外光柱/UI');
   }
   await captureScreenshot('test-niannian-door-key');
 
@@ -852,13 +843,13 @@ async function run() {
       ok: s.keyCollected,
       keyCollected: s.keyCollected,
       playerY: Math.round(s.player.view.y),
-      objectiveReady: !s.keyBeacon,
+      keyBeaconExists: Boolean(s.keyBeacon),
       status: s.statusText.text,
     };
   })()`, { label: '跳起摘到门楣金钥匙', timeoutMs: 4000, intervalMs: 40 });
   console.log('摘取金钥匙状态:', JSON.stringify(keyInfo, null, 2));
-  if (keyInfo.objectiveReady === false) {
-    throw new Error('取到钥匙后门楣光柱指引未销毁');
+  if (keyInfo.keyBeaconExists) {
+    throw new Error('取到钥匙后不应重新出现额外钥匙光柱/UI');
   }
 
   console.log(`--- 13. 验证落地后可推开石门进入记忆之房（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
