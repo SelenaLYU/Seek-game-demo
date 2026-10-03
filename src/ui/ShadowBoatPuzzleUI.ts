@@ -4,6 +4,7 @@ import {
   shadowPolygon, projectToWall,
   polygonPath, alignment, clipPolygon, type Point, type PieceState, type PieceId,
 } from './shadowBoatGeometry';
+import { resolveImageUrl } from '../assets';
 import pencilCaseUrl from '../../assets/environment/room-shadow-pencil-case.png?url';
 import triangleRulerUrl from '../../assets/environment/room-shadow-triangle-ruler.png?url';
 import thinRulerUrl from '../../assets/environment/room-shadow-pencil.png?url';
@@ -108,7 +109,7 @@ function installStyle(): void {
     /* 光影小船专用书桌（编号 14）：只在谜题界面出现；房间底图本身已有书桌，不能再叠一张。 */
     .seek-shadow-boat__desk {
       position: absolute; left: 0; right: 0; bottom: -125px; height: 440px;
-      background: url("${shadowBoatDeskUrl}") center bottom / 520px auto no-repeat;
+      background: url("${resolveImageUrl(shadowBoatDeskUrl)}") center bottom / 520px auto no-repeat;
       pointer-events: none;
     }
     .seek-shadow-boat__stand {
@@ -333,13 +334,13 @@ export function showShadowBoatPuzzleUI(
         <!-- 墙面实木画框与儿童画作 -->
         <div class="seek-shadow-boat__picture-frame">
           <div class="seek-shadow-boat__wall-drawing" aria-hidden="true">
-            <img class="seek-shadow-boat__wall-drawing-incomplete" src="${wallDrawingUrl}" alt="未完成海面涂鸦">
-            <img class="seek-shadow-boat__wall-drawing-complete" src="${wallDrawingCompleteUrl}" alt="已完成海面涂鸦">
+            <img class="seek-shadow-boat__wall-drawing-incomplete" src="${resolveImageUrl(wallDrawingUrl)}" alt="未完成海面涂鸦">
+            <img class="seek-shadow-boat__wall-drawing-complete" src="${resolveImageUrl(wallDrawingCompleteUrl)}" alt="已完成海面涂鸦">
           </div>
         </div>
 
         <!-- 破浪彩色小船与回忆语句 -->
-        <img class="seek-shadow-boat__wall-boat" src="${wallBoatUrl}" alt="" aria-hidden="true">
+        <img class="seek-shadow-boat__wall-boat" src="${resolveImageUrl(wallBoatUrl)}" alt="" aria-hidden="true">
         <p class="seek-shadow-boat__memory-line">那天是韩梅梅第一次见到大海<br>有一点点怕，但是又很喜欢……</p>
 
         <!-- 光学计算层：体积光束、画框聚光斑、物理投影与虚线目标 -->
@@ -372,15 +373,15 @@ export function showShadowBoatPuzzleUI(
 
         <!-- 空间错落桌面三件套 -->
         <button class="seek-shadow-boat__piece" data-piece="hull" type="button" aria-label="笔袋">
-          <img class="seek-shadow-boat__piece-art" src="${pencilCaseUrl}" alt="">
+          <img class="seek-shadow-boat__piece-art" src="${resolveImageUrl(pencilCaseUrl)}" alt="">
           <span class="seek-shadow-boat__piece-label">笔袋 · 点击旋转</span>
         </button>
         <button class="seek-shadow-boat__piece" data-piece="sail" type="button" aria-label="三角尺">
-          <img class="seek-shadow-boat__piece-art" src="${triangleRulerUrl}" alt="">
+          <img class="seek-shadow-boat__piece-art" src="${resolveImageUrl(triangleRulerUrl)}" alt="">
           <span class="seek-shadow-boat__piece-label">三角尺 · 点击旋转</span>
         </button>
         <button class="seek-shadow-boat__piece" data-piece="mast" type="button" aria-label="细竹尺">
-          <img class="seek-shadow-boat__piece-art" src="${thinRulerUrl}" alt="">
+          <img class="seek-shadow-boat__piece-art" src="${resolveImageUrl(thinRulerUrl)}" alt="">
           <span class="seek-shadow-boat__piece-label">细竹尺 · 点击旋转</span>
         </button>
 
@@ -409,11 +410,11 @@ export function showShadowBoatPuzzleUI(
         <div class="seek-shadow-boat__range"></div>
         <div class="seek-shadow-boat__flashlight-wrap" role="slider" aria-label="移动手电筒调整投影透视" tabindex="0">
           <span class="seek-shadow-boat__flashlight-hint">左右拖动手电筒 · 改变投影视差</span>
-          <img class="seek-shadow-boat__flashlight-art" src="${flashlightOnUrl}" alt="" draggable="false">
+          <img class="seek-shadow-boat__flashlight-art" src="${resolveImageUrl(flashlightOnUrl)}" alt="" draggable="false">
         </div>
       </div>
     </section>
-    <img class="seek-shadow-boat__brush-cursor" src="${paintBrushUrl}" alt="" aria-hidden="true">
+    <img class="seek-shadow-boat__brush-cursor" src="${resolveImageUrl(paintBrushUrl)}" alt="" aria-hidden="true">
   `;
 
   root.addEventListener('dragstart', event => event.preventDefault());

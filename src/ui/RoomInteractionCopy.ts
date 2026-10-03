@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { showRoomText, type RoomTextHandle, type RoomTextOptions } from './RoomTextPanel';
+import { resolveImageUrl } from '../assets';
 import fishBasinUrl from '../../assets/environment/room-hermit-crab-aquarium-v1.png?url';
 
 /** Call only after the photo sliding puzzle reports success. */
@@ -18,7 +19,7 @@ export function showPhotoMemoryText(scene: Phaser.Scene, completedPhotoUrl: stri
 export function showFishBasinText(scene: Phaser.Scene): RoomTextHandle {
   return showRoomText(scene, {
     title: '寄居蟹鱼缸',
-    imageUrl: fishBasinUrl,
+    imageUrl: resolveImageUrl(fishBasinUrl),
     imageAlt: '寄居蟹鱼缸',
     entries: [{ text: '小小的寄居蟹躲在壳里，安静地望着夜色。' }],
   });
