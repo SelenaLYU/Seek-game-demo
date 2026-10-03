@@ -731,6 +731,7 @@ async function run() {
   if (escapeInfo.lives !== livesAfterRide) {
     throw new Error(`撤离成功仍被扣命：${livesAfterRide} → ${escapeInfo.lives}`);
   }
+  await captureScreenshot('test-niannian-wave-landing-reef');
 
   console.log(`--- 11. 验证踩浪不跳 → 浪散落水重生（${W1.id}@${W1.ridgeCenter}） ---`);
   // 生命数归一化到 3：保证走的是普通扣命分支（1 命时会是「生命耗尽」文案，属另一条线）
@@ -816,6 +817,7 @@ async function run() {
       doorVisible: Boolean(s.door?.visible),
       keyObjectExists: s.children.list.some(o => o.texture?.key === 'level1-golden-jasmine-key'),
       keyBeaconExists: Boolean(s.keyBeacon),
+      doorHintExists: Boolean(s.doorHint),
       lives: s.progress.lives,
     };
   })()`, { label: '走到石门前站定' });
@@ -826,8 +828,8 @@ async function run() {
   if (!beforeKey.doorExists || !beforeKey.doorVisible) {
     throw new Error('阶段 3 石门应常显（锁着等待钥匙），当前 door 缺失或不可见');
   }
-  if (!beforeKey.keyObjectExists || beforeKey.keyBeaconExists) {
-    throw new Error('应只显示可拾取的实体钥匙，不应再生成额外光柱/UI');
+  if (!beforeKey.keyObjectExists || beforeKey.keyBeaconExists || beforeKey.doorHintExists) {
+    throw new Error('应只显示可拾取的实体钥匙，不应再生成额外光柱/提示牌/UI');
   }
   await captureScreenshot('test-niannian-door-key');
 
@@ -844,20 +846,44 @@ async function run() {
       keyCollected: s.keyCollected,
       playerY: Math.round(s.player.view.y),
       keyBeaconExists: Boolean(s.keyBeacon),
+      doorHintExists: Boolean(s.doorHint),
       status: s.statusText.text,
     };
   })()`, { label: '跳起摘到门楣金钥匙', timeoutMs: 4000, intervalMs: 40 });
   console.log('摘取金钥匙状态:', JSON.stringify(keyInfo, null, 2));
-  if (keyInfo.keyBeaconExists) {
-    throw new Error('取到钥匙后不应重新出现额外钥匙光柱/UI');
+  if (keyInfo.keyBeaconExists || keyInfo.doorHintExists) {
+    throw new Error('取到钥匙后不应重新出现额外钥匙光柱/提示牌/UI');
   }
 
-  console.log(`--- 13. 验证落地后可推开石门进入记忆之房（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
-  // 摘到钥匙后原地落回石门开口内即可（门在 700ms 解锁 + 必须落地才可进），
-  // 不能推方向键：会走出开口右缘 2760 → 永远不触发
+  console.log(`--- 13. 验证摘钥匙后必须落地、离开门洞再走回石门（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
+  const groundedAtDoor = await waitFor(`(() => {
+    const s = ${sceneJs};
+    const p = s.player;
+    return {
+      ok: s.keyCollected && p.body.onFloor() && !s.enteredRoom && s.levelClockMs >= s.doorOpenAt,
+      enteredRoom: s.enteredRoom,
+      onFloor: p.body.onFloor(),
+      playerX: Math.round(p.view.x),
+      reapproachSatisfied: s.doorReapproachSatisfied,
+      status: s.statusText.text,
+    };
+  })()`, { label: '取钥匙后落地但不能直接自动进门', timeoutMs: 8000 });
+  console.log('落地未自动进门:', JSON.stringify(groundedAtDoor, null, 2));
+
+  await evalJs(`(() => { ${sceneJs}.player.setTouchMove(1); return true; })()`);
+  const leftDoor = await waitFor(`(() => {
+    const s = ${sceneJs};
+    const p = s.player;
+    const outsideRight = ${LAYOUT.door.openingCenterX + 120};
+    const ok = p.body.onFloor() && p.view.x >= outsideRight && !s.enteredRoom && s.doorReapproachSatisfied;
+    if (ok) p.setTouchMove(0);
+    return { ok, playerX: Math.round(p.view.x), onFloor: p.body.onFloor(), reapproachSatisfied: s.doorReapproachSatisfied, enteredRoom: s.enteredRoom };
+  })()`, { label: '走出门洞范围', timeoutMs: 5000 });
+  console.log('离开门洞状态:', JSON.stringify(leftDoor, null, 2));
+
+  await evalJs(`(() => { ${sceneJs}.player.setTouchMove(-1); return true; })()`);
   const doorInfo = await waitFor(`(() => {
     const s = ${sceneJs};
-    s.player.setTouchMove(0);
     return {
       ok: Boolean(s.enteredRoom) && s.player.frozen,
       enteredRoom: s.enteredRoom,
@@ -866,7 +892,7 @@ async function run() {
       status: s.statusText.text,
       lives: s.progress.lives,
     };
-  })()`, { label: '石门解锁并进入记忆之房', timeoutMs: 6000 });
+  })()`, { label: '走回石门进入记忆之房', timeoutMs: 5000 });
   console.log('石门进入状态:', JSON.stringify(doorInfo, null, 2));
   await captureScreenshot('test-niannian-door-cleared');
 
