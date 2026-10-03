@@ -949,18 +949,12 @@ export default class RoomScene extends Phaser.Scene {
       scene: this,
       title: '第一章 · 记忆之房',
       stageKey: 'room',
+      minimal: true,
       initialScore: this.progress.score,
       initialLives: this.progress.lives,
       initialObjective: this.progress.chapterOneCompleted
         ? '触碰贝壳，重温海边回忆'
         : '收集三块童年记忆碎片',
-      onPrev: () => this.scene.start('forest'),
-      prevLabel: '← 上一关: 海边跑酷',
-      onNext: () => {
-        if (hasAllRoomFragments(this.progress)) this.touchMemoryOrb();
-        else this.showHint('先找齐三块记忆碎片，才能触碰贝壳。');
-      },
-      nextLabel: '下一关: 记忆之岛 →',
       onRestart: () => this.scene.restart(),
       onHome: () => this.scene.start('menu'),
     });

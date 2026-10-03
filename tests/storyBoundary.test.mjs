@@ -44,10 +44,12 @@ test('story progress is isolated from predecessor saves', () => {
   assert.match(read('src/island/Progress.ts'), /seek-life-memory-island-v1/);
 });
 
-test('room navigation requires all fragments rather than jumping directly to ending', () => {
+test('room navigation has no HUD bypass and the memory orb requires all fragments', () => {
   const room = read('src/scenes/RoomScene.ts');
   const hud = room.slice(room.indexOf('  private buildHud()'), room.indexOf('  private showHint('));
-  assert.match(hud, /if \(hasAllRoomFragments\(this\.progress\)\) this\.touchMemoryOrb\(\)/);
+  const orb = room.slice(room.indexOf('  private touchMemoryOrb()'), room.indexOf('  // ---------- HUD'));
+  assert.doesNotMatch(hud, /onNext:/);
+  assert.match(orb, /!hasAllRoomFragments\(this\.progress\)/);
 });
 
 test('island is a chapter hub, not an ending label', () => {
