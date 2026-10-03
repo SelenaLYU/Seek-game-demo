@@ -388,6 +388,9 @@ export default class ForestScene extends Phaser.Scene {
   private respawnLockUntil = 0;
   /** 石门解锁时刻（摘到钥匙时写入 levelClockMs + DOOR_UNLOCK_DELAY_MS） */
   private doorOpenAt = 0;
+  /** 拾钥匙后的首次落地必须先走出门洞，再走回去才允许进入。 */
+  private doorReapproachPending = false;
+  private doorReapproachSatisfied = false;
   /** 门锁提示的下次可提示时刻（节流） */
   private doorHintAt = 0;
 
@@ -458,6 +461,8 @@ export default class ForestScene extends Phaser.Scene {
     this.levelClockMs = 0;
     this.respawnLockUntil = 0;
     this.doorOpenAt = 0;
+    this.doorReapproachPending = false;
+    this.doorReapproachSatisfied = this.keyCollected;
     this.doorHintAt = 0;
     this.touchControls = [];
     applyHDCamera(this, 'expand-horizontal');
@@ -640,6 +645,16 @@ export default class ForestScene extends Phaser.Scene {
     const body = this.player.view.body as Phaser.Physics.Arcade.Body;
     const x = this.player.view.x;
     const grounded = body.blocked.down || body.touching.down;
+    if (this.doorReapproachPending && grounded) {
+      const halfOpening = ((DOOR.openingRight - DOOR.openingLeft) * DOOR.scale) / 2;
+      const openingLeft = LAYOUT.door.openingCenterX - halfOpening;
+      const openingRight = LAYOUT.door.openingCenterX + halfOpening;
+      if (body.right < openingLeft || body.left > openingRight) {
+        this.doorReapproachPending = false;
+        this.doorReapproachSatisfied = true;
+        this.setStatus('落地了，走近石门进入记忆之房。');
+      }
+    }
 
     this.gullPrompt.setVisible(false);
     this.crestPrompt.setVisible(false);
@@ -1042,6 +1057,9 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   private markKeyCollected(announce: boolean): void {
+    // 现场摘钥匙后必须落地、离开门洞再走回去；旧存档已有钥匙则直接允许正常进门。
+    this.doorReapproachPending = announce;
+    this.doorReapproachSatisfied = !announce;
     // 不额外显示钥匙方向/状态牌：门楣上只保留可拾取的实体钥匙。
     this.gameHud?.setObjective('带着金钥匙落地，走进右侧石门');
     if (announce) this.setStatus('摘到了门楣上的金钥匙！落地后走近石门就能进去。');
@@ -1092,8 +1110,9 @@ export default class ForestScene extends Phaser.Scene {
       // 刚摘到钥匙还挂在门楣高度、身体与门区重叠：等落地后才算数（不刷状态，保留拾取提示）
       if (this.levelClockMs < this.doorOpenAt) return;
       const pBody = this.player.view.body as Phaser.Physics.Arcade.Body;
-      // 必须落地才推得开：摘到钥匙的那一瞬身体还在门楣高度、与门区重叠，不能让他空中进门
+      // 必须落地；现场刚摘钥匙时还需先走出门洞，再走回来，不能垂直落下就自动进房。
       if (!pBody.blocked.down && !pBody.touching.down) return;
+      if (!this.doorReapproachSatisfied) return;
       if (!canEnterChapterOneRoom(this.progress)) return;
       this.enteredRoom = true;
       this.applyProgressEvent({ type: 'forest-door-entered' });

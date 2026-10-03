@@ -855,12 +855,35 @@ async function run() {
     throw new Error('取到钥匙后不应重新出现额外钥匙光柱/提示牌/UI');
   }
 
-  console.log(`--- 13. 验证落地后可推开石门进入记忆之房（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
-  // 摘到钥匙后原地落回石门开口内即可（门在 700ms 解锁 + 必须落地才可进），
-  // 不能推方向键：会走出开口右缘 2760 → 永远不触发
+  console.log(`--- 13. 验证摘钥匙后必须落地、离开门洞再走回石门（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
+  const groundedAtDoor = await waitFor(`(() => {
+    const s = ${sceneJs};
+    const p = s.player;
+    return {
+      ok: s.keyCollected && p.body.onFloor() && !s.enteredRoom && s.levelClockMs >= s.doorOpenAt,
+      enteredRoom: s.enteredRoom,
+      onFloor: p.body.onFloor(),
+      playerX: Math.round(p.view.x),
+      reapproachSatisfied: s.doorReapproachSatisfied,
+      status: s.statusText.text,
+    };
+  })()`, { label: '取钥匙后落地但不能直接自动进门', timeoutMs: 8000 });
+  console.log('落地未自动进门:', JSON.stringify(groundedAtDoor, null, 2));
+
+  await evalJs(`(() => { ${sceneJs}.player.setTouchMove(1); return true; })()`);
+  const leftDoor = await waitFor(`(() => {
+    const s = ${sceneJs};
+    const p = s.player;
+    const outsideRight = ${LAYOUT.door.openingCenterX + 120};
+    const ok = p.body.onFloor() && p.view.x >= outsideRight && !s.enteredRoom && s.doorReapproachSatisfied;
+    if (ok) p.setTouchMove(0);
+    return { ok, playerX: Math.round(p.view.x), onFloor: p.body.onFloor(), reapproachSatisfied: s.doorReapproachSatisfied, enteredRoom: s.enteredRoom };
+  })()`, { label: '走出门洞范围', timeoutMs: 5000 });
+  console.log('离开门洞状态:', JSON.stringify(leftDoor, null, 2));
+
+  await evalJs(`(() => { ${sceneJs}.player.setTouchMove(-1); return true; })()`);
   const doorInfo = await waitFor(`(() => {
     const s = ${sceneJs};
-    s.player.setTouchMove(0);
     return {
       ok: Boolean(s.enteredRoom) && s.player.frozen,
       enteredRoom: s.enteredRoom,
@@ -869,7 +892,7 @@ async function run() {
       status: s.statusText.text,
       lives: s.progress.lives,
     };
-  })()`, { label: '石门解锁并进入记忆之房', timeoutMs: 6000 });
+  })()`, { label: '走回石门进入记忆之房', timeoutMs: 5000 });
   console.log('石门进入状态:', JSON.stringify(doorInfo, null, 2));
   await captureScreenshot('test-niannian-door-cleared');
 
