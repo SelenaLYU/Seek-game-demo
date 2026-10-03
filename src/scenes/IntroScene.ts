@@ -22,7 +22,7 @@ export default class IntroScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     this.add
-      .text(BASE_WIDTH / 2, BASE_HEIGHT / 2 + 20, '之后把新的动画文件接入这里', {
+      .text(BASE_WIDTH / 2, BASE_HEIGHT / 2 + 20, '正式动画与配音待制作，这里不接入旧 Demo 的画面', {
         fontFamily: 'sans-serif',
         fontSize: '14px',
         color: '#777777',
@@ -41,20 +41,30 @@ export default class IntroScene extends Phaser.Scene {
     back.on('pointerup', () => this.scene.start('menu'));
 
     const next = this.add
-      .text(BASE_WIDTH - 32, 26, '下一步：开始第一关海边 →', {
+      .text(BASE_WIDTH - 32, 26, '跳过动画', {
         fontFamily: 'sans-serif',
         fontSize: '14px',
-        color: '#fff3d2',
-        backgroundColor: '#204336',
-        padding: { x: 14, y: 7 },
+        color: '#bdbdbd',
+        backgroundColor: '#242424',
+        padding: { x: 12, y: 7 },
       })
       .setOrigin(1, 0)
       .setInteractive({ useHandCursor: true });
 
-    const proceed = () => this.scene.start('loading');
+    // 占位动画没有真实时长，3 秒后自动进入第一关；有正式动画后改成播放结束再进。
+    let leaving = false;
+    const proceed = () => {
+      if (leaving) return;
+      leaving = true;
+      this.scene.start('loading');
+    };
     next.on('pointerup', proceed);
     this.input.keyboard?.once('keydown-SPACE', proceed);
-    this.input.keyboard?.once('keydown-ENTER', proceed);
     this.input.keyboard?.once('keydown-ESC', () => this.scene.start('menu'));
+    const autoAdvance = this.time.delayedCall(3000, proceed);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      autoAdvance.remove(false);
+      this.input.keyboard?.off('keydown-SPACE', proceed);
+    });
   }
 }

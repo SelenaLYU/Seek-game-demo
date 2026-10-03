@@ -224,7 +224,7 @@ export class Player {
   private prevFallSpeed = 0;
   private frozen = false;
   private squashing = false;
-  /** 当前压扁还原 tween 的引用：retarget 时只销毁这一个，不波及 view 上的其他 tween */
+  /** 当前压扁还原 tween 的引用：retarget 时只销毁这一个，不波及 view 上的其他 tween（含场景的重生淡入） */
   private squashTween?: Phaser.Tweens.Tween;
   private stepTimer = 0;
   private skidDustAt = 0;
@@ -770,8 +770,9 @@ export class Player {
   /** 把正在跑的压扁 tween 重新指向当前朝向（换向时必须调用，否则朝向会被旧目标写回） */
   private retargetSquashTween(): void {
     // 只销毁上一个压扁还原 tween。不能用 killTweensOf(view)：那会连带杀掉场景挂在
-    // view 上的重生淡入淡出——落地 squash 的时机正好在重生传送落点后 ~200ms，
-    // 实测每次死亡都会把角色永久卡在半透明（alpha≈0.5）。
+    // view 上的重生淡入淡出——落地压扁的时机正好落在传送复活后的淡入窗口内，alpha 会
+    // 停在补间最后写入的值（实测 0.91 / 0.59），表现为角色永久变透明，直到下一次死亡才恢复。
+    // 诊断脚本：tools/probe-player-alpha.mjs；根因记录：decisions/2026-10-03-player-alpha-tween-isolation.md。
     this.squashTween?.destroy();
     this.squashTween = this.scene.tweens.add({
       targets: this.view,
