@@ -13,7 +13,7 @@ const MUSIC_TOGGLE_DOM_ID = 'seek-music-toggle';
  * 逻辑坐标 0 落在屏幕 0，且 1 逻辑单位 = zoom 个缓冲像素（与场景世界单位一致），
  * 因此 HUD 用 logicalWorldViewportWidth() 排布即可横向铺满画布。
  *
- * 森林的 statusText / targetBeacon / 触屏键 / 帮助弹窗同属 sf0 层，需要同一补偿。
+ * 森林的 statusText / 触屏键 / 帮助弹窗同属 sf0 层，需要同一补偿。
  */
 export function screenSpaceOrigin(scene: Phaser.Scene): { x: number; y: number } {
   const cam = scene.cameras.main;
