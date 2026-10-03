@@ -288,7 +288,7 @@ const WAVES: readonly WaveSpec[] = [
 
 /**
  * 完整高低起伏跑酷关卡路线（世界 2870×540）：
- * 阶段 1：海岸沙滩 (0..280) → 错落礁石阶梯（低 415 → 陡峭高崖 320 → 俯冲平石 395 → 巍峨起跳塔 250！）
+ * 阶段 1：从第一块低礁（420）起步 → 错落礁石阶梯（低 430 → 陡峭高崖 320 → 俯冲平石 395 → 巍峨起跳塔 250！）
  * 阶段 2：自高台跳起抓唯一一只飞鸥（1100~1460）→ 翱翔掠过深洋 → 甩向海心落脚礁（1620）
  * 阶段 3：浪前爬升礁（1750，+60 爬升）→ 浪前冲刺礁（1850）→ 连续两朵浪（W1 2060 / W2 2320）→ 右岸大陆（2600）
  * 阶段 4：右岸大陆（2500..2870）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 走回石门（openingCenterX 2680）进入记忆之房！
@@ -303,19 +303,23 @@ export const LAYOUT: LayoutSpec = {
   door: { openingCenterX: 2680 },
 };
 
-/** 关卡起点：出生点与 HUD「回到起点」共用（沙滩地面之上 45px） */
-const START_POINT = { x: 80, y: LAYOUT.startBeach.top - 45 };
+/** 第一块低礁是实际出生平台：韩梅梅从图中这块礁石上开始，而不是左侧沙滩。 */
+const START_REEF = LAYOUT.reefs.find(reef => reef.role === 'warmup-low');
+if (!START_REEF) throw new Error('LAYOUT 缺少起始低礁 warmup-low');
+const START_POINT = { x: START_REEF.standCenter, y: START_REEF.top - 45 };
 
 /** 复活点：standCenter 为触发用的站立中心 x（角色 x + 40 内即命中） */
 type RespawnPoint = { standCenter: number; x: number; y: number };
 
 /**
  * 落水后的安全复活点（由 LAYOUT 派生并按 standCenter 升序）：
- * 沙滩起点 → 每块礁石（顶面上方 40px）→ 右岸大陆；越靠右的落点越近，复活不倒退。
+ * 起始低礁 → 其他礁石（顶面上方 40px）；越靠右的落点越近，复活不倒退。
  */
 const RESPAWN_POINTS: readonly RespawnPoint[] = [
   { standCenter: START_POINT.x, x: START_POINT.x, y: START_POINT.y },
-  ...LAYOUT.reefs.map(r => ({ standCenter: r.standCenter, x: r.standCenter, y: r.top - 40 })),
+  ...LAYOUT.reefs
+    .filter(r => r.role !== START_REEF.role)
+    .map(r => ({ standCenter: r.standCenter, x: r.standCenter, y: r.top - 40 })),
 ].sort((a, b) => a.standCenter - b.standCenter);
 // 注：右岸大陆不再是复活点。它左侧 30px 就是石门区域（门洞 2599.8~2760.2），
 // 在右岸复活会一睁眼就压在门区里（拿到钥匙时=直接进门，没拿到=反复刷"先去摘钥匙"）；
@@ -330,8 +334,8 @@ const WAVE_PROMPT_RANGE = {
   right: Math.max(...LAYOUT.waves.map(w => w.ridgeCenter)) + 120,
 };
 
-/** 起点教学卡片淡出时机：离开沙滩后（沙滩右缘 +80px） */
-const TUTORIAL_FADE_X = LAYOUT.reefs[1].standCenter;
+/** 起点教学卡片淡出时机：从起始低礁向前移动 80px 后 */
+const TUTORIAL_FADE_X = START_POINT.x + 80;
 
 /** 按 role 查礁石：布局增删礁石时路标仍能对上 */
 const reefByRole = (role: ReefRole): ReefSpec => {
@@ -1172,7 +1176,7 @@ export default class ForestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const line2 = this.add
-      .text(0, 13, '起点先长按跳上低礁 · 后续轻按/长按 · 空中二段跳', {
+      .text(0, 13, '从这块礁石出发 · 轻按/长按跳跃 · 空中二段跳', {
         fontFamily: 'sans-serif',
         fontSize: '10px',
         color: '#bed4c5',

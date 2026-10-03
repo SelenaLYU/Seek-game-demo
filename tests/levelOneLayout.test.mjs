@@ -368,7 +368,6 @@ test('addReef 只消费 per-reef 档案派生（禁止再回到全局常量矩�
 // ---------------------------------------------------------------------------
 
 const chain = buildChain(layout);
-const START_X = Number(SOURCE.match(/const START_POINT = \{ x: ([\d.]+)/)?.[1]);
 const targetsAfter = i => chain.slice(i + 1).map(p => ({ top: p.top, left: p.left, right: p.right, label: p.label }));
 const jump = (i, strategy) => simulateJump(
   { center: chain[i].center, top: chain[i].top, scale: chain[i].scale, left: chain[i].left, right: chain[i].right },
@@ -376,22 +375,14 @@ const jump = (i, strategy) => simulateJump(
   strategy,
 );
 
-test('出生点长按起跳能稳落第一块礁石，不靠贴边擦碰', () => {
-  assert.ok(Number.isFinite(START_X), '无法从 ForestScene.ts 读取真实出生点');
-  const spawn = {
-    center: START_X + 18,
-    top: layout.startBeach.top,
-    scale: 0,
-    left: layout.startBeach.left,
-    right: layout.startBeach.right,
-  };
-  const firstReef = chain.find(p => p.role === 'warmup-low');
+test('出生点直接在第一块低礁上，韩梅梅不从沙滩起步', () => {
+  const firstReef = layout.reefs.find(r => r.role === 'warmup-low');
   assert.ok(firstReef, '布局缺少第一块低礁');
-  const result = simulateJump(spawn, firstReef, 'full');
-  assert.ok(result.landed && result.on.label === firstReef.label, `出生点长按跳应落到${firstReef.label}，实测 ${result.clip ?? result.on?.label}`);
-  const bodyOverlap = Math.max(0, Math.min(result.x + 18, firstReef.right) - Math.max(result.x - 18, firstReef.left));
-  assert.ok(bodyOverlap >= 30, `第一跳只重叠 ${bodyOverlap.toFixed(1)}px，着陆太贴边，至少要有 30px 角色脚底支撑`);
-  assert.match(SOURCE, /起点先长按跳上低礁/, '起点教学必须明确提示先长按跳，避免按小跳时过早坠海');
+  assert.match(SOURCE, /const START_REEF = LAYOUT\.reefs\.find\(reef => reef\.role === 'warmup-low'\)/,
+    '出生点必须由第一块低礁真源派生，避免坐标漂移');
+  assert.match(SOURCE, /const START_POINT = \{ x: START_REEF\.standCenter, y: START_REEF\.top - 45 \}/,
+    '出生点应对齐礁石站立中心，并悬在顶面上方供物理落地');
+  assert.match(SOURCE, /从这块礁石出发/, '起点提示要与“出生在礁石上”一致');
 });
 
 test('每一跳都存在"合理输入"能安全落地（不落海）', () => {

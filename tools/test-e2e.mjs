@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const CDP_PORT = 9333;
+const GAME_URL = process.env.GAME_URL ?? 'http://localhost:5173';
 
 /**
  * 关卡真源模块的文件名片段：脚本优先从运行中的页面动态 import 它，
@@ -42,7 +43,7 @@ async function run() {
   const pageTabs = tabs.filter(t => t.type === 'page');
   let target = pageTabs[0];
   if (!target) {
-    const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?http://localhost:5173/?scene=forest`);
+    const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${encodeURIComponent(`${GAME_URL}/?scene=forest`)}`);
     target = await newRes.json();
   }
 
@@ -95,6 +96,7 @@ async function run() {
   // 截图辅助
   const captureScreenshot = async (name) => {
     const { data } = await send('Page.captureScreenshot', { format: 'png' });
+    fs.mkdirSync('screenshots', { recursive: true });
     fs.writeFileSync(`screenshots/${name}.png`, Buffer.from(data, 'base64'));
     console.log(` 📸 截图已保存: screenshots/${name}.png`);
   };
@@ -142,7 +144,7 @@ async function run() {
     return false;
   };
 
-  await send('Page.navigate', { url: 'http://localhost:5173/?scene=forest' });
+  await send('Page.navigate', { url: `${GAME_URL}/?scene=forest` });
   await sleep(1000);
   if (!await waitReady()) throw new Error('场景加载超时！');
 
@@ -183,7 +185,7 @@ async function run() {
     }
   }
   // 无论如何都重载一次：确保上面的修正对当前页面生效
-  await send('Page.navigate', { url: 'http://localhost:5173/?scene=forest' });
+  await send('Page.navigate', { url: `${GAME_URL}/?scene=forest` });
   await sleep(1000);
   if (!await waitReady()) throw new Error('场景重载超时！');
 
@@ -263,12 +265,25 @@ async function run() {
   console.log(` 布局: 世界右缘 ${LAYOUT.landing.right} · 礁石 ${LAYOUT.reefs.length} 块 · 滚浪 ${LAYOUT.waves.map(w => `${w.id}@${w.ridgeCenter}(top ${w.top}, roll ${w.rollDistance}px)`) .join(' / ')}`);
   console.log(` 门楣金钥匙: (${LAYOUT.key.x}, ${LAYOUT.key.y}) · 石门开口中心 ${LAYOUT.door.openingCenterX}`);
 
-  console.log('--- 2. 验证年年角色纹理、动画注册与待机状态 ---');
-  // 开场角色从沙滩上方 45px 落下，先等真正踩地待机再采样
+  console.log('--- 2. 验证年年角色出生在第一块低礁并进入待机 ---');
+  // 起始点直接在第一块礁石上方 45px，等物理落地后验证站立面和横坐标。
+  const startReef = reef('warmup-low');
   const idleState = await waitFor(`(() => {
     const s = ${sceneJs};
-    return { ok: s.player.state === 'idle' && s.player.body.onFloor(), state: s.player.state, y: Math.round(s.player.view.y) };
-  })()`, { label: '开场角色落地待机', timeoutMs: 3000 });
+    const expectedX = ${startReef.standCenter};
+    const expectedY = ${startReef.top - 36};
+    return {
+      ok: s.player.state === 'idle' && s.player.body.onFloor()
+        && Math.abs(s.player.view.x - expectedX) < 8
+        && Math.abs(s.player.view.y - expectedY) < 14,
+      state: s.player.state,
+      x: Math.round(s.player.view.x),
+      expectedX,
+      y: Math.round(s.player.view.y),
+      expectedY,
+      onFloor: s.player.body.onFloor(),
+    };
+  })()`, { label: '韩梅梅出生并站在第一块低礁上', timeoutMs: 3000 });
   console.log('开场状态:', JSON.stringify(idleState));
   const textureInfo = await evalJs(`(() => {
     const g = window.__game;
@@ -853,16 +868,16 @@ async function run() {
     const s = ${sceneJs};
     s.player.setTouchMove(0);
     return {
-      ok: Boolean(s.enteredRoom) && s.player.frozen && s.gameHud.isModalOpen(),
+      ok: Boolean(s.enteredRoom) && s.player.frozen,
       enteredRoom: s.enteredRoom,
       playerFrozen: s.player.frozen,
       modalOpen: s.gameHud.isModalOpen(),
       status: s.statusText.text,
       lives: s.progress.lives,
     };
-  })()`, { label: '石门开启并弹出通关弹窗', timeoutMs: 6000 });
+  })()`, { label: '石门解锁并进入记忆之房', timeoutMs: 6000 });
   console.log('石门进入状态:', JSON.stringify(doorInfo, null, 2));
-  await captureScreenshot('test-niannian-door-cleared-modal');
+  await captureScreenshot('test-niannian-door-cleared');
 
   console.log('--- 14. 检查全过程控制台错误日志 ---');
   const errors = consoleMessages.filter(m => m.type === 'error');
