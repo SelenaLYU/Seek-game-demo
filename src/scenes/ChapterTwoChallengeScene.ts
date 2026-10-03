@@ -105,14 +105,8 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.load.image('night-teacher', 'assets/level2/night-v1/teacher.png');
     this.load.image('night-ticket', 'assets/level2/night-v1/old-banknote.png');
     this.load.image('night-door', 'assets/level2/night-v1/door.png');
-    // 与第一关共用同一个主角图集；当前 Player 没有静态 preload 方法，
-    // 因此在场景中按既有常量加载，避免重复注册纹理。
-    if (!this.textures.exists(Player.SHEET)) {
-      this.load.spritesheet(Player.SHEET, Player.SHEET_URL, {
-        frameWidth: Player.FRAME_W,
-        frameHeight: Player.FRAME_H,
-      });
-    }
+    // 与第一关共用同一个年年角色（三套序列帧由 Player 统一下发）
+    Player.preload(this);
   }
 
   create(): void {

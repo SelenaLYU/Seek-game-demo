@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { ALBUM_CHAPTERS, ALBUM_SIZE, albumEntries, albumPhotoCount } from '../src/story/Album.ts';
+
+const root = resolve(import.meta.dirname, '..');
+const read = path => readFileSync(resolve(root, path), 'utf8');
+const story = read('GAME_STORY_AND_LEVEL_DESIGN.md');
+
+test('album registers six chapters in order with a memory object each', () => {
+  assert.equal(ALBUM_SIZE, 6);
+  assert.deepEqual(ALBUM_CHAPTERS.map(entry => entry.chapter), [1, 2, 3, 4, 5, 6]);
+  for (const entry of ALBUM_CHAPTERS) {
+    assert.ok(entry.label.length > 0, `chapter ${entry.chapter} has no label`);
+    assert.ok(entry.memory.length > 0, `chapter ${entry.chapter} has no memory object`);
+    assert.match(story, new RegExp(entry.memory), `story document never mentions ${entry.memory}`);
+  }
+});
+
+test('album unlocks exactly the completed chapters and stays locked otherwise', () => {
+  assert.deepEqual(albumEntries([]).map(entry => entry.unlocked), [false, false, false, false, false, false]);
+  assert.equal(albumPhotoCount([]), 0);
+  const two = albumEntries([1, 2]);
+  assert.deepEqual(two.slice(0, 3).map(entry => entry.unlocked), [true, true, false]);
+  assert.equal(albumPhotoCount([1, 2]), 2);
+  assert.equal(albumPhotoCount([1, 2, 2, 9]), 2, 'duplicates and unknown chapters must not inflate the count');
+  assert.equal(albumEntries([3]).find(entry => entry.chapter === 1)?.unlocked, false);
+});
+
+test('album view is reachable from the island with the current chapter state', () => {
+  const island = read('src/island/MemoryIsland.ts');
+  assert.match(island, /data-album/);
+  assert.match(island, /showAlbumUI\(\{ completed: completedChapters\(\)/);
+  // 相册不自建进度存档：完成状态只有 island/Progress.ts 一处真源。
+  assert.doesNotMatch(read('src/story/Album.ts'), /localStorage|ProgressPersistence/);
+});

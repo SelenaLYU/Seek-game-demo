@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { chapterState, completedChapters } from './Progress';
+import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
 
 type Options = { justCompleted?: number; completionSaved?: boolean; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
@@ -40,7 +41,7 @@ export function mountMemoryIsland(options: Options): () => void {
   </style><div class="hud"><header><div><div class="eyebrow">SEEK / MEMORY ISLAND</div><h1>记忆之岛</h1><p class="subtitle">六段人生，慢慢找回。<br><span data-progress></span></p></div><button data-home>返回首页</button></header>
   <aside class="chapter-picker panel" data-chapter-picker><strong>记忆入口</strong><div class="chapter-list" data-chapter-list></div></aside>
   <div class="toast" role="status" hidden></div><div class="nearby panel" hidden><p></p><button class="primary" data-interact></button></div>
-  <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
+  <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button data-album>相册</button><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
   document.body.append(root);
   const get = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const switchButton = get<HTMLButtonElement>('[data-switch]');
@@ -251,21 +252,33 @@ export function mountMemoryIsland(options: Options): () => void {
   const desired = new THREE.Vector3();
   const direction = new THREE.Vector3();
   function notify(message: string) { toast.textContent = message; toast.hidden = false; toastUntil = elapsed + 4; }
-  for (const chapter of [1, 2]) {
+  for (const chapter of [1, 2, 3]) {
     const state = chapterState(chapter);
     const button = document.createElement('button');
     button.className = 'chapter-entry';
     button.disabled = state === 'locked';
-    const title = chapter === 1 ? '童年冒险' : '学生时代 · 骑楼街逃课';
+    const title = chapter === 1 ? '童年冒险' : chapter === 2 ? '学生时代 · 骑楼街逃课' : '第三关 · 待闯关';
     const stateCopy = state === 'locked'
       ? '完成上一段记忆后解锁'
       : state === 'completed'
         ? '记忆已点亮 · 可以再次进入'
         : chapter === 2
           ? '第二关已解锁 · 点击进入'
-          : '第一关已解锁 · 点击进入';
+          : chapter === 3
+            ? '第三关已解锁 · 等待闯关'
+            : '第一关已解锁 · 点击进入';
     button.innerHTML = `<span>${String(chapter).padStart(2, '0')}</span><span><b>${title}</b><small>${stateCopy}</small></span>`;
-    button.addEventListener('click', () => options.onChapter(chapter), { signal });
+    button.addEventListener('click', () => {
+      if (chapter !== 3) { options.onChapter(chapter); return; }
+      notify('第三关：未完待续');
+      window.setTimeout(() => {
+        if (signal.aborted) return;
+        nearbyPanel.hidden = false;
+        nearbyPanel.querySelector('p')!.textContent = '是否查看后续关卡预告？';
+        interactButton.textContent = '查看后续关卡预告';
+        interactButton.onclick = () => options.onChapter(3);
+      }, 650);
+    }, { signal });
     chapterList.append(button);
   }
   function setMode(next: typeof mode) {
@@ -291,6 +304,11 @@ export function mountMemoryIsland(options: Options): () => void {
     if (nearby.id <= 2) options.onChapter(nearby.id);
     else notify(`第 ${nearby.id} 关入口已预留，冒险与房间内容尚未制作。`);
   }
+  let album: AlbumHandle | undefined;
+  get('[data-album]').addEventListener('click', () => {
+    if (album) return;
+    album = showAlbumUI({ completed: completedChapters(), onClose: () => { album = undefined; } });
+  }, { signal });
   get('[data-home]').addEventListener('click', options.onHome, { signal });
   switchButton.addEventListener('click', () => setMode(mode === 'overview' ? 'explore' : 'overview'), { signal });
   interactButton.addEventListener('click', interact, { signal });

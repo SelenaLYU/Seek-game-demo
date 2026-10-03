@@ -20,6 +20,9 @@ export type ChapterOneRoomEvent =
   | { type: 'shadow-boat-solved' }
   | { type: 'clock-solved' }
   | { type: 'chapter-one-completed' }
+  | { type: 'score-added'; delta: number }
+  | { type: 'lives-changed'; lives: number }
+  | { type: 'stage-changed'; stage: 'forest' | 'room' | 'island' }
   | { type: 'fragment-collected'; fragment: typeof REQUIRED_ROOM_FRAGMENTS[number] };
 
 function addFragment(
@@ -36,9 +39,11 @@ export function reduceChapterOneRoomProgress(
 ): ChapterOneRoomProgress {
   switch (event.type) {
     case 'forest-key-collected':
-      return { ...progress, forestKeyCollected: true };
+      return { ...progress, forestKeyCollected: true, score: progress.score + 500 };
     case 'forest-door-entered':
-      return canEnterChapterOneRoom(progress) ? { ...progress, forestDoorEntered: true } : progress;
+      return canEnterChapterOneRoom(progress)
+        ? { ...progress, forestDoorEntered: true, currentStage: 'room', score: progress.score + 1000 }
+        : progress;
     case 'photo-placement-added': {
       if (!Number.isInteger(event.tile) || event.tile < 0 || event.tile > 15) return progress;
       if (event.tile === 15 && !progress.photoMissingPieceCollected) return progress;
@@ -63,6 +68,7 @@ export function reduceChapterOneRoomProgress(
           ...progress,
           photoSolved: true,
           photoBaseArranged: true,
+          score: progress.score + 600,
           fragments: addFragment(progress, 'photo'),
         }
         : progress;
@@ -70,6 +76,7 @@ export function reduceChapterOneRoomProgress(
       return {
         ...progress,
         radioMessageHeard: true,
+        score: progress.score + 300,
         fragments: addFragment(progress, 'radio'),
       };
     case 'battery-collected':
@@ -95,13 +102,22 @@ export function reduceChapterOneRoomProgress(
         ? {
           ...progress,
           shadowBoatSolved: true,
+          score: progress.score + 800,
           fragments: addFragment(progress, 'shadowBoat'),
         }
         : progress;
     case 'clock-solved':
-      return { ...progress, clockSolved: true };
+      return { ...progress, clockSolved: true, score: progress.score + 200 };
     case 'chapter-one-completed':
-      return hasAllRoomFragments(progress) ? { ...progress, chapterOneCompleted: true } : progress;
+      return hasAllRoomFragments(progress)
+        ? { ...progress, chapterOneCompleted: true, currentStage: 'island', score: progress.score + 2000 }
+        : progress;
+    case 'score-added':
+      return { ...progress, score: Math.max(0, progress.score + event.delta) };
+    case 'lives-changed':
+      return { ...progress, lives: Math.max(0, Math.min(3, event.lives)) };
+    case 'stage-changed':
+      return { ...progress, currentStage: event.stage };
     case 'fragment-collected':
       return canAwardRoomFragment(progress, event.fragment)
         ? { ...progress, fragments: addFragment(progress, event.fragment) }

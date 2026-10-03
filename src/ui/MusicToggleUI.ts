@@ -11,6 +11,7 @@ export function createMusicToggleUI(game: Phaser.Game): void {
     style.id = STYLE_ID;
     style.textContent = `
       #${ROOT_ID} {
+        /* 与 Phaser 的暂停/指南按钮并排：HUD 会按这个 DOM 按钮的实际宽度自动向左让位。 */
         position: fixed; top: 14px; right: 14px; z-index: 2000;
         min-width: 92px; padding: 8px 12px;
         border: 1px solid rgba(239,220,174,.42); border-radius: 8px;

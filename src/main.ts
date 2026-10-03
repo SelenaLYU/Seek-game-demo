@@ -9,8 +9,12 @@ import IslandScene from './scenes/IslandScene';
 import ChapterTwoChallengeScene from './scenes/ChapterTwoChallengeScene';
 import ChapterTwoRoomScene from './scenes/ChapterTwoRoomScene';
 import ChapterTwoMemoryScene from './scenes/ChapterTwoMemoryScene';
-import { preloadMenuRoomMusic, playMenuRoomMusic } from './MenuRoomMusic';
+import ChapterThreePreviewScene from './scenes/ChapterThreePreviewScene';
+import { playMenuRoomMusic } from './MenuRoomMusic';
 import { createMusicToggleUI } from './ui/MusicToggleUI';
+import { resolveImageUrl } from './assets';
+import level1BackgroundUrl from '../scene/level1-watercolor-game-background-v1-1900x540.png?url';
+import roomBackgroundUrl from '../scene/level1-memory-room-night-empty-v2-1920x1080.png?url';
 import {
   initialBufferSize,
 } from './systems/Resolution';
@@ -25,7 +29,14 @@ class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadMenuRoomMusic(this);
+    // 这里只预热第一关两张大背景（各 ~190KB 的 webp）：菜单打开前就绪，避免进关卡时才解码。
+    // 背景音乐（5.3MB + 3.9MB）不在关键路径上，由 MenuRoomMusic / ForestScene 后台加载。
+    if (!this.textures.exists('level1-background')) {
+      this.load.image('level1-background', resolveImageUrl(level1BackgroundUrl));
+    }
+    if (!this.textures.exists('room-bg')) {
+      this.load.image('room-bg', resolveImageUrl(roomBackgroundUrl));
+    }
   }
 
   create(): void {
@@ -34,7 +45,7 @@ class BootScene extends Phaser.Scene {
     room.events.on(Phaser.Scenes.Events.CREATE, playMenuRoomMusic);
     // 调试入口：?scene=room / ?scene=forest 直接进对应场景，跳过首页/开场/加载占位链
     const targetScene = new URLSearchParams(window.location.search).get('scene');
-    const debugScenes = new Set(['room', 'forest', 'island', 'chapter2', 'chapter2-room', 'chapter2-memory']);
+    const debugScenes = new Set(['room', 'forest', 'island', 'chapter2', 'chapter2-room', 'chapter2-memory', 'chapter3-preview']);
     this.scene.start(targetScene && debugScenes.has(targetScene) ? targetScene : 'menu');
   }
 }
@@ -57,12 +68,15 @@ const game = new Phaser.Game({
   scene: [
     BootScene, MenuScene, IntroScene, LoadingScene, ForestScene, RoomScene,
     IslandScene, ChapterTwoChallengeScene, ChapterTwoRoomScene,
-    ChapterTwoMemoryScene, EndingScene,
+    ChapterTwoMemoryScene, ChapterThreePreviewScene, EndingScene,
   ],
 });
 
 createMusicToggleUI(game);
 
-if (import.meta.env.DEV) {
-  (window as unknown as Record<string, unknown>).__game = game;
-}
+/**
+ * 挂到 window 上：验收工具（tools/test-e2e.mjs、tools/probe-load-perf.mjs）与线上问题排查
+ * 都需要在**生产构建**里驱动场景，而生产默认不暴露。Phaser 实例本身不含敏感信息，
+ * 换来的是“能对线上包跑同一套探针”，所以这里不再限制 DEV。
+ */
+(window as unknown as Record<string, unknown>).__game = game;

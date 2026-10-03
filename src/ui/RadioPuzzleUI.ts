@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
-import radioUrl from '../../assets/environment/interactive-vintage-radio-384x256.png?url';
+import { RADIO_PREVIEW_TEXT } from '../story/ChapterOneStory';
+import { resolveImageUrl } from '../assets';
+import radioUrl from '../../assets/environment/room-vintage-cassette-recorder-v1.png?url';
 
 export interface RadioPuzzleHandle {
   element: HTMLDivElement;
@@ -19,11 +21,11 @@ const MESSAGES = [
   '轻轻转动旋钮。',
   '……沙沙的杂音。',
   '……呼呼的风声。',
-  '外公没有离开你，只是现在在一个叫回南城的地方。',
-  '……熟悉的歌声响起。',
+  RADIO_PREVIEW_TEXT,
+  '音乐频道占位，正式音频待确认。',
 ];
 
-const CHANNEL_LABELS = ['', '杂音', '风声', '外公的声音', '歌声'];
+const CHANNEL_LABELS = ['', '杂音', '风声', '录音占位', '音乐占位'];
 
 function installStyle(): void {
   if (document.getElementById(STYLE_ID)) return;
@@ -111,15 +113,15 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
   root.tabIndex = 0;
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
-  root.setAttribute('aria-label', '外公的收音机');
+  root.setAttribute('aria-label', '卧室里的录音机');
   root.innerHTML = `
     <div class="recall-radio__backdrop"></div>
     <div class="recall-radio__object">
-      <img class="recall-radio__image" src="${radioUrl}" alt="外公的旧收音机">
+      <img class="recall-radio__image" src="${resolveImageUrl(radioUrl)}" alt="卧室里的录音机">
       <button class="recall-radio__knob" type="button" aria-label="旋转收音机旋钮，切换频道"><span class="recall-radio__knob-mark"></span></button>
     </div>
     <section class="recall-radio__panel">
-      <h2 class="recall-radio__title">外公的收音机</h2>
+      <h2 class="recall-radio__title">卧室里的录音机</h2>
       <p class="recall-radio__lead">轻轻转动旋钮，听听记忆里留下的声音。</p>
       <div class="recall-radio__station"><span>频道</span><strong class="recall-radio__number">—</strong><span>/ 04</span><span class="recall-radio__station-name"></span></div>
       <div class="recall-radio__ticks" aria-hidden="true"><i class="recall-radio__tick"></i><i class="recall-radio__tick"></i><i class="recall-radio__tick"></i><i class="recall-radio__tick"></i></div>

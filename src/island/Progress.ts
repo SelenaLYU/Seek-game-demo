@@ -1,7 +1,8 @@
 import { readProgress, writeProgress } from '../gameplay/ProgressPersistence';
 import { completeChapterOne, isChapterOneCompleted } from '../gameplay/ChapterOneRoomSession';
 
-const STORAGE_KEY = 'seek-memory-island-v1';
+// New-story namespace: do not inherit predecessor plot completion. Old data is left untouched.
+const STORAGE_KEY = 'seek-life-memory-island-v1';
 const normalizeChapters = (saved: unknown): number[] => Array.isArray(saved)
   ? [...new Set(saved.filter((id): id is number => Number.isInteger(id) && id >= 1 && id <= 6))]
   : [];

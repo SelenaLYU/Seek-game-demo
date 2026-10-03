@@ -124,7 +124,7 @@ export function showClockPuzzleUI(scene: Phaser.Scene, options: ClockPuzzleOptio
   root.setAttribute('aria-label', '调整老挂钟');
   root.innerHTML = `
     <div class="recall-clock__backdrop"></div>
-    <div class="recall-clock__heading"><small>RECALL · MEMORY ROOM</small><h1>老挂钟</h1></div>
+    <div class="recall-clock__heading"><small>SEEK · 记忆之房</small><h1>老挂钟</h1></div>
     <div class="recall-clock__shell"><div class="recall-clock__face"><svg class="recall-clock__dial" viewBox="0 0 320 320" aria-label="可以拖动指针的钟表"></svg></div></div>
     <section class="recall-clock__panel">
       <div class="recall-clock__panel-label">钟面上的时刻</div>

@@ -8,6 +8,13 @@ import {
 import { readProgress, writeProgress } from './ProgressPersistence';
 
 export interface ChapterOneRoomProgress {
+  /**
+   * 第一关布局版本号。
+   * 阶段 3 改了通关路线（门楣金钥匙 + 滚浪限时平台），旧存档里「钥匙已拿到」是在旧
+   * 路线上成立的，直接沿用会让玩家跳过整段门楣摘钥匙/开门流程，所以 normalize 时按
+   * 版本号把这项作废（房间解谜进度/分数不受影响）。
+   */
+  layoutVersion: number;
   forestKeyCollected: boolean;
   forestDoorEntered: boolean;
   radioMessageHeard: boolean;
@@ -26,11 +33,18 @@ export interface ChapterOneRoomProgress {
   clockSolved: boolean;
   chapterOneCompleted: boolean;
   fragments: Array<'photo' | 'radio' | 'shadowBoat'>;
+  score: number;
+  lives: number;
+  currentStage: 'forest' | 'room' | 'island';
 }
 
-const STORAGE_KEY = 'seek-chapter-one-room-v1';
+// New-story namespace: do not inherit predecessor plot completion. Old data is left untouched.
+const STORAGE_KEY = 'seek-life-chapter-one-v1';
 const FRAGMENT_IDS = ['photo', 'radio', 'shadowBoat'] as const;
+/** 与 src/scenes/ForestScene.ts 的第一关布局版本对齐；改关卡路线时 +1 */
+export const CHAPTER_ONE_LAYOUT_VERSION = 2;
 const DEFAULT_PROGRESS: ChapterOneRoomProgress = {
+  layoutVersion: CHAPTER_ONE_LAYOUT_VERSION,
   forestKeyCollected: false,
   forestDoorEntered: false,
   radioMessageHeard: false,
@@ -47,6 +61,9 @@ const DEFAULT_PROGRESS: ChapterOneRoomProgress = {
   clockSolved: false,
   chapterOneCompleted: false,
   fragments: [],
+  score: 0,
+  lives: 3,
+  currentStage: 'forest',
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -109,9 +126,15 @@ export function normalizeChapterOneRoomProgress(value: unknown): ChapterOneRoomP
       ? Object.fromEntries(PIECE_IDS.map(id => [id, { ...SOLUTION[id] }])) as Record<PieceId, PieceState>
       : undefined;
 
+  // 旧布局存档（没有 layoutVersion 或版本更早）→ 门楣金钥匙路线没走过，作废这两项
+  const layoutVersion = Math.floor(boundedNumber(input.layoutVersion, 0, 0, 999));
+  const forestKeyCollected = layoutVersion >= CHAPTER_ONE_LAYOUT_VERSION
+    && input.forestKeyCollected === true;
+
   return {
-    forestKeyCollected: input.forestKeyCollected === true,
-    forestDoorEntered: input.forestDoorEntered === true,
+    layoutVersion: CHAPTER_ONE_LAYOUT_VERSION,
+    forestKeyCollected,
+    forestDoorEntered: forestKeyCollected && input.forestDoorEntered === true,
     radioMessageHeard,
     photoBaseArranged: input.photoBaseArranged === true || photoSolved,
     photoMissingPieceCollected: input.photoMissingPieceCollected === true || photoSolved,
@@ -134,6 +157,11 @@ export function normalizeChapterOneRoomProgress(value: unknown): ChapterOneRoomP
       ...(radioMessageHeard ? ['radio' as const] : []),
       ...(shadowBoatSolved ? ['shadowBoat' as const] : []),
     ],
+    score: boundedNumber(input.score, 0, 0, 999999),
+    lives: boundedNumber(input.lives, 3, 1, 3),
+    currentStage: (['forest', 'room', 'island'].includes(input.currentStage as string)
+      ? input.currentStage
+      : 'forest') as 'forest' | 'room' | 'island',
   };
 }
 
@@ -143,6 +171,22 @@ function defaultProgress(): ChapterOneRoomProgress {
 
 export function loadChapterOneRoomProgress(): ChapterOneRoomProgress {
   return readProgress(STORAGE_KEY, defaultProgress, normalizeChapterOneRoomProgress);
+}
+
+/** 检查是否存在有效存档进度（供主菜单「继续游戏」判断） */
+export function hasSavedProgress(progress: ChapterOneRoomProgress): boolean {
+  return progress.forestKeyCollected
+    || progress.forestDoorEntered
+    || progress.score > 0
+    || progress.fragments.length > 0
+    || progress.currentStage !== 'forest';
+}
+
+/** 清空当前存档并返回默认进度（供主菜单「重置存档」调用） */
+export function clearSavedProgress(): ChapterOneRoomProgress {
+  const fresh = defaultProgress();
+  writeProgress(STORAGE_KEY, fresh);
+  return fresh;
 }
 
 /** Store a sanitized snapshot; false means it is available for this session only. */
