@@ -4,6 +4,8 @@ import { Terrain } from '../gameplay/Terrain';
 import { applyHDCamera } from '../systems/Resolution';
 import { TEACHER, LIGHT_ORIGIN, LIGHT_LENGTH, LIGHT_HALF_ANGLE, DETECTION_MS, initialSearchlight, updateLight, isInBeam, belowStreet } from '../gameplay/chapterTwoRules';
 
+import { NIGHT } from '../gameplay/ChapterTwoNightArt';
+
 type Checkpoint = { x: number; y: number; label: string };
 type Cover = { from: number; to: number; baseY: number; label: string };
 type SwingHazard = { x: number; y: number; length: number; phase: number; label: string };
@@ -43,7 +45,10 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private alertLabel!: Phaser.GameObjects.Text;
   private lightGraphics!: Phaser.GameObjects.Graphics;
   private hudGraphics!: Phaser.GameObjects.Graphics;
-  private swingGraphics!: Phaser.GameObjects.Graphics;
+  private swingImages: Phaser.GameObjects.Image[] = [];
+  private platformArtIndex = 0;
+  private hurdleArtIndex = 0;
+  private artDebug?: Phaser.GameObjects.Graphics;
   private checkpointIndex = 0;
   private detectionMs = 0;
   private alert = 0;
@@ -65,6 +70,43 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   }
 
   preload(): void {
+    this.load.image('night-background', 'assets/level2/night-v1/background-night.png');
+    this.load.image('night-p01', 'assets/level2/night-v1/p01.png');
+    this.load.image('night-p02', 'assets/level2/night-v1/p02.png');
+    this.load.image('night-p03', 'assets/level2/night-v1/p03.png');
+    this.load.image('night-p04', 'assets/level2/night-v1/p04.png');
+    this.load.image('night-p05', 'assets/level2/night-v1/p05.png');
+    this.load.image('night-p06', 'assets/level2/night-v1/p06.png');
+    this.load.image('night-p07', 'assets/level2/night-v1/p07.png');
+    this.load.image('night-p08', 'assets/level2/night-v1/p08.png');
+    this.load.image('night-p09', 'assets/level2/night-v1/p09.png');
+    this.load.image('night-h01', 'assets/level2/night-v1/h01.png');
+    this.load.image('night-h02', 'assets/level2/night-v1/h02.png');
+    this.load.image('night-h03', 'assets/level2/night-v1/h03.png');
+    this.load.image('night-h04', 'assets/level2/night-v1/h04.png');
+    this.load.image('night-h05', 'assets/level2/night-v1/h05.png');
+    this.load.image('night-h06', 'assets/level2/night-v1/h06.png');
+    this.load.image('night-h07', 'assets/level2/night-v1/h07.png');
+    this.load.image('night-h08', 'assets/level2/night-v1/h08.png');
+    this.load.image('night-h09', 'assets/level2/night-v1/h09.png');
+    this.load.image('night-c01', 'assets/level2/night-v1/c01.png');
+    this.load.image('night-c02', 'assets/level2/night-v1/c02.png');
+    this.load.image('night-c03', 'assets/level2/night-v1/c03.png');
+    this.load.image('night-c04', 'assets/level2/night-v1/c04.png');
+    this.load.image('night-c05', 'assets/level2/night-v1/c05.png');
+    this.load.image('night-c06', 'assets/level2/night-v1/c06.png');
+    this.load.image('night-c07', 'assets/level2/night-v1/c07.png');
+    this.load.image('night-c08', 'assets/level2/night-v1/c08.png');
+    this.load.image('night-c09', 'assets/level2/night-v1/c09.png');
+    this.load.image('night-c10', 'assets/level2/night-v1/c10.png');
+    this.load.image('night-s01', 'assets/level2/night-v1/s01.png');
+    this.load.image('night-s02', 'assets/level2/night-v1/s02.png');
+    this.load.image('night-w01', 'assets/level2/night-v1/w01.png');
+    this.load.image('night-teacher', 'assets/level2/night-v1/teacher.png');
+    this.load.image('night-ticket', 'assets/level2/night-v1/old-banknote.png');
+    this.load.image('night-door', 'assets/level2/night-v1/door.png');
+    // 与第一关共用同一个主角图集；当前 Player 没有静态 preload 方法，
+    // 因此在场景中按既有常量加载，避免重复注册纹理。
     if (!this.textures.exists(Player.SHEET)) {
       this.load.spritesheet(Player.SHEET, Player.SHEET_URL, {
         frameWidth: Player.FRAME_W,
@@ -74,6 +116,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.platformArtIndex = 0; this.hurdleArtIndex = 0;
     this.checkpointIndex = 0;
     this.detectionMs = 0;
     this.alert = 0;
@@ -89,7 +132,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     applyHDCamera(this);
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    this.cameras.main.setBackgroundColor('#b8c7c4');
+    this.cameras.main.setBackgroundColor('#23344b');
 
     this.drawQilouStreet();
     this.terrain = new Terrain(this, false);
@@ -129,7 +172,10 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
 
     this.createGoal();
     this.lightGraphics = this.add.graphics().setDepth(14);
-    this.swingGraphics = this.add.graphics().setDepth(19);
+    this.swingImages = NIGHT.swings.map(a => this.add.image(a.x, a.y, `night-${a.id}`)
+      .setOrigin(.5, 0).setDisplaySize(a.width, a.height).setDepth(19));
+    this.add.image(NIGHT.teacher.x, NIGHT.teacher.y, 'night-teacher').setOrigin(.5, 1)
+      .setDisplaySize(NIGHT.teacher.width, NIGHT.teacher.height).setDepth(18);
     this.hudGraphics = this.add.graphics().setDepth(200);
     this.title = this.add.text(145, 24, '第二关 · 骑楼街逃课', {
       fontFamily: 'sans-serif', fontSize: '19px', color: '#253631',
@@ -150,6 +196,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player.view, true, .085, .085);
     this.cameras.main.setDeadzone(180, 115);
     this.cameras.main.fadeIn(350, 20, 29, 28);
+    this.setupArtPreview();
   }
 
   update(time: number, delta: number): void {
@@ -166,87 +213,87 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   }
 
   private drawQilouStreet(): void {
-    const backdrop = this.add.graphics().setDepth(-30);
-    backdrop.fillStyle(0xb8c7c4).fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    backdrop.fillStyle(0xd8d0b7).fillRect(0, 70, WORLD_WIDTH, WORLD_HEIGHT - 90);
-    const colors = [0xc7bda4, 0xbda994, 0xd1bfa0, 0xb6aa9a, 0xc8b28f];
-    for (let index = 0, x = 0; x < WORLD_WIDTH; index += 1, x += 420) {
-      const y = 84 + Math.min(360, index * 42);
-      const height = 390 + index * 20;
-      backdrop.fillStyle(colors[index % colors.length]).fillRect(x, y, 430, height);
-      backdrop.fillStyle(0x586965, .58);
-      for (let wx = x + 48; wx < x + 390; wx += 105) {
-        backdrop.fillRect(wx, y + 62, 48, 72);
-        backdrop.fillRect(wx, y + 190, 52, 88);
-      }
-      backdrop.fillStyle(0x6c6659, .82).fillRect(x, y + height - 24, 430, 24);
-      backdrop.fillStyle(0x8e826e, .88).fillRect(x + 250, y + 76, 22, height + 180);
-    }
-    backdrop.fillStyle(0x59635e, .35).fillRect(0, 995, WORLD_WIDTH, 105);
-    backdrop.lineStyle(3, 0x6d7771, .45);
-    for (let x = -80; x < WORLD_WIDTH; x += 150) backdrop.lineBetween(x, 1100, x + 160, 995);
-
-    this.add.text(92, 112, '学校后墙', { fontFamily: 'sans-serif', fontSize: '15px', color: '#4d5b56' }).setDepth(-5);
-    this.add.text(1370, 515, '↓ 落下后向左走', { fontFamily: 'sans-serif', fontSize: '16px', color: '#4b3e32', backgroundColor: '#efe2c5cc', padding: { x: 8, y: 5 } }).setDepth(10);
-    this.add.text(455, 730, '↓ 到底层后向右走', { fontFamily: 'sans-serif', fontSize: '16px', color: '#4b3e32', backgroundColor: '#efe2c5cc', padding: { x: 8, y: 5 } }).setDepth(10);
-    this.add.text(3260, 865, '骑楼街口', { fontFamily: 'sans-serif', fontSize: '16px', color: '#4d514a' }).setDepth(-5);
+    this.add.image(0, 0, 'night-background').setOrigin(0, 0).setDepth(-30);
+    this.add.text(1370, 515, '↓ 落下后向左走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(10);
+    this.add.text(455, 730, '↓ 到底层后向右走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(10);
   }
 
   private addStreetPlatform(x: number, y: number, width: number, height: number): void {
     this.terrain.addPlatform({ x, y, width, height });
-    const graphics = this.add.graphics().setDepth(4);
-    graphics.fillStyle(0x615d53).fillRect(x, y, width, height);
-    graphics.fillStyle(0xc0aa82).fillRect(x, y, width, 9);
-    graphics.fillStyle(0x7d7669, .75).fillRect(x, y + 9, width, 5);
-    graphics.lineStyle(1, 0x403f3a, .3);
-    for (let tx = x + 28; tx < x + width; tx += 62) graphics.lineBetween(tx, y + 15, tx - 10, y + height);
+    const a = NIGHT.platforms[this.platformArtIndex++];
+    if (a.x !== x || a.y !== y || a.width !== width || a.height !== height) throw new Error(`Platform geometry mismatch: ${a.id}`);
+    this.add.image(x, y, `night-${a.id}`).setOrigin(0, 0).setDepth(4);
   }
 
-  private addHurdle(x: number, baseY: number, height: number, label: string): Phaser.GameObjects.Rectangle {
-    const obstacle = this.add.rectangle(x, baseY - height, 26, height, 0x8e5d42)
-      .setOrigin(.5, 0).setStrokeStyle(3, 0x4d382f).setDepth(12);
+  private addHurdle(x: number, baseY: number, height: number, _label: string): Phaser.GameObjects.Rectangle {
+    const a = NIGHT.hurdles[this.hurdleArtIndex++];
+    if (a.x !== x || a.y !== baseY || a.height !== height) throw new Error(`Hurdle geometry mismatch: ${a.id}`);
+    const obstacle = this.add.rectangle(x, baseY - height, 26, height, 0xffffff, 0).setOrigin(.5, 0);
     this.physics.add.existing(obstacle, true);
-    this.add.text(x, baseY - height - 8, label, {
-      fontFamily: 'sans-serif', fontSize: '10px', color: '#4a3931',
-      backgroundColor: 'rgba(238,226,198,.76)', padding: { x: 4, y: 2 },
-    }).setOrigin(.5, 1).setDepth(13);
+    this.add.image(x, baseY, `night-${a.id}`).setOrigin(.5, 1).setScale(.5).setDepth(12);
     return obstacle;
   }
 
-  private addWall(x: number, y: number, width: number, height: number, label: string): Phaser.GameObjects.Rectangle {
-    const wall = this.add.rectangle(x, y, width, height, 0x4d5b56).setOrigin(.5, 0).setDepth(11);
+  private addWall(x: number, y: number, width: number, height: number, _label: string): Phaser.GameObjects.Rectangle {
+    const wall = this.add.rectangle(x, y, width, height, 0xffffff, 0).setOrigin(.5, 0);
     this.physics.add.existing(wall, true);
-    this.add.text(x - 12, y + height / 2, label, {
-      fontFamily: 'sans-serif', fontSize: '12px', color: '#f2ead4', backgroundColor: '#34413ddd', padding: { x: 6, y: 4 },
-    }).setOrigin(.5).setAngle(-90).setDepth(12);
+    this.add.image(x, y, 'night-w01').setOrigin(.5, 0).setDepth(11);
     return wall;
   }
 
   private drawCovers(): void {
-    const graphics = this.add.graphics().setDepth(16);
-    for (const cover of COVERS) {
-      const width = cover.to - cover.from;
-      graphics.fillStyle(0x263d3a, .3).fillRoundedRect(cover.from, cover.baseY - 166, width, 166, 7);
-      graphics.fillStyle(0x3e5750, .92).fillRect(cover.from + 10, cover.baseY - 160, 24, 160);
-      graphics.fillStyle(0x8a7051, .92).fillRect(cover.from, cover.baseY - 160, width, 12);
-      this.add.text((cover.from + cover.to) / 2, cover.baseY - 174, cover.label, {
-        fontFamily: 'sans-serif', fontSize: '10px', color: '#e8dfc7',
-        backgroundColor: 'rgba(35,55,50,.78)', padding: { x: 5, y: 3 },
-      }).setOrigin(.5).setDepth(17);
+    for (const a of NIGHT.covers) {
+      this.add.image(a.x, a.y, `night-${a.id}`).setOrigin(0, 1).setScale(.5).setDepth(16);
     }
+  }
+
+  /** Local inspection controls, only visible with ?artPreview=1. */
+  private setupArtPreview(): void {
+    if (new URLSearchParams(location.search).get('artPreview') !== '1') return;
+    const panel = document.createElement('div');
+    panel.id = 'chapter2-art-preview';
+    panel.style.cssText = 'position:fixed;z-index:10000;right:12px;bottom:12px;display:flex;gap:6px;align-items:center;padding:8px;background:#162536e8;color:#d9e6e7;font:12px sans-serif;border-radius:8px;';
+    const status = document.createElement('output');status.id='art-preview-status';
+    const jump = (index: number) => {
+      this.checkpointIndex = index;
+      const c=CHECKPOINTS[index];this.player.teleportTo(c.x,c.y);
+      this.previousPlayer.set(c.x,c.y);this.searchlight=initialSearchlight();this.detectionMs=0;this.alert=0;
+      this.restarting=false;this.cameras.main.centerOn(c.x,c.y);this.cameras.main.followOffset.set(0,0);
+    };
+    for (const [label, index] of [['起点',0],['二层',1],['底层',2],['长街',3]] as const) {
+      const btn=document.createElement('button');btn.textContent=label;btn.onclick=()=>jump(index);panel.append(btn);
+    }
+    const end=document.createElement('button');end.textContent='终点';end.onclick=()=>{
+      this.checkpointIndex=3;this.player.teleportTo(3320,900);this.previousPlayer.set(3320,900);
+      this.searchlight=initialSearchlight();this.detectionMs=0;this.alert=0;this.restarting=false;
+      this.cameras.main.centerOn(3320,900);
+    };panel.append(end);
+    this.artDebug=this.add.graphics().setDepth(195).setVisible(false);
+    const debug=this.artDebug;
+    debug.lineStyle(1,0x65f4c2,.95);
+    for (const p of NIGHT.platforms) debug.strokeRect(p.x,p.y,p.width,p.height);
+    for (const h of NIGHT.hurdles) debug.strokeRect(h.body.x,h.body.y,h.body.width,h.body.height);
+    debug.strokeRect(1663,448,38,286);
+    debug.lineStyle(1,0xe0b75d,.8);
+    for(const c of NIGHT.covers) debug.strokeRect(c.zone.from,c.zone.minY,c.zone.to-c.zone.from,c.zone.maxY-c.zone.minY);
+    const btn=document.createElement('button');btn.textContent='显示碰撞框';btn.onclick=()=>{debug.setVisible(!debug.visible);btn.textContent=debug.visible?'隐藏碰撞框':'显示碰撞框';};panel.append(btn);
+    panel.append(status);document.body.append(panel);
+    const update=()=>{const b=this.player.view.body as Phaser.Physics.Arcade.Body;status.textContent=`x${Math.round(this.player.view.x)} y${Math.round(this.player.view.y)} ${b.blocked.down?'落地':'空中'}`;panel.dataset.loaded=String(NIGHT.platforms.length+NIGHT.hurdles.length+NIGHT.covers.length+NIGHT.swings.length+5);panel.dataset.grounded=String(b.blocked.down);};
+    this.events.on('postupdate',update);
+    this.events.once('shutdown',()=>{this.events.off('postupdate',update);panel.remove();});
   }
 
   private createGoal(): void {
     const tokenGlow = this.add.circle(3420, 898, 28, 0xe4bd5e, .25).setDepth(20);
-    const token = this.add.star(3420, 898, 6, 9, 21, 0xe3bd58).setStrokeStyle(2, 0x695332).setDepth(21);
-    const tokenLabel = this.add.text(3420, 860, '旧票根 · 记忆信物', {
+    const token = this.add.image(3420, 898, 'night-ticket').setDisplaySize(NIGHT.ticket.width, NIGHT.ticket.height).setDepth(21);
+    const tokenLabel = this.add.text(3420, 860, '旧钞票 · 记忆信物', {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#3b3222',
       backgroundColor: 'rgba(247,242,220,.9)', padding: { x: 7, y: 4 },
     }).setOrigin(.5).setDepth(22);
     const tokenHit = this.add.rectangle(3420, 898, 58, 68, 0xffffff, 0);
     this.physics.add.existing(tokenHit, true);
 
-    const door = this.add.rectangle(3600, 872, 76, 156, 0x596761).setStrokeStyle(5, 0x34433e).setDepth(12);
+    const door = this.add.image(3600, 872, 'night-door').setDisplaySize(76,156).setDepth(12);
     const doorSign = this.add.text(3600, 836, '第二记忆房', {
       fontFamily: 'sans-serif', fontSize: '13px', color: '#e8e5d6', align: 'center',
     }).setOrigin(.5).setDepth(13);
@@ -258,14 +305,14 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       this.tokenCollected = true;
       this.detectionMs = 0; this.alert = 0;
       token.destroy(); tokenGlow.destroy(); tokenLabel.destroy(); tokenHit.destroy();
-      door.setFillStyle(0x789b88).setStrokeStyle(5, 0xd5c589);
+      door.setTint(0xd5e8d4);
       doorSign.setText('门已开启');
-      this.announce('拿到旧票根了。老师停下了，继续向右进入第二记忆房。', 3600);
+      this.announce('拿到旧钞票了。老师停下了，继续向右进入第二记忆房。', 3600);
       this.tweens.add({ targets: door, alpha: { from: .64, to: 1 }, duration: 420, yoyo: true });
     });
     this.physics.add.overlap(this.player.view, doorHit, () => {
       if (this.restarting) return;
-      if (!this.tokenCollected) { this.warn('门还没有回应。先拿到街口的旧票根。'); return; }
+      if (!this.tokenCollected) { this.warn('门还没有回应。先拿到街口的旧钞票。'); return; }
       if (this.leaving) return;
       this.leaving = true;
       this.cameras.main.fadeOut(450, 21, 34, 31);
@@ -318,9 +365,6 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       end.x - perpendicular.x, end.y - perpendicular.y,
     );
     this.lightGraphics.lineStyle(2, 0xffe9a5, .6).lineBetween(LIGHT_ORIGIN.x, LIGHT_ORIGIN.y, end.x, end.y);
-    this.lightGraphics.fillStyle(0x283633, .96).fillCircle(TEACHER.x, TEACHER.groundY - 60, 12);
-    this.lightGraphics.fillRect(TEACHER.x - 9, TEACHER.groundY - 48, 18, 48);
-    this.lightGraphics.lineStyle(8, 0x384a45).lineBetween(TEACHER.x + 5, TEACHER.groundY - 30, LIGHT_ORIGIN.x, LIGHT_ORIGIN.y);
     const progress = this.detectionMs / DETECTION_MS;
     // 前 0.35 秒就到 60%，余下约 0.6 秒快速拉满。
     this.alert = progress <= .37
@@ -342,17 +386,13 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   }
 
   private updateDynamicHazards(time: number): void {
-    this.swingGraphics.clear();
-    this.swingGraphics.lineStyle(9, 0x765a42, 1);
-    for (const swing of SWINGS) {
+    for (const [index, swing] of SWINGS.entries()) {
       const angle = Math.sin(time * .0021 + swing.phase) * .82;
       const end = {
         x: swing.x + Math.sin(angle) * swing.length,
         y: swing.y + Math.cos(angle) * swing.length,
       };
-      this.swingGraphics.fillStyle(0x384a45, 1).fillCircle(swing.x, swing.y, 8);
-      this.swingGraphics.lineBetween(swing.x, swing.y, end.x, end.y);
-      this.swingGraphics.fillStyle(0xb99c76, 1).fillCircle(end.x, end.y, 10);
+      this.swingImages[index].setRotation(-angle);
       if (!this.restarting && !this.leaving && !this.tokenCollected
         && this.distanceToSegment(this.player.view.x, this.player.view.y, swing.x, swing.y, end.x, end.y) < 25) {
         this.restartFromCheckpoint(`撞到了${swing.label}`);
