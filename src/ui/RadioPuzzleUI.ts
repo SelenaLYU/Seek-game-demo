@@ -11,6 +11,7 @@ export interface RadioPuzzleHandle {
 
 interface RadioPuzzleOptions {
   onChannelChange: (channel: number) => void;
+  onAllChannelsVisited?: () => void;
   onClose: () => void;
 }
 
@@ -87,6 +88,7 @@ function installStyle(): void {
     .recall-radio__station-name { margin-left: auto; color: #fff0cf; font-size: 13px; font-weight: 600; }
     .recall-radio__ticks { display: flex; gap: 9px; align-items: center; margin: 8px 0 17px; }
     .recall-radio__tick { width: 31px; height: 4px; border-radius: 4px; background: rgba(245, 220, 169, .27); transition: background 160ms ease, box-shadow 160ms ease; }
+    .recall-radio__tick--visited { background: rgba(241, 212, 147, .58); }
     .recall-radio__tick--active { background: #f1d493; box-shadow: 0 0 7px rgba(252, 221, 149, .35); }
     .recall-radio__message {
       min-height: 54px; margin: 0 0 15px; font-size: 18px; line-height: 1.5;
@@ -144,6 +146,8 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
   let startChannel = 0;
   let startX = 0;
   let startY = 0;
+  const visitedChannels = new Set<number>();
+  let allChannelsReported = false;
 
   const position = () => {
     const bounds = scene.game.canvas.getBoundingClientRect();
@@ -158,8 +162,17 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
     stationName.textContent = CHANNEL_LABELS[channel];
     message.textContent = MESSAGES[channel];
     marker.style.transform = `rotate(${(channel - 1) * 76 - 112}deg)`;
-    ticks.forEach((tick, index) => tick.classList.toggle('recall-radio__tick--active', index + 1 === channel));
+    visitedChannels.add(channel);
+    ticks.forEach((tick, index) => {
+      tick.classList.toggle('recall-radio__tick--visited', visitedChannels.has(index + 1));
+      tick.classList.toggle('recall-radio__tick--active', index + 1 === channel);
+    });
     options.onChannelChange(channel);
+    if (!allChannelsReported && visitedChannels.size === 4) {
+      allChannelsReported = true;
+      message.textContent = '四个频道都听过了。录音机里弹出了一块照片拼图。';
+      options.onAllChannelsVisited?.();
+    }
   };
   const close = (notify = true) => {
     if (closed) return;

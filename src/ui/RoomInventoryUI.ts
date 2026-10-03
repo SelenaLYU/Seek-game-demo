@@ -20,6 +20,7 @@ export interface RoomInventoryUIHandle {
   removeItem: (id: string) => void;
   hasItem: (id: string) => boolean;
   getSelectedItem: () => RoomInventoryItem | null;
+  clearSelection: () => void;
   setExpanded: (expanded: boolean) => void;
   destroy: () => void;
   element: HTMLDivElement;
@@ -42,7 +43,7 @@ function installStyle(): void {
     }
     .seek-room-inventory * { box-sizing: border-box; }
     .seek-room-inventory__drawer {
-      position: absolute; right: 14px; bottom: 14px; width: 316px; height: 44px;
+      position: absolute; right: 14px; bottom: 14px; width: 230px; height: 34px;
       display: flex; align-items: stretch;
       transform: translateX(0); opacity: 1;
       transition: right 400ms cubic-bezier(.22,.82,.24,1),
@@ -55,11 +56,11 @@ function installStyle(): void {
     }
     .seek-room-inventory.is-collapsed .seek-room-inventory__drawer {
       right: 0;
-      transform: translateX(calc(100% - 36px));
+      transform: translateX(calc(100% - 28px));
     }
     .seek-room-inventory__shelf {
-      width: 280px; height: 44px; padding: 4px 6px;
-      display: flex; align-items: center; gap: 5px;
+      width: 202px; height: 34px; padding: 3px 4px;
+      display: flex; align-items: center; gap: 4px;
       border: 1px solid rgba(239,220,174,.22); border-left: 0;
       border-radius: 0 8px 8px 0;
       background: linear-gradient(180deg, rgba(33,39,34,.64), rgba(16,23,20,.72));
@@ -67,7 +68,7 @@ function installStyle(): void {
       box-shadow: 0 5px 18px rgba(4,10,8,.20), inset 0 1px rgba(255,250,229,.06);
     }
     .seek-room-inventory__slot {
-      position: relative; width: 63px; height: 34px; flex: none;
+      position: relative; width: 45px; height: 26px; flex: none;
       display: flex; align-items: center; justify-content: center;
       border: 1px solid rgba(233,216,176,.18); border-radius: 5px;
       background: rgba(225,218,192,.035);
@@ -84,8 +85,8 @@ function installStyle(): void {
     }
     .seek-room-inventory__item {
       position: absolute; inset: 2px; z-index: 1; border: 0; border-radius: 4px;
-      display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 3px;
-      padding: 2px 3px; color: rgba(247,233,198,.88); cursor: pointer;
+      display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 2px;
+      padding: 1px 2px; color: rgba(247,233,198,.88); cursor: pointer;
       background: linear-gradient(145deg, rgba(108,100,76,.38), rgba(55,61,50,.36));
       box-shadow: 0 2px 6px rgba(0,0,0,.14);
       transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
@@ -103,25 +104,25 @@ function installStyle(): void {
       animation: seek-inventory-drop 620ms cubic-bezier(.19,.9,.26,1.18) both;
     }
     .seek-room-inventory__glyph {
-      width: 22px; height: 26px; display: grid; place-items: center;
+      width: 18px; height: 20px; display: grid; place-items: center;
       border-radius: 3px; border: 1px solid rgba(255,240,203,.22);
-      background: rgba(244,225,179,.075); font: 13px/1 Georgia, serif;
+      background: rgba(244,225,179,.075); font: 11px/1 Georgia, serif;
       text-shadow: 0 1px 3px rgba(0,0,0,.45);
     }
     .seek-room-inventory__item-image {
-      width: 22px; height: 26px; object-fit: contain; pointer-events: none;
+      width: 18px; height: 20px; object-fit: contain; pointer-events: none;
       filter: drop-shadow(0 1px 3px rgba(0,0,0,.42));
     }
     .seek-room-inventory__label {
       overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-      font-size: 8px; line-height: 1.2; letter-spacing: .02em;
+      font-size: 7px; line-height: 1.1; letter-spacing: 0;
     }
     .seek-room-inventory__toggle {
-      width: 36px; height: 44px; flex: none; border: 1px solid rgba(239,220,174,.22);
+      width: 28px; height: 34px; flex: none; border: 1px solid rgba(239,220,174,.22);
       border-radius: 8px 0 0 8px; color: rgba(243,223,173,.82); cursor: pointer;
       background: linear-gradient(180deg, rgba(62,68,55,.72), rgba(24,31,27,.78));
       box-shadow: -4px 5px 15px rgba(4,10,8,.17), inset 0 1px rgba(255,250,229,.06);
-      font: 16px/1 Georgia, serif; transition: color 150ms ease, background 150ms ease;
+      font: 14px/1 Georgia, serif; transition: color 150ms ease, background 150ms ease;
     }
     .seek-room-inventory__toggle:hover,
     .seek-room-inventory__toggle:focus-visible {
@@ -313,6 +314,11 @@ export function createRoomInventoryUI(
     removeItem,
     hasItem: id => items.some(item => item.id === id),
     getSelectedItem: () => items.find(item => item.id === selectedId) ?? null,
+    clearSelection: () => {
+      selectedId = null;
+      render();
+      options.onItemSelected?.(null);
+    },
     setExpanded,
     destroy: () => {
       if (destroyed) return;

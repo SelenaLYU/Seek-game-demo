@@ -15,7 +15,7 @@ function sources(dir) {
 
 test('runtime sources cannot reintroduce predecessor characters or narrative media', () => {
   for (const path of sources(resolve(root, 'src'))) {
-    assert.doesNotMatch(readFileSync(path, 'utf8'), /外公|外婆|鱼鱼|回南城|动物园|radio-grandpa|family-zoo|radio-song|assets\/animation\/ending\.mp4|assets\/audio\/ending-voice\.wav/, path);
+    assert.doesNotMatch(readFileSync(path, 'utf8'), /外公|外婆|鱼鱼|回南城|动物园|radio-grandpa|family-zoo|radio-song|assets\/audio\/ending-voice\.wav/, path);
   }
 });
 
@@ -26,17 +26,27 @@ test('new-story placeholders are explicit and follow the documented childhood me
   assert.match(CHAPTER_ONE_MEMORY_TEXT, /妈妈/);
   assert.match(CHAPTER_ONE_MEMORY_TEXT, /爸爸/);
   assert.match(read('assets/story/seek-childhood-photo-placeholder.svg'), /正式照片待制作/);
-  assert.match(read('src/scenes/EndingScene.ts'), /回忆动画占位/);
+  assert.match(read('src/scenes/EndingScene.ts'), /ending\.mp4\?url/);
+  assert.match(read('src/scenes/EndingScene.ts'), /跳过动画/);
 });
 
 // These are source boundary guards, not substitutes for browser interaction tests.
-test('closing the radio has no completion side effect and cancels the preview', () => {
+test('closing the radio has no completion side effect', () => {
   const room = read('src/scenes/RoomScene.ts');
-  const close = room.slice(room.indexOf('  private closePanel()'), room.indexOf('  private playRadioPreview()'));
+  const close = room.slice(room.indexOf('  private closePanel()'), room.indexOf('  private playRadioAudio('));
   assert.doesNotMatch(close, /type: 'radio-message-heard'/);
   assert.match(close, /this\.stopRadioAudio\(\)/);
-  assert.match(room, /this\.radioPreviewTimer\?\.remove\(false\)/);
-  assert.match(room, /this\.radioPanel\.getChannel\(\) !== 3/);
+});
+
+test('all four radio channels award the photo piece directly to inventory', () => {
+  const radio = read('src/ui/RadioPuzzleUI.ts');
+  const room = read('src/scenes/RoomScene.ts');
+  const completion = room.slice(room.indexOf('  private completeRadioSequence()'), room.indexOf('  // ---------- 挂钟'));
+  assert.match(radio, /visitedChannels\.size === 4/);
+  assert.match(radio, /options\.onAllChannelsVisited\?\.\(\)/);
+  assert.match(completion, /type: 'radio-message-heard'/);
+  assert.match(completion, /type: 'photo-piece-collected'/);
+  assert.match(completion, /addItem\(\{ id: 'photo-piece'/);
 });
 
 test('story progress is isolated from predecessor saves', () => {
@@ -50,6 +60,8 @@ test('room navigation has no HUD bypass and the memory orb requires all fragment
   const orb = room.slice(room.indexOf('  private touchMemoryOrb()'), room.indexOf('  // ---------- HUD'));
   assert.doesNotMatch(hud, /onNext:/);
   assert.match(orb, /!hasAllRoomFragments\(this\.progress\)/);
+  assert.doesNotMatch(orb, /showLevelClearedModal/);
+  assert.match(orb, /this\.scene\.start\('ending', \{ completedChapter: 1 \}\)/);
 });
 
 test('island is a chapter hub, not an ending label', () => {
