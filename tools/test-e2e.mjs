@@ -860,15 +860,35 @@ async function run() {
     const s = ${sceneJs};
     const p = s.player;
     return {
-      ok: s.keyCollected && p.body.onFloor() && !s.enteredRoom && s.levelClockMs >= s.doorOpenAt,
+      ok: s.keyCollected && p.body.onFloor() && !s.enteredRoom && s.levelClockMs >= s.doorOpenAt
+        && s.doorReapproachPending && !s.doorReapproachSatisfied,
       enteredRoom: s.enteredRoom,
       onFloor: p.body.onFloor(),
       playerX: Math.round(p.view.x),
+      reapproachPending: s.doorReapproachPending,
       reapproachSatisfied: s.doorReapproachSatisfied,
       status: s.statusText.text,
     };
   })()`, { label: '取钥匙后落地但不能直接自动进门', timeoutMs: 8000 });
   console.log('落地未自动进门:', JSON.stringify(groundedAtDoor, null, 2));
+  if (!groundedAtDoor.reapproachPending || groundedAtDoor.reapproachSatisfied) {
+    throw new Error('落地后门洞重返条件应仍为 pending，不能被提前满足');
+  }
+  await sleep(100);
+  const stillBlockedAtDoor = await evalJs(`(() => {
+    const s = ${sceneJs};
+    return {
+      ok: s.keyCollected && s.player.body.onFloor() && !s.enteredRoom
+        && s.doorReapproachPending && !s.doorReapproachSatisfied,
+      enteredRoom: s.enteredRoom,
+      onFloor: s.player.body.onFloor(),
+      reapproachPending: s.doorReapproachPending,
+      reapproachSatisfied: s.doorReapproachSatisfied,
+    };
+  })()`);
+  if (!stillBlockedAtDoor.ok) {
+    throw new Error(`静止等待后不应自动进门或清除重返条件：${JSON.stringify(stillBlockedAtDoor)}`);
+  }
 
   await evalJs(`(() => { ${sceneJs}.player.setTouchMove(1); return true; })()`);
   const leftDoor = await waitFor(`(() => {
