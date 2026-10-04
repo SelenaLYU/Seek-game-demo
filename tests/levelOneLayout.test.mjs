@@ -11,7 +11,7 @@
  *      1. 每一跳至少存在一种「合理输入」（轻按/中按/长按/满蓄力）能安全落地（不落海）；
  *      2. 爬升礁（浪前）必须能用轻按跳（hop:5）落上去 —— 防止角净空退化回"撞左壁掉海"；
  *      3. 从爬升礁"全速走落"必须稳稳落在浪前冲刺礁上（余量 ≥ 10px）—— 防止落差/宽度退化回"掸下去"；
- *      4. 浪区不可绕过：冲刺礁之后，除两朵浪以外的安全地面都在二段跳射程之外。
+ *      4. 单浪会把角色向岸边送至落点；冲刺礁不能直接二段跳绕过浪区。
  *   B. 站立面档案 × 贴图（读 PNG 真实像素，纯几何断言）：
  *      5. 每个 role 都登记了可站立面档案，档案段升序、不重叠、落在素材内容框内；
  *      6. 每一段档案的每一列，贴图实测顶面与 srcTop 的偏差 ≤ REEF_STAND_TOLERANCE
@@ -368,30 +368,33 @@ test('addReef 只消费 per-reef 档案派生（禁止再回到全局常量矩�
 // ---------------------------------------------------------------------------
 
 const chain = buildChain(layout);
-const START_X = Number(SOURCE.match(/const START_POINT = \{ x: ([\d.]+)/)?.[1]);
 const targetsAfter = i => chain.slice(i + 1).map(p => ({ top: p.top, left: p.left, right: p.right, label: p.label }));
-const jump = (i, strategy) => simulateJump(
-  { center: chain[i].center, top: chain[i].top, scale: chain[i].scale, left: chain[i].left, right: chain[i].right },
-  targetsAfter(i),
-  strategy,
-);
+const jump = (i, strategy) => {
+  const platform = chain[i];
+  const movingOffset = platform.role === 'wave'
+    ? layout.waves.find(w => w.id === platform.waveId)?.rollDistance ?? 0
+    : 0;
+  return simulateJump(
+    {
+      center: platform.center + movingOffset,
+      top: platform.top,
+      scale: platform.scale,
+      left: platform.left + movingOffset,
+      right: platform.right + movingOffset,
+    },
+    targetsAfter(i),
+    strategy,
+  );
+};
 
-test('出生点长按起跳能稳落第一块礁石，不靠贴边擦碰', () => {
-  assert.ok(Number.isFinite(START_X), '无法从 ForestScene.ts 读取真实出生点');
-  const spawn = {
-    center: START_X + 18,
-    top: layout.startBeach.top,
-    scale: 0,
-    left: layout.startBeach.left,
-    right: layout.startBeach.right,
-  };
-  const firstReef = chain.find(p => p.role === 'warmup-low');
+test('出生点直接在第一块低礁上，韩梅梅不从沙滩起步', () => {
+  const firstReef = layout.reefs.find(r => r.role === 'warmup-low');
   assert.ok(firstReef, '布局缺少第一块低礁');
-  const result = simulateJump(spawn, firstReef, 'full');
-  assert.ok(result.landed && result.on.label === firstReef.label, `出生点长按跳应落到${firstReef.label}，实测 ${result.clip ?? result.on?.label}`);
-  const bodyOverlap = Math.max(0, Math.min(result.x + 18, firstReef.right) - Math.max(result.x - 18, firstReef.left));
-  assert.ok(bodyOverlap >= 30, `第一跳只重叠 ${bodyOverlap.toFixed(1)}px，着陆太贴边，至少要有 30px 角色脚底支撑`);
-  assert.match(SOURCE, /起点先长按跳上低礁/, '起点教学必须明确提示先长按跳，避免按小跳时过早坠海');
+  assert.match(SOURCE, /const START_REEF = LAYOUT\.reefs\.find\(reef => reef\.role === 'warmup-low'\)/,
+    '出生点必须由第一块低礁真源派生，避免坐标漂移');
+  assert.match(SOURCE, /const START_POINT = \{ x: START_REEF\.standCenter, y: START_REEF\.top - 45 \}/,
+    '出生点应对齐礁石站立中心，并悬在顶面上方供物理落地');
+  assert.match(SOURCE, /从这块礁石出发/, '起点提示要与“出生在礁石上”一致');
 });
 
 test('每一跳都存在"合理输入"能安全落地（不落海）', () => {
@@ -423,12 +426,19 @@ test('从爬升礁全速走落要稳稳落到冲刺礁（余量 ≥ 10px）', ()
   assert.ok(r.margin >= 10, `落在冲刺礁上的余量只有 ${Math.round(r.margin)}px（要求 ≥10px），宽度/落差退化会导致玩家被掸下去`);
 });
 
-test('浪的几何：两朵浪位置与 LAYOUT 一致，且待机时互不重叠', () => {
+test('第一关只显示实体钥匙：不额外绘制寻钥匙光柱、提示牌或海面矩形覆盖', () => {
+  assert.doesNotMatch(SOURCE, /targetBeacon|keyBeacon|private doorHint\b/, '不应有独立的钥匙导航标记或门上提示牌');
+  assert.doesNotMatch(SOURCE, /SEA_SURFACE|createSeaSurface/, '不应绘制额外的海面蓝色矩形覆盖');
+  assert.match(SOURCE, /\.image\(LAYOUT\.key\.x, LAYOUT\.key\.y, ART\.key\)/, '实体金钥匙仍应正常显示');
+});
+
+test('浪的几何：只保留一朵长距离滚浪，并在岸侧配置实体落脚礁', () => {
   const waves = chain.filter(p => p.role === 'wave');
-  assert.equal(waves.length, 2, `应当有 2 朵浪，实测 ${waves.length}`);
+  assert.equal(waves.length, 1, `应当只有 1 朵浪，实测 ${waves.length}`);
   assert.equal(Math.round(waves[0].center), layout.waves[0].center);
-  assert.equal(Math.round(waves[1].center), layout.waves[1].center);
-  assert.ok(waves[0].right < waves[1].left, '两朵浪的待机体不能重叠，否则 ride/hazard 判定会互相打架');
+  assert.ok(layout.waves[0].rollDistance >= 240, '单浪前移距离应足以将角色送入岸侧区域');
+  const landingReef = chain.find(p => p.role === 'wave-landing');
+  assert.ok(landingReef, '单浪消散后必须有实体礁石承接角色，不能只依赖背景画面');
 });
 
 /** 二段跳最晚触发的水平行程（比"顶点触发"的口径远得多，才是真正要封的上限） */
@@ -438,7 +448,7 @@ function doubleJumpReach(dy) {
   return best;
 }
 
-test('浪区不可绕过：冲刺礁之后，除两朵浪以外的安全地面都在二段跳射程之外', () => {
+test('浪区不可绕过：冲刺礁不能二段跳直达浪后落脚礁', () => {
   const idx = chain.findIndex(p => p.role === 'wave-sprint');
   assert.ok(idx > 0, '布局里找不到浪前冲刺礁');
   const takeoffX = chain[idx].right - 18;
@@ -453,8 +463,9 @@ test('浪区不可绕过：冲刺礁之后，除两朵浪以外的安全地面�
     }
     assert.ok(
       dist > reach,
-      `${target.label} 离冲刺礁只有 ${Math.round(dist)}px，二段跳（射程 ${Math.round(reach)}px）能直接绕过两朵限时滚浪——浪区失去强制力`,
+      `${target.label} 离冲刺礁只有 ${Math.round(dist)}px，二段跳（射程 ${Math.round(reach)}px）能直接绕过滚浪——浪区失去强制力`,
     );
   }
-  console.log(`  浪区强制力：冲刺礁起跳点 x=${Math.round(takeoffX)} · 右岸左缘 ${chain.at(-1).left} · 距离 ${Math.round(chain.at(-1).left - takeoffX)}px > 二段跳射程 ${Math.round(doubleJumpReach(chain.at(-1).top - chain[idx].top) + 18)}px`);
+  const landing = chain.find(p => p.role === 'wave-landing');
+  console.log(`  浪区强制力：冲刺礁起跳点 x=${Math.round(takeoffX)} · 浪后落脚礁左缘 ${Math.round(landing.left)} · 距离 ${Math.round(landing.left - takeoffX)}px`);
 });

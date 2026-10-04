@@ -1,0 +1,607 @@
+{
+  "version": 1,
+  "baseCommit": "0f3c916",
+  "world": {
+    "width": 3680,
+    "height": 1100
+  },
+  "background": "background-night.png",
+  "platforms": [
+    {
+      "id": "p01",
+      "x": 0,
+      "y": 260,
+      "width": 420,
+      "height": 28,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p01.png"
+    },
+    {
+      "id": "p02",
+      "x": 390,
+      "y": 320,
+      "width": 430,
+      "height": 28,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p02.png"
+    },
+    {
+      "id": "p03",
+      "x": 790,
+      "y": 380,
+      "width": 450,
+      "height": 28,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p03.png"
+    },
+    {
+      "id": "p04",
+      "x": 1210,
+      "y": 440,
+      "width": 350,
+      "height": 28,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p04.png"
+    },
+    {
+      "id": "p05",
+      "x": 420,
+      "y": 610,
+      "width": 1280,
+      "height": 28,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p05.png"
+    },
+    {
+      "id": "p06",
+      "x": 330,
+      "y": 820,
+      "width": 800,
+      "height": 280,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p06.png"
+    },
+    {
+      "id": "p07",
+      "x": 1090,
+      "y": 865,
+      "width": 850,
+      "height": 235,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p07.png"
+    },
+    {
+      "id": "p08",
+      "x": 1900,
+      "y": 910,
+      "width": 850,
+      "height": 190,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p08.png"
+    },
+    {
+      "id": "p09",
+      "x": 2700,
+      "y": 950,
+      "width": 980,
+      "height": 150,
+      "origin": [
+        0,
+        0
+      ],
+      "scale": 1,
+      "file": "p09.png"
+    }
+  ],
+  "hurdles": [
+    {
+      "id": "h01",
+      "source": "road-barricade",
+      "x": 560,
+      "y": 320,
+      "width": 26,
+      "height": 48,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h01.png",
+      "body": {
+        "x": 547,
+        "y": 272,
+        "width": 26,
+        "height": 48
+      }
+    },
+    {
+      "id": "h02",
+      "source": "laundry-rack-static",
+      "x": 1040,
+      "y": 380,
+      "width": 26,
+      "height": 56,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h02.png",
+      "body": {
+        "x": 1027,
+        "y": 324,
+        "width": 26,
+        "height": 56
+      }
+    },
+    {
+      "id": "h03",
+      "source": "construction-rail",
+      "x": 1450,
+      "y": 440,
+      "width": 26,
+      "height": 62,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h03.png",
+      "body": {
+        "x": 1437,
+        "y": 378,
+        "width": 26,
+        "height": 62
+      }
+    },
+    {
+      "id": "h04",
+      "source": "wooden-stool",
+      "x": 1170,
+      "y": 610,
+      "width": 26,
+      "height": 46,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h04.png",
+      "body": {
+        "x": 1157,
+        "y": 564,
+        "width": 26,
+        "height": 46
+      }
+    },
+    {
+      "id": "h05",
+      "source": "cargo-crate",
+      "x": 760,
+      "y": 610,
+      "width": 26,
+      "height": 54,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h05.png",
+      "body": {
+        "x": 747,
+        "y": 556,
+        "width": 26,
+        "height": 54
+      }
+    },
+    {
+      "id": "h06",
+      "source": "bamboo-pole-rack",
+      "x": 820,
+      "y": 820,
+      "width": 26,
+      "height": 58,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h06.png",
+      "body": {
+        "x": 807,
+        "y": 762,
+        "width": 26,
+        "height": 58
+      }
+    },
+    {
+      "id": "h07",
+      "source": "market-stall-frame",
+      "x": 1540,
+      "y": 865,
+      "width": 26,
+      "height": 62,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h07.png",
+      "body": {
+        "x": 1527,
+        "y": 803,
+        "width": 26,
+        "height": 62
+      }
+    },
+    {
+      "id": "h08",
+      "source": "road-repair-barrier",
+      "x": 2350,
+      "y": 910,
+      "width": 26,
+      "height": 66,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h08.png",
+      "body": {
+        "x": 2337,
+        "y": 844,
+        "width": 26,
+        "height": 66
+      }
+    },
+    {
+      "id": "h09",
+      "source": "street-wood-rack",
+      "x": 3180,
+      "y": 950,
+      "width": 26,
+      "height": 60,
+      "origin": [
+        0.5,
+        1
+      ],
+      "scale": 2,
+      "file": "h09.png",
+      "body": {
+        "x": 3167,
+        "y": 890,
+        "width": 26,
+        "height": 60
+      }
+    }
+  ],
+  "covers": [
+    {
+      "id": "c01",
+      "source": "cover-column",
+      "x": 430,
+      "y": 320,
+      "width": 75,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c01.png",
+      "zone": {
+        "from": 430,
+        "to": 505,
+        "minY": 205,
+        "maxY": 344
+      }
+    },
+    {
+      "id": "c02",
+      "source": "cover-awning",
+      "x": 850,
+      "y": 380,
+      "width": 95,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c02.png",
+      "zone": {
+        "from": 850,
+        "to": 945,
+        "minY": 265,
+        "maxY": 404
+      }
+    },
+    {
+      "id": "c03",
+      "source": "cover-sign",
+      "x": 1280,
+      "y": 440,
+      "width": 95,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c03.png",
+      "zone": {
+        "from": 1280,
+        "to": 1375,
+        "minY": 325,
+        "maxY": 464
+      }
+    },
+    {
+      "id": "c04",
+      "source": "cover-column",
+      "x": 1450,
+      "y": 610,
+      "width": 95,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c04.png",
+      "zone": {
+        "from": 1450,
+        "to": 1545,
+        "minY": 495,
+        "maxY": 634
+      }
+    },
+    {
+      "id": "c05",
+      "source": "cover-awning",
+      "x": 1040,
+      "y": 610,
+      "width": 105,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c05.png",
+      "zone": {
+        "from": 1040,
+        "to": 1145,
+        "minY": 495,
+        "maxY": 634
+      }
+    },
+    {
+      "id": "c06",
+      "source": "cover-crates",
+      "x": 640,
+      "y": 610,
+      "width": 95,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c06.png",
+      "zone": {
+        "from": 640,
+        "to": 735,
+        "minY": 495,
+        "maxY": 634
+      }
+    },
+    {
+      "id": "c07",
+      "source": "cover-arcade",
+      "x": 430,
+      "y": 820,
+      "width": 115,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c07.png",
+      "zone": {
+        "from": 430,
+        "to": 545,
+        "minY": 705,
+        "maxY": 844
+      }
+    },
+    {
+      "id": "c08",
+      "source": "cover-awning",
+      "x": 1190,
+      "y": 865,
+      "width": 115,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c08.png",
+      "zone": {
+        "from": 1190,
+        "to": 1305,
+        "minY": 750,
+        "maxY": 889
+      }
+    },
+    {
+      "id": "c09",
+      "source": "cover-column",
+      "x": 2040,
+      "y": 910,
+      "width": 130,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c09.png",
+      "zone": {
+        "from": 2040,
+        "to": 2170,
+        "minY": 795,
+        "maxY": 934
+      }
+    },
+    {
+      "id": "c10",
+      "source": "cover-stall",
+      "x": 2860,
+      "y": 950,
+      "width": 135,
+      "height": 166,
+      "origin": [
+        0,
+        1
+      ],
+      "scale": 2,
+      "file": "c10.png",
+      "zone": {
+        "from": 2860,
+        "to": 2995,
+        "minY": 835,
+        "maxY": 974
+      }
+    }
+  ],
+  "swings": [
+    {
+      "id": "s01",
+      "source": "swing-laundry",
+      "x": 720,
+      "y": 220,
+      "width": 20,
+      "height": 98,
+      "phase": 0,
+      "origin": [
+        0.5,
+        0
+      ],
+      "scale": 2,
+      "file": "s01.png",
+      "hitDistance": 25
+    },
+    {
+      "id": "s02",
+      "source": "swing-bamboo",
+      "x": 930,
+      "y": 492,
+      "width": 12,
+      "height": 112,
+      "phase": 1.7,
+      "origin": [
+        0.5,
+        0
+      ],
+      "scale": 2,
+      "file": "s02.png",
+      "hitDistance": 25
+    }
+  ],
+  "wall": {
+    "id": "w01",
+    "x": 1682,
+    "y": 448,
+    "width": 38,
+    "height": 286,
+    "origin": [
+      0.5,
+      0
+    ],
+    "file": "w01.png",
+    "scale": 1
+  },
+  "teacher": {
+    "id": "teacher",
+    "file": "teacher.png",
+    "x": 28,
+    "y": 260,
+    "width": 50,
+    "height": 100,
+    "origin": [
+      0.5,
+      1
+    ],
+    "scale": 2
+  },
+  "ticket": {
+    "id": "ticket",
+    "label": "旧钞票",
+    "file": "old-banknote.png",
+    "x": 3420,
+    "y": 898,
+    "width": 50,
+    "height": 26,
+    "origin": [
+      0.5,
+      0.5
+    ],
+    "scale": 2,
+    "hitBox": [
+      58,
+      68
+    ]
+  },
+  "door": {
+    "id": "door",
+    "file": "door.png",
+    "x": 3600,
+    "y": 872,
+    "width": 76,
+    "height": 156,
+    "origin": [
+      0.5,
+      0.5
+    ],
+    "scale": 2,
+    "hitBox": [
+      96,
+      170
+    ]
+  }
+}

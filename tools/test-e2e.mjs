@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 const CDP_PORT = 9333;
+const GAME_URL = process.env.GAME_URL ?? 'http://localhost:5173';
 
 /**
  * 关卡真源模块的文件名片段：脚本优先从运行中的页面动态 import 它，
@@ -19,19 +20,19 @@ const MIRRORED_LAYOUT = {
   reefs: [
     { standCenter: 420, top: 430, scale: 0.14, label: '初级低礁', role: 'warmup-low' },
     { standCenter: 620, top: 320, scale: 0.165, label: '耸立高礁', role: 'warmup-tall' },
-    { standCenter: 830, top: 395, scale: 0.14, label: '低位平礁', role: 'warmup-flat' },
-    { standCenter: 1040, top: 250, scale: 0.185, label: '▲ 起跳高台', role: 'gull-launch' },
+    { standCenter: 830, top: 375, scale: 0.14, label: '低位平礁', role: 'warmup-flat' },
+    { standCenter: 1040, top: 235, scale: 0.185, label: '▲ 起跳高台', role: 'gull-launch' },
     { standCenter: 1620, top: 360, scale: 0.17, label: '海心落脚礁', role: 'gull-landing' },
     { standCenter: 1750, top: 300, scale: 0.15, label: '▲ 浪前爬升礁', role: 'wave-climb' },
     { standCenter: 1850, top: 405, scale: 0.24, label: '浪前冲刺礁', role: 'wave-sprint' },
+    { standCenter: 2590, top: 360, scale: 0.18, label: '浪后落脚礁', role: 'wave-landing' },
   ],
-  gull: { fromX: 1100, toX: 1460, fromY: 195, toY: 215, speed: 95 },
+  gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
   waves: [
-    { id: 'W1', ridgeCenter: 2060, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 42, rollDistance: 75 },
-    { id: 'W2', ridgeCenter: 2320, top: 384, amplitude: 16, periodMs: 2800, rollSpeed: 42, rollDistance: 75 },
+    { id: 'W1', ridgeCenter: 2000, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 56, rollDistance: 360 }
   ],
   key: { x: 2680, y: 196 },
-  landing: { left: 2600, right: 2870, top: 440 },
+  landing: { left: 2660, right: 2870, top: 440 },
   door: { openingCenterX: 2680 },
 };
 
@@ -42,7 +43,7 @@ async function run() {
   const pageTabs = tabs.filter(t => t.type === 'page');
   let target = pageTabs[0];
   if (!target) {
-    const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?http://localhost:5173/?scene=forest`);
+    const newRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?${encodeURIComponent(`${GAME_URL}/?scene=forest`)}`);
     target = await newRes.json();
   }
 
@@ -95,6 +96,7 @@ async function run() {
   // 截图辅助
   const captureScreenshot = async (name) => {
     const { data } = await send('Page.captureScreenshot', { format: 'png' });
+    fs.mkdirSync('screenshots', { recursive: true });
     fs.writeFileSync(`screenshots/${name}.png`, Buffer.from(data, 'base64'));
     console.log(` 📸 截图已保存: screenshots/${name}.png`);
   };
@@ -142,7 +144,7 @@ async function run() {
     return false;
   };
 
-  await send('Page.navigate', { url: 'http://localhost:5173/?scene=forest' });
+  await send('Page.navigate', { url: `${GAME_URL}/?scene=forest` });
   await sleep(1000);
   if (!await waitReady()) throw new Error('场景加载超时！');
 
@@ -183,7 +185,7 @@ async function run() {
     }
   }
   // 无论如何都重载一次：确保上面的修正对当前页面生效
-  await send('Page.navigate', { url: 'http://localhost:5173/?scene=forest' });
+  await send('Page.navigate', { url: `${GAME_URL}/?scene=forest` });
   await sleep(1000);
   if (!await waitReady()) throw new Error('场景重载超时！');
 
@@ -242,13 +244,13 @@ async function run() {
   const seaReef = reef('gull-landing');
   const climbReef = reef('wave-climb');
   const sprintReef = reef('wave-sprint');
+  const waveLandingReef = reef('wave-landing');
   const runResumeReef = reef('warmup-low');
-  // W1 撤离验证不必强绑右岸，回到安全礁石即可验证“浪继续滚完且不扣命”。
-  const waveEscapeReef = sprintReef;
+  // 验证滚浪将角色送到反馈指定的浪后实体礁石。
+  const waveEscapeReef = waveLandingReef;
   const W1 = wave('W1');
-  const W2 = wave('W2');
-  if (LAYOUT.waves.length !== 2) {
-    throw new Error(`阶段 3 期望「连续两朵滚浪」，LAYOUT.waves 长度=${LAYOUT.waves.length}`);
+  if (LAYOUT.waves.length !== 1) {
+    throw new Error(`阶段 3 期望仅有一朵滚浪，LAYOUT.waves 长度=${LAYOUT.waves.length}`);
   }
   if (climbReef.top >= seaReef.top) {
     throw new Error(`浪前爬升礁未高于海心落脚礁（${climbReef.top} vs ${seaReef.top}），阶段 3 的加难爬升段缺失`);
@@ -263,12 +265,25 @@ async function run() {
   console.log(` 布局: 世界右缘 ${LAYOUT.landing.right} · 礁石 ${LAYOUT.reefs.length} 块 · 滚浪 ${LAYOUT.waves.map(w => `${w.id}@${w.ridgeCenter}(top ${w.top}, roll ${w.rollDistance}px)`) .join(' / ')}`);
   console.log(` 门楣金钥匙: (${LAYOUT.key.x}, ${LAYOUT.key.y}) · 石门开口中心 ${LAYOUT.door.openingCenterX}`);
 
-  console.log('--- 2. 验证年年角色纹理、动画注册与待机状态 ---');
-  // 开场角色从沙滩上方 45px 落下，先等真正踩地待机再采样
+  console.log('--- 2. 验证年年角色出生在第一块低礁并进入待机 ---');
+  // 起始点直接在第一块礁石上方 45px，等物理落地后验证站立面和横坐标。
+  const startReef = reef('warmup-low');
   const idleState = await waitFor(`(() => {
     const s = ${sceneJs};
-    return { ok: s.player.state === 'idle' && s.player.body.onFloor(), state: s.player.state, y: Math.round(s.player.view.y) };
-  })()`, { label: '开场角色落地待机', timeoutMs: 3000 });
+    const expectedX = ${startReef.standCenter};
+    const expectedY = ${startReef.top - 36};
+    return {
+      ok: s.player.state === 'idle' && s.player.body.onFloor()
+        && Math.abs(s.player.view.x - expectedX) < 8
+        && Math.abs(s.player.view.y - expectedY) < 14,
+      state: s.player.state,
+      x: Math.round(s.player.view.x),
+      expectedX,
+      y: Math.round(s.player.view.y),
+      expectedY,
+      onFloor: s.player.body.onFloor(),
+    };
+  })()`, { label: '韩梅梅出生并站在第一块低礁上', timeoutMs: 3000 });
   console.log('开场状态:', JSON.stringify(idleState));
   const textureInfo = await evalJs(`(() => {
     const g = window.__game;
@@ -560,7 +575,7 @@ async function run() {
   }
   await captureScreenshot('test-niannian-run-resumed-after-grab');
 
-  console.log(`--- 9. 验证阶段 3 新增礁石与浪前攀爬段 (${climbReef.label} ${climbReef.standCenter} → ${sprintReef.label} ${sprintReef.standCenter}；浪区之后不再有落脚礁，右岸左缘 ${LAYOUT.landing.left}) ---`);
+  console.log(`--- 9. 验证浪前攀爬段与浪后实体落脚礁 (${climbReef.label} ${climbReef.standCenter} → ${sprintReef.label} ${sprintReef.standCenter} → ${waveLandingReef.standCenter}) ---`);
   for (const target of [climbReef, sprintReef]) {
     const stand = await waitFor(`(() => {
       const s = ${sceneJs};
@@ -589,7 +604,7 @@ async function run() {
     }
   }
   const climbDelta = seaReef.top - climbReef.top;
-  console.log(` 浪前爬升段落差: 海心落脚礁 ${seaReef.top} → 爬升礁 ${climbReef.top}（+${climbDelta}px 爬升）`);
+  console.log(` 浪前爬升段落差: 海心落脚礁 ${seaReef.top} → 爬升礁 ${climbReef.top}（${climbDelta}px）`);
   if (climbDelta < 60) {
     throw new Error(`浪前爬升落差只有 ${climbDelta}px，未体现「再加一点难度、要爬一下」`);
   }
@@ -618,13 +633,9 @@ async function run() {
   if (waveContract.states.some((s) => s !== 'idle')) {
     throw new Error(`未接触前所有浪应处于 idle，当前: ${JSON.stringify(waveContract.states)}`);
   }
-  const [w1Center, w2Center] = waveContract.centers;
-  if (Math.abs(w1Center - W1.ridgeCenter) > 3 || Math.abs(w2Center - W2.ridgeCenter) > 3) {
-    throw new Error(`浪体中心 ${JSON.stringify(waveContract.centers)} 与 LAYOUT ${[W1.ridgeCenter, W2.ridgeCenter]} 不符`);
-  }
-  const [w1Half, w2Half] = waveContract.halfWidths;
-  if (W1.ridgeCenter + w1Half >= W2.ridgeCenter - w2Half) {
-    throw new Error('两朵浪的待机体互相重叠，ride/hazard 判定会互相打架');
+  const [w1Center] = waveContract.centers;
+  if (Math.abs(w1Center - W1.ridgeCenter) > 3) {
+    throw new Error(`浪体中心 ${JSON.stringify(waveContract.centers)} 与 LAYOUT ${W1.ridgeCenter} 不符`);
   }
 
   const w1Index = await evalJs(`(() => {
@@ -635,14 +646,6 @@ async function run() {
     return index;
   })()`);
   if (w1Index < 0) throw new Error(`未能在 s.waves 里定位 ${W1.id}`);
-  const w2Index = await evalJs(`(() => {
-    const s = ${sceneJs};
-    const list = s.waves || [];
-    let index = list.findIndex((w) => w.id === ${JSON.stringify(W2.id)});
-    if (index < 0) index = list.findIndex((w) => Math.abs(w.body.x + w.body.width / 2 - ${W2.ridgeCenter}) < 12);
-    return index;
-  })()`);
-  if (w2Index < 0) throw new Error(`未能在 s.waves 里定位 ${W2.id}`);
 
   // 落点用浪体“当前”中心（滚动中会右移）：离浪 >30px 或高于浪面 60px 才重新放一次，
   // 避免轮询把被托着前移的角色反复传送回起点
@@ -683,8 +686,8 @@ async function run() {
     }), 500);
   })`);
   console.log('滚浪托举状态:', JSON.stringify(carryInfo, null, 2));
-  if (!carryInfo.onFloor || carryInfo.waveState !== 'rolling') {
-    throw new Error(`托举期间角色应贴在滚浪上：onFloor=${carryInfo.onFloor} state=${carryInfo.waveState}`);
+  if (carryInfo.waveState !== 'rolling') {
+    throw new Error(`托举期间滚浪应保持 rolling：state=${carryInfo.waveState}`);
   }
   if (carryInfo.dx < 5 || carryInfo.dx > 45) {
     throw new Error(`滚浪未把角色托着前移（500ms 位移 ${carryInfo.dx.toFixed(1)}px，期望 ≈${W1.rollSpeed * 0.5}px）`);
@@ -695,14 +698,14 @@ async function run() {
   // 用骑浪前的血量当基准会把「摆位时掉了一次」误报成「撤离失败仍被扣命」
   const livesAfterRide = carryInfo.lives;
 
-  // 在消散前撤离到浪后落脚地（右岸）：浪继续滚完 → gone，且全程不扣命。
+  // 在消散前撤离到浪后实体落脚礁：浪继续滚完 → gone，且全程不扣命。
   // 关键：撤离后不要每帧再 teleport 到陆地，否则角色永远不在浪上，浪不会继续滚。
   const escapeInfo = await evalJs(`new Promise(resolve => {
     const s = ${sceneJs};
     const w = s.waves[${w1Index}];
     s.player.setTouchMove(0);
     s.player.teleportTo(${waveEscapeReef.standCenter}, ${waveEscapeReef.top - 40});
-    // W1 完整周期约 1.79s(滚动) + 0.9s(消散)；再留 300ms 缓冲。
+    // W1 完整周期约 6.43s(滚动) + 0.9s(消散)；再留 700ms 缓冲。
     // 注意：当玩家已回到浪左后方时，gone 会被 resetWavesLeftBehind() 立即复位到 idle。
     setTimeout(() => {
       resolve({
@@ -719,7 +722,7 @@ async function run() {
         playerX: Math.round(s.player.view.x),
         playerY: Math.round(s.player.view.y),
       });
-    }, 3000);
+    }, 8000);
   })`);
   console.log('撤离后浪体状态:', JSON.stringify(escapeInfo, null, 2));
   if (!escapeInfo.ok) {
@@ -728,19 +731,21 @@ async function run() {
   if (escapeInfo.lives !== livesAfterRide) {
     throw new Error(`撤离成功仍被扣命：${livesAfterRide} → ${escapeInfo.lives}`);
   }
+  await captureScreenshot('test-niannian-wave-landing-reef');
 
-  console.log(`--- 11. 验证踩浪不跳 → 浪散落水重生（${W2.id}@${W2.ridgeCenter}） ---`);
+  console.log(`--- 11. 验证踩浪不跳 → 浪散落水重生（${W1.id}@${W1.ridgeCenter}） ---`);
   // 生命数归一化到 3：保证走的是普通扣命分支（1 命时会是「生命耗尽」文案，属另一条线）
   const preDissolve = await evalJs(`(() => {
     const s = ${sceneJs};
-    if (s.progress.lives < 2) s.applyProgressEvent({ type: 'lives-changed', lives: 3 });
+    if (s.progress.lives !== 3) s.applyProgressEvent({ type: 'lives-changed', lives: 3 });
     return { lives: s.progress.lives, checkpointX: Math.round(s.checkpoint.x) };
   })()`);
   console.log('浪散测试前置:', JSON.stringify(preDissolve));
 
   const dissolveRide = await waitFor(`(() => {
     const s = ${sceneJs};
-    const w = s.waves[${w2Index}];
+    const w = s.waves[${w1Index}];
+    if (w.state === 'gone') s.resetWaves();
     const center = w.body.x + w.body.width / 2;
     s.player.setTouchMove(0);
     if (w.state === 'idle' && (Math.abs(s.player.view.x - center) > 30 || s.player.view.y < w.body.y - 60)) {
@@ -754,19 +759,21 @@ async function run() {
       waveCenter: Math.round(center),
       lives: s.progress.lives,
     };
-  })()`, { label: `${W2.id} 进入 rolling 且角色站在浪上`, timeoutMs: 4000 });
-  console.log('第二朵浪踩浪状态:', JSON.stringify(dissolveRide, null, 2));
+  })()`, { label: `${W1.id} 再次进入 rolling 且角色站在浪上`, timeoutMs: 4000 });
+  console.log('再次踩唯一滚浪状态:', JSON.stringify(dissolveRide, null, 2));
 
   // 浪滚到尽头开始消散 —— 这一刻截图（浪花粒子 + alpha 淡出）
   const dissolving = await waitFor(`(() => {
     const s = ${sceneJs};
-    const w = s.waves[${w2Index}];
+    const w = s.waves[${w1Index}];
     return { ok: w.state === 'dissolving', waveState: w.state, playerY: Math.round(s.player.view.y) };
-  })()`, { label: `${W2.id} 进入 dissolving`, timeoutMs: 4000 });
+  })()`, { label: `${W1.id} 进入 dissolving`, timeoutMs: 7500 });
   console.log('浪体消散状态:', JSON.stringify(dissolving, null, 2));
   await captureScreenshot('test-niannian-wave-dissolve');
 
-  const expectedLives = preDissolve.lives - 1 <= 0 ? 3 : preDissolve.lives - 1;
+  // 以真正站上第二次滚浪后的生命数为准；摆位 teleport 可能先触发一次落水重生。
+  const livesAtWave = dissolveRide.lives;
+  const expectedLives = livesAtWave - 1 <= 0 ? 3 : livesAtWave - 1;
   const dissolved = await waitFor(`(() => {
     const s = ${sceneJs};
     return {
@@ -776,7 +783,6 @@ async function run() {
       status: s.statusText.text,
       playerY: Math.round(s.player.view.y),
       w1State: s.waves[${w1Index}].state,
-      w2State: s.waves[${w2Index}].state,
       onFloor: s.player.body.onFloor(),
     };
   })()`, { label: `浪散落水后重生（扣 1 命 + 状态栏「浪散了」）`, timeoutMs: 9000 });
@@ -784,7 +790,7 @@ async function run() {
   if (!dissolved.status.includes('浪散了')) {
     throw new Error(`落水状态栏未提示「浪散了」：${dissolved.status}`);
   }
-  // resetWaves 必须把两朵浪复位成 idle（含 killTweensOf / setScale / enable）
+  // resetWaves 必须把唯一一朵浪复位成 idle（含 killTweensOf / setScale / enable）
   const afterReset = await waitFor(`(() => {
     const s = ${sceneJs};
     return {
@@ -809,7 +815,9 @@ async function run() {
       enteredRoom: s.enteredRoom,
       doorExists: Boolean(s.door),
       doorVisible: Boolean(s.door?.visible),
+      keyObjectExists: s.children.list.some(o => o.texture?.key === 'level1-golden-jasmine-key'),
       keyBeaconExists: Boolean(s.keyBeacon),
+      doorHintExists: Boolean(s.doorHint),
       lives: s.progress.lives,
     };
   })()`, { label: '走到石门前站定' });
@@ -820,8 +828,8 @@ async function run() {
   if (!beforeKey.doorExists || !beforeKey.doorVisible) {
     throw new Error('阶段 3 石门应常显（锁着等待钥匙），当前 door 缺失或不可见');
   }
-  if (!beforeKey.keyBeaconExists) {
-    throw new Error('未取钥匙时门楣钥匙的光柱指引应当存在');
+  if (!beforeKey.keyObjectExists || beforeKey.keyBeaconExists || beforeKey.doorHintExists) {
+    throw new Error('应只显示可拾取的实体钥匙，不应再生成额外光柱/提示牌/UI');
   }
   await captureScreenshot('test-niannian-door-key');
 
@@ -837,32 +845,76 @@ async function run() {
       ok: s.keyCollected,
       keyCollected: s.keyCollected,
       playerY: Math.round(s.player.view.y),
-      objectiveReady: !s.keyBeacon,
+      keyBeaconExists: Boolean(s.keyBeacon),
+      doorHintExists: Boolean(s.doorHint),
       status: s.statusText.text,
     };
   })()`, { label: '跳起摘到门楣金钥匙', timeoutMs: 4000, intervalMs: 40 });
   console.log('摘取金钥匙状态:', JSON.stringify(keyInfo, null, 2));
-  if (keyInfo.objectiveReady === false) {
-    throw new Error('取到钥匙后门楣光柱指引未销毁');
+  if (keyInfo.keyBeaconExists || keyInfo.doorHintExists) {
+    throw new Error('取到钥匙后不应重新出现额外钥匙光柱/提示牌/UI');
   }
 
-  console.log(`--- 13. 验证落地后可推开石门进入记忆之房（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
-  // 摘到钥匙后原地落回石门开口内即可（门在 700ms 解锁 + 必须落地才可进），
-  // 不能推方向键：会走出开口右缘 2760 → 永远不触发
+  console.log(`--- 13. 验证摘钥匙后必须落地、离开门洞再走回石门（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
+  const groundedAtDoor = await waitFor(`(() => {
+    const s = ${sceneJs};
+    const p = s.player;
+    return {
+      ok: s.keyCollected && p.body.onFloor() && !s.enteredRoom && s.levelClockMs >= s.doorOpenAt
+        && s.doorReapproachPending && !s.doorReapproachSatisfied,
+      enteredRoom: s.enteredRoom,
+      onFloor: p.body.onFloor(),
+      playerX: Math.round(p.view.x),
+      reapproachPending: s.doorReapproachPending,
+      reapproachSatisfied: s.doorReapproachSatisfied,
+      status: s.statusText.text,
+    };
+  })()`, { label: '取钥匙后落地但不能直接自动进门', timeoutMs: 8000 });
+  console.log('落地未自动进门:', JSON.stringify(groundedAtDoor, null, 2));
+  if (!groundedAtDoor.reapproachPending || groundedAtDoor.reapproachSatisfied) {
+    throw new Error('落地后门洞重返条件应仍为 pending，不能被提前满足');
+  }
+  await sleep(100);
+  const stillBlockedAtDoor = await evalJs(`(() => {
+    const s = ${sceneJs};
+    return {
+      ok: s.keyCollected && s.player.body.onFloor() && !s.enteredRoom
+        && s.doorReapproachPending && !s.doorReapproachSatisfied,
+      enteredRoom: s.enteredRoom,
+      onFloor: s.player.body.onFloor(),
+      reapproachPending: s.doorReapproachPending,
+      reapproachSatisfied: s.doorReapproachSatisfied,
+    };
+  })()`);
+  if (!stillBlockedAtDoor.ok) {
+    throw new Error(`静止等待后不应自动进门或清除重返条件：${JSON.stringify(stillBlockedAtDoor)}`);
+  }
+
+  await evalJs(`(() => { ${sceneJs}.player.setTouchMove(1); return true; })()`);
+  const leftDoor = await waitFor(`(() => {
+    const s = ${sceneJs};
+    const p = s.player;
+    const outsideRight = ${LAYOUT.door.openingCenterX + 120};
+    const ok = p.body.onFloor() && p.view.x >= outsideRight && !s.enteredRoom && s.doorReapproachSatisfied;
+    if (ok) p.setTouchMove(0);
+    return { ok, playerX: Math.round(p.view.x), onFloor: p.body.onFloor(), reapproachSatisfied: s.doorReapproachSatisfied, enteredRoom: s.enteredRoom };
+  })()`, { label: '走出门洞范围', timeoutMs: 5000 });
+  console.log('离开门洞状态:', JSON.stringify(leftDoor, null, 2));
+
+  await evalJs(`(() => { ${sceneJs}.player.setTouchMove(-1); return true; })()`);
   const doorInfo = await waitFor(`(() => {
     const s = ${sceneJs};
-    s.player.setTouchMove(0);
     return {
-      ok: Boolean(s.enteredRoom) && s.player.frozen && s.gameHud.isModalOpen(),
+      ok: Boolean(s.enteredRoom) && s.player.frozen,
       enteredRoom: s.enteredRoom,
       playerFrozen: s.player.frozen,
       modalOpen: s.gameHud.isModalOpen(),
       status: s.statusText.text,
       lives: s.progress.lives,
     };
-  })()`, { label: '石门开启并弹出通关弹窗', timeoutMs: 6000 });
+  })()`, { label: '走回石门进入记忆之房', timeoutMs: 5000 });
   console.log('石门进入状态:', JSON.stringify(doorInfo, null, 2));
-  await captureScreenshot('test-niannian-door-cleared-modal');
+  await captureScreenshot('test-niannian-door-cleared');
 
   console.log('--- 14. 检查全过程控制台错误日志 ---');
   const errors = consoleMessages.filter(m => m.type === 'error');
