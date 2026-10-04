@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 
 export type FragmentKind = 'photo' | 'radio' | 'shadowBoat';
 
@@ -13,36 +14,43 @@ const HEIGHT = 540;
 const STYLE_ID = 'recall-fragment-hud-style';
 const activeHuds = new WeakMap<Phaser.Scene, FragmentHudHandle>();
 
-const PETAL = 'M 36 38 C 24 26 23 12 36 5 C 49 12 48 26 36 38 Z';
-const pieces: Record<FragmentKind, number[]> = {
-  photo: [0, 60],
-  radio: [120, 180],
-  shadowBoat: [240, 300],
-};
+// 单面扇贝轮廓：顶部由五个自然起伏的贝壳瓣构成，底部向铰合点收拢。
+// 形状与最终出现的彩色珍珠贝保持同一种水彩轮廓语言。
+const SHELL = 'M 32 55 C 25 52 17 47 11 42 C 5 37 3 30 6 24 C 8 19 13 16 18 18 C 18 12 23 8 28 10 C 30 5 37 4 41 9 C 46 7 52 10 53 15 C 59 15 63 21 61 27 C 59 36 49 46 32 55 Z';
 
-function flowerMarkup(): string {
-  const outline = [0, 60, 120, 180, 240, 300]
-    .map(angle => `<path d="${PETAL}" transform="rotate(${angle} 36 38)" />`)
-    .join('');
-  const shards = (Object.keys(pieces) as FragmentKind[])
-    .map(kind => `<g class="recall-fragment-hud__piece" data-piece="${kind}">
-      ${pieces[kind].map(angle => `<g transform="rotate(${angle} 36 38)">
-        <path class="recall-fragment-hud__petal" d="${PETAL}" />
-        <path class="recall-fragment-hud__vein" d="M 36 33 C 33 25 34 18 36 13" />
-      </g>`).join('')}
-    </g>`).join('');
-  return `<svg class="recall-fragment-hud__flower" viewBox="0 0 72 76" aria-hidden="true">
+function shellMarkup(): string {
+  return `<svg class="recall-fragment-hud__shell" viewBox="0 0 64 58" aria-hidden="true">
     <defs>
-      <linearGradient id="recall-fragment-petal" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#fffdf1" stop-opacity=".92" />
-        <stop offset=".55" stop-color="#f4e9c9" stop-opacity=".68" />
-        <stop offset="1" stop-color="#c8b997" stop-opacity=".46" />
+      <linearGradient id="recall-fragment-shell-fill" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fff4cf" />
+        <stop offset=".34" stop-color="#f3b6a3" />
+        <stop offset=".66" stop-color="#9fcfd0" />
+        <stop offset="1" stop-color="#f8d8ad" />
       </linearGradient>
+      <radialGradient id="recall-fragment-pearl" cx="40%" cy="32%" r="68%">
+        <stop offset="0" stop-color="#ffffff" />
+        <stop offset=".45" stop-color="#fff4cd" />
+        <stop offset=".72" stop-color="#9fe6e7" />
+        <stop offset="1" stop-color="#72b9ca" />
+      </radialGradient>
+      <clipPath id="recall-fragment-shell-clip"><path d="${SHELL}" /></clipPath>
     </defs>
-    <g class="recall-fragment-hud__outline">${outline}</g>
-    ${shards}
-    <circle class="recall-fragment-hud__heart" cx="36" cy="38" r="6" />
-    <circle class="recall-fragment-hud__heart-glint" cx="34" cy="36" r="1.5" />
+    <g clip-path="url(#recall-fragment-shell-clip)">
+      <path class="recall-fragment-hud__piece" data-piece="photo" d="M 0 0 H 25 L 32 52 H 0 Z" />
+      <path class="recall-fragment-hud__piece" data-piece="radio" d="M 23 0 H 41 L 32 52 Z" />
+      <path class="recall-fragment-hud__piece" data-piece="shadowBoat" d="M 39 0 H 64 V 58 H 32 Z" />
+    </g>
+    <path class="recall-fragment-hud__shell-outline" d="${SHELL}" />
+    <g class="recall-fragment-hud__ridges">
+      <path d="M 32 53 C 23 42 17 30 18 19" />
+      <path d="M 32 53 C 26 38 25 23 28 11" />
+      <path d="M 32 53 C 31 36 33 21 36 7" />
+      <path d="M 32 53 C 38 38 44 25 51 13" />
+      <path d="M 32 53 C 19 47 10 38 7 29" />
+      <path d="M 32 53 C 47 47 57 37 60 27" />
+    </g>
+    <path class="recall-fragment-hud__highlight" d="M 10 27 C 18 18 26 16 33 14 C 42 11 51 14 57 21" />
+    <circle class="recall-fragment-hud__pearl" cx="32" cy="43" r="5.5" />
   </svg>`;
 }
 
@@ -58,59 +66,59 @@ function installStyle(): void {
     }
     .recall-fragment-hud * { box-sizing: border-box; }
     .recall-fragment-hud__card {
-      position: absolute; bottom: 14px; left: 14px; width: 140px; height: 60px;
-      display: flex; align-items: center; gap: 5px; padding: 5px 8px 5px 5px;
-      border-radius: 11px 4px 11px 4px;
+      position: absolute; bottom: 14px; left: 14px; width: 106px; height: 48px;
+      display: flex; align-items: center; gap: 4px; padding: 4px 6px 4px 4px;
+      border-radius: 9px 3px 9px 3px;
       border: 1px solid rgba(255,239,205,.18);
       background: linear-gradient(116deg, rgba(25,31,26,.42), rgba(46,47,37,.27));
       -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
       box-shadow: 0 5px 24px rgba(9,17,14,.15), inset 0 1px rgba(255,255,236,.10);
     }
-    .recall-fragment-hud__flower { width: 48px; height: 51px; flex: none; overflow: visible; }
-    .recall-fragment-hud__outline path {
-      fill: rgba(255,249,228,.035); stroke: rgba(249,234,199,.38);
-      stroke-width: .9; stroke-dasharray: 2.1 3.6;
+    .recall-fragment-hud__shell { width: 42px; height: 42px; flex: none; overflow: visible; }
+    .recall-fragment-hud__shell-outline {
+      fill: rgba(255,246,222,.055); stroke: rgba(116,76,46,.92); stroke-width: 1.55;
+      stroke-linejoin: round;
     }
     .recall-fragment-hud__piece {
-      opacity: 0; filter: drop-shadow(0 0 0 rgba(255,241,188,0));
+      fill: url(#recall-fragment-shell-fill); opacity: 0;
+      filter: drop-shadow(0 0 0 rgba(255,241,188,0));
       transition: opacity 650ms ease, filter 650ms ease;
     }
     .recall-fragment-hud__piece.is-collected {
-      opacity: 1; filter: drop-shadow(0 0 5px rgba(255,239,187,.49));
+      opacity: .96; filter: drop-shadow(0 0 5px rgba(255,224,171,.55));
     }
-    .recall-fragment-hud__petal {
-      fill: url(#recall-fragment-petal); stroke: rgba(255,248,224,.77); stroke-width: 1.1;
+    .recall-fragment-hud__ridges path {
+      fill: none; stroke: rgba(126,86,55,.54); stroke-width: .82; stroke-linecap: round;
     }
-    .recall-fragment-hud__vein {
-      fill: none; stroke: rgba(176,154,111,.35); stroke-width: .8;
-      stroke-linecap: round;
+    .recall-fragment-hud__highlight {
+      fill: none; stroke: rgba(255,255,244,.64); stroke-width: 1.05; stroke-linecap: round;
     }
-    .recall-fragment-hud__heart {
-      fill: #c8ad6f; stroke: #fff2c9; stroke-width: 1;
-      opacity: .19; transition: opacity 650ms ease, filter 650ms ease;
+    .recall-fragment-hud__pearl {
+      fill: url(#recall-fragment-pearl); opacity: .14;
+      stroke: rgba(255,247,214,.72); stroke-width: .8;
+      transition: opacity 650ms ease, filter 650ms ease;
     }
-    .recall-fragment-hud__heart-glint {
-      fill: #fff8e4; opacity: 0; transition: opacity 650ms ease;
+    .recall-fragment-hud.is-complete .recall-fragment-hud__shell {
+      filter: drop-shadow(0 0 6px rgba(249,223,162,.68));
     }
-    .recall-fragment-hud.is-complete .recall-fragment-hud__heart {
-      opacity: .95; filter: drop-shadow(0 0 7px #f9dfa2);
+    .recall-fragment-hud.is-complete .recall-fragment-hud__pearl {
+      opacity: 1; filter: drop-shadow(0 0 5px rgba(147,235,236,.88));
     }
-    .recall-fragment-hud.is-complete .recall-fragment-hud__heart-glint { opacity: .95; }
     .recall-fragment-hud__copy { display: flex; flex-direction: column; min-width: 0; }
     .recall-fragment-hud__label {
-      color: rgba(253,239,207,.81); font-size: 10px; letter-spacing: .12em;
+      color: rgba(253,239,207,.81); font-size: 8px; letter-spacing: .08em;
       white-space: nowrap; text-shadow: 0 1px 4px rgba(0,0,0,.38);
     }
     .recall-fragment-hud__count {
-      color: #f8e8bc; font: 21px/1.15 Georgia, serif; letter-spacing: .04em;
+      color: #f8e8bc; font: 16px/1.1 Georgia, serif; letter-spacing: .02em;
       text-shadow: 0 2px 7px rgba(0,0,0,.44);
     }
-    .recall-fragment-hud__count small { color: rgba(247,231,195,.64); font-size: 13px; }
+    .recall-fragment-hud__count small { color: rgba(247,231,195,.64); font-size: 10px; }
   `;
   document.head.append(style);
 }
 
-/** A light, three-piece jasmine that stays in the room's lower-left corner. */
+/** A compact shell filled one third at a time in the room's lower-left corner. */
 export function createFragmentHud(scene: Phaser.Scene): FragmentHudHandle {
   activeHuds.get(scene)?.destroy();
   installStyle();
@@ -119,7 +127,7 @@ export function createFragmentHud(scene: Phaser.Scene): FragmentHudHandle {
   root.setAttribute('role', 'status');
   root.setAttribute('aria-label', '记忆碎片 0/3');
   root.innerHTML = `<div class="recall-fragment-hud__card">
-    ${flowerMarkup()}
+    ${shellMarkup()}
     <div class="recall-fragment-hud__copy">
       <span class="recall-fragment-hud__label">记忆碎片</span>
       <span class="recall-fragment-hud__count"><span data-count>0</span><small> / 3</small></span>
@@ -128,10 +136,7 @@ export function createFragmentHud(scene: Phaser.Scene): FragmentHudHandle {
   const collected = new Set<FragmentKind>();
   let destroyed = false;
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, WIDTH, HEIGHT, 'left');
   };
   const onShutdown = () => destroy();
   const destroy = () => {

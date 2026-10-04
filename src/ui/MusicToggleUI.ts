@@ -42,14 +42,24 @@ export function createMusicToggleUI(game: Phaser.Game): void {
     button.title = enabled ? '关闭背景音乐' : '开启背景音乐';
   };
 
+  // 音乐开关只属于最初的主菜单。进入序章、关卡、记忆房间或岛屿后立即隐藏，
+  // 设置本身仍保留，玩家下次回到主菜单时可以继续调整。
+  const syncVisibility = () => {
+    const onOpeningScreen = game.scene.getScenes(true).some(scene => scene.scene.key === 'menu');
+    button.hidden = !onOpeningScreen;
+  };
+
   button.addEventListener('click', () => {
     setBackgroundMusicEnabled(!isBackgroundMusicEnabled());
     render();
   });
   render();
   document.body.append(button);
+  syncVisibility();
+  game.events.on(Phaser.Core.Events.POST_RENDER, syncVisibility);
 
   game.events.once(Phaser.Core.Events.DESTROY, () => {
+    game.events.off(Phaser.Core.Events.POST_RENDER, syncVisibility);
     button.remove();
     document.getElementById(STYLE_ID)?.remove();
   });

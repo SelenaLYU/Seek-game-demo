@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 
 export interface RoomTextEntry {
   label?: string;
@@ -89,13 +90,19 @@ function installStyle(): void {
       white-space: pre-line;
     }
     .recall-room-text__close {
-      position: absolute; top: 13px; right: 16px;
-      border: 0; padding: 2px 7px; background: transparent;
-      color: #f0dfb5; font: 27px/1 Arial, sans-serif;
-      cursor: pointer; -webkit-text-stroke: 0;
+      position: absolute; top: 14px; right: 16px; width: 30px; height: 30px;
+      display: grid; place-items: center; padding: 0;
+      border: 1px solid rgba(231,213,169,.58); border-radius: 50%;
+      background: rgba(31,36,32,.62); color: #fff0cb;
+      box-shadow: 0 3px 10px rgba(0,0,0,.16), inset 0 1px rgba(255,249,225,.08);
+      font: 20px/1 Arial, sans-serif; cursor: pointer; -webkit-text-stroke: 0;
+      transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
     }
     .recall-room-text__close:hover,
-    .recall-room-text__close:focus-visible { color: #fff7e4; outline: none; }
+    .recall-room-text__close:focus-visible {
+      color: #fff; background: rgba(67,73,63,.88); border-color: rgba(255,237,190,.92);
+      transform: scale(1.05); outline: none;
+    }
   `;
   document.head.append(style);
 }
@@ -113,6 +120,7 @@ export function showRoomText(scene: Phaser.Scene, options: RoomTextOptions): Roo
 
   const backdrop = document.createElement('div');
   backdrop.className = 'recall-room-text__backdrop';
+  backdrop.dataset.canvasBackdrop = '';
   root.append(backdrop);
 
   if (options.imageUrl) {
@@ -159,10 +167,7 @@ export function showRoomText(scene: Phaser.Scene, options: RoomTextOptions): Roo
   root.append(panel);
 
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / BASE_WIDTH}, ${bounds.height / BASE_HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, BASE_WIDTH, BASE_HEIGHT);
   };
   position();
   scene.scale.on(Phaser.Scale.Events.RESIZE, position);
