@@ -3,17 +3,68 @@ import { applyHDCamera } from '../systems/Resolution';
 import { ChapterTwoRoomFlow } from '../gameplay/chapterTwoRoomFlow';
 import { GOODS, FIXED, CLUES, CAP_POINTS, CAP_EDGES } from '../gameplay/bottleCapPuzzle';
 import { createRoomInventoryUI, type RoomInventoryUIHandle } from '../ui/RoomInventoryUI';
+import { createAssetReviewOverlay, type AssetReviewEntry } from '../ui/AssetReviewOverlay';
+
+/** 小卖部背景母版 1920×1080，正好是灰盒 960×540 坐标空间的 2 倍，按 960×540 贴回即与灰盒对齐。 */
+const STORE_BG_KEY = 'chapter2-store-bg';
+const STORE_BG_PATH = 'assets/scenes/chapter2/chapter2-convenience-store-stocked-night-v3-style-corrected-1920x1080.png';
+
+/**
+ * 队友已交付的第二关美术件。母版尚未按 Phaser 锚点切图，
+ * 所以这里只做「在游戏里逐张核对」，不作为运行时贴图接入。
+ */
+const TEAMMATE_ASSETS: readonly AssetReviewEntry[] = [
+  { label: '小卖部场景背景', path: STORE_BG_PATH, note: '已确认；本页用 ?storeArt=1 贴进房间' },
+  { label: '主线交互母版：作业／杂志／货架图', path: 'assets/level2/convenience-store/interactive/story-props-master-v1.png', note: '九个状态，待切图' },
+  { label: '主线交互母版：九件谜题商品与瓶盖', path: 'assets/level2/convenience-store/interactive/puzzle-goods-caps-master-v1.png', note: '对应九格货架答案' },
+  { label: '主线交互母版：门框刻度／抽屉／收藏／辣条', path: 'assets/level2/convenience-store/interactive/collection-and-snack-master-v1.png', note: '待切图' },
+  { label: '可选观察：门框成长刻度', path: 'assets/level2/convenience-store/optional/growth-marks-observation-master-v3-wonky-chalk-handwriting.png', note: '5／7／12 岁三处近景' },
+  { label: '可选观察：奖状／纸船／兔子橡皮／糖罐', path: 'assets/level2/convenience-store/optional/optional-observation-props-master-v1.png', note: '待切图' },
+  { label: '可选观察：李雷藏货架四态', path: 'assets/level2/convenience-store/optional/lilei-shelf-hide-states-white-shirt-floral-shorts-v1.png', note: '白上衣花裤衩版本' },
+  { label: '骑楼夜景：连续背景', path: 'assets/level2/night-v1/background-night.png', note: '关卡已接入（?scene=chapter2）' },
+  { label: '骑楼夜景：平台段 p01', path: 'assets/level2/night-v1/p01.png', note: '共 9 段，坐标见 geometry.json' },
+  { label: '骑楼夜景：固定障碍 h01', path: 'assets/level2/night-v1/h01.png', note: '2 倍导出，运行时缩放 0.5' },
+  { label: '骑楼夜景：遮挡模块 c01', path: 'assets/level2/night-v1/c01.png', note: '2 倍导出，不加碰撞' },
+  { label: '骑楼夜景：摆动物 s01', path: 'assets/level2/night-v1/s01.png', note: '晾衣架／竹竿' },
+  { label: '骑楼夜景：封路墙 w01', path: 'assets/level2/night-v1/w01.png', note: '背景镂空，必须与平台同载' },
+  { label: '骑楼夜景：值班老师', path: 'assets/level2/night-v1/teacher.png', note: '光锥仍由代码绘制' },
+  { label: '骑楼夜景：旧钞票（原旧票根）', path: 'assets/level2/night-v1/old-banknote.png', note: 'ID 仍为 memory-token-2' },
+  { label: '骑楼夜景：记忆房入口门', path: 'assets/level2/night-v1/door.png' },
+  { label: '骑楼白天：宽幅底图（未接入）', path: 'assets/scenes/chapter2/chapter2-qilou-water-town-background-hd-7360x2200.png', note: '白天版本，已被夜景取代' },
+  { label: '骑楼图集：平台砖块', path: 'assets/level2/qilou/chapter2-platform-tiles-4x2.png', note: '配 .aligned.json，尚未接入' },
+  { label: '骑楼图集：遮挡模块', path: 'assets/level2/qilou/chapter2-cover-modules-5x2.png', note: '尚未接入' },
+  { label: '骑楼图集：静态障碍', path: 'assets/level2/qilou/chapter2-static-obstacles-3x3.png', note: '尚未接入' },
+  { label: '骑楼图集：动态目标', path: 'assets/level2/qilou/chapter2-dynamic-goal-modules-4x2.png', note: '尚未接入' },
+];
+
+/** `?storeArt=1` 把美术背景贴进房间；`?artPreview=1` 沿用关卡里的美术检查开关。 */
+const isStoreArtMode = () => {
+  const query = new URLSearchParams(location.search);
+  return query.get('storeArt') === '1' || query.get('artPreview') === '1';
+};
 
 export default class ChapterTwoRoomScene extends Phaser.Scene {
   private flow = new ChapterTwoRoomFlow();
   private room!: Phaser.GameObjects.Container;
+  /** 美术模式下灰盒图形单独成组，便于整体调透明度做贴合检查。 */
+  private greybox?: Phaser.GameObjects.Container;
   private modal?: Phaser.GameObjects.Container;
   private snackShown = false;
   private inventory?: RoomInventoryUIHandle;
   private onClose?: () => void;
   private selectedCell = -1;
+  private artMode = false;
+  private ghostAlpha = 0.3;
+  private artPanel?: HTMLElement;
+  private reviewDispose?: () => void;
   constructor() { super('chapter2-room'); }
+  preload(): void {
+    this.artMode = isStoreArtMode();
+    // 只有调试模式才拉这张 3MB 的背景，正常流程的加载量不变
+    if (this.artMode && !this.textures.exists(STORE_BG_KEY)) this.load.image(STORE_BG_KEY, STORE_BG_PATH);
+  }
   create(): void {
+    this.artMode = isStoreArtMode();
     this.flow = new ChapterTwoRoomFlow(); this.modal = undefined; this.snackShown = false; this.onClose = undefined; this.selectedCell = -1;
     this.inventory?.destroy();
     this.inventory = createRoomInventoryUI(this, { onItemSelected: item => {
@@ -24,7 +75,36 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     const fit = () => this.cameras.main.setZoom(Math.min(this.scale.gameSize.width / 960, this.scale.gameSize.height / 540)).centerOn(480, 270);
     fit(); this.scale.on('resize', fit);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', fit));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.artPanel?.remove(); this.artPanel = undefined;
+      this.reviewDispose?.(); this.reviewDispose = undefined;
+    });
     this.drawRoom();
+    this.setupArtTools();
+  }
+  /**
+   * 调试入口：`?storeArt=1` 贴美术背景并保留可调透明度的灰盒叠加层，
+   * 用来核对交互热点和判定框是否落在画出来的物件上；`?assetReview=1` 打开素材总览。
+   */
+  private setupArtTools(): void {
+    if (new URLSearchParams(location.search).get('assetReview') === '1' && !this.reviewDispose) {
+      this.reviewDispose = createAssetReviewOverlay(TEAMMATE_ASSETS);
+    }
+    if (!this.artMode || this.artPanel) return;
+    const panel = document.createElement('div');
+    panel.id = 'chapter2-room-art-preview';
+    panel.style.cssText = 'position:fixed;z-index:10000;left:12px;bottom:12px;display:flex;gap:6px;align-items:center;padding:8px;background:#162536e8;color:#d9e6e7;font:12px sans-serif;border-radius:8px;';
+    const title = document.createElement('span');
+    title.textContent = '小卖部美术叠加：';
+    panel.append(title);
+    for (const [text, alpha] of [['贴合检查', 0.3], ['只看美术', 0], ['只看灰盒', 1]] as const) {
+      const button = document.createElement('button');
+      button.textContent = text;
+      button.onclick = () => { this.ghostAlpha = alpha; this.greybox?.setAlpha(alpha); };
+      panel.append(button);
+    }
+    this.artPanel = panel;
+    document.body.append(panel);
   }
   private text(p: Phaser.GameObjects.Container, x: number, y: number, s: string, size = 16, color = '#ede4ce') {
     const t = this.add.text(x, y, s, { fontFamily: 'sans-serif', fontSize: `${size}px`, color, lineSpacing: 7, wordWrap: { width: 660 } });
@@ -48,7 +128,17 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
   }
   private drawRoom(): void {
     this.room?.destroy(true); this.room = this.add.container(0, 0);
-    this.box(this.room, 480, 270, 960, 540, 0x302e29);
+    this.greybox = undefined;
+    const root = this.room;
+    const backdrop = this.box(this.room, 480, 270, 960, 540, 0x302e29);
+    if (this.artMode && this.textures.exists(STORE_BG_KEY)) {
+      // 背景画在根容器、灰盒图形收进 greybox：两者独立，才能单独调灰盒透明度看贴合
+      this.room.add(this.add.image(480, 270, STORE_BG_KEY).setDisplaySize(960, 540));
+      backdrop.setVisible(false);
+      this.greybox = this.add.container(0, 0).setAlpha(this.ghostAlpha);
+      this.room.add(this.greybox);
+      this.room = this.greybox;
+    }
     const polygon = (points: number[], color: number) => {
       const shape = this.add.polygon(0, 0, points, color).setOrigin(0).setStrokeStyle(2, 0x574e3e);
       this.room.add(shape);
@@ -63,7 +153,7 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     [80, 265, 450, 650, 850].forEach(x => floor.lineBetween(490 + (x - 490) * .5, 310, x, 540));
     [347, 397, 464, 532].forEach(y => floor.lineBetween(0, y, 960, y));
     this.text(this.room, 78, 21, '家里的小卖部', 22);
-    this.text(this.room, 720, 22, '入口视角 · 灰盒', 12);
+    this.text(this.room, 720, 22, this.artMode ? '入口视角 · 美术叠加' : '入口视角 · 灰盒', 12);
     // Award is behind the owner's desk, high enough to remain visible.
     this.spot(358, 116, 92, 60, '三好学生\n韩梅梅', () => this.observe('三好学生', '奖状上的名字是韩梅梅。\n她学习很好，也会有不想写作业的时候。'), 0xc7ad72);
     // Left wall row: refrigerator with a long side plane pointing into the shop.
@@ -145,6 +235,7 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     const hints: Record<string, string> = { growth: '门框上，还留着小时候的刻度。', 'growth-done': '看完刻度，关闭回到房间。', homework: '桌上的作业摊开了。', 'homework-done': '作业完成了，关闭回到房间。', magazine: '作业下面，露出一本风景杂志。', map: '货架图收好了，去看看那座货架。', shelf: '可以拿出货架图，对照眼前的货架。', collection: '抽屉开了，里面都是两人的小收藏。', snack: '一包辣辣王子掉下来了。', memory: '进入回忆……' };
     this.text(this.room, 80, 511, hints[this.flow.stage], 14);
     this.button(this.room, 116, 473, '重玩', () => { if (!this.modal) this.scene.restart(); }, 63);
+    this.room = root;
     if (this.snackShown) this.addSnack(false);
   }
   private panel(title: string, onClose?: () => void) {
