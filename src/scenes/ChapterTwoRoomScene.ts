@@ -453,9 +453,15 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     const snack = this.add.container(515, fall ? 240 : 463); this.room.add(snack);
     const packet = this.box(snack, 0, 0, 88, 58, 0x9e4d3d);
     this.text(snack, 0, 0, '辣辣王子\n点击进入回忆', 12).setOrigin(.5);
-    if (fall) this.tweens.add({ targets: snack, y: 463, duration: 950, ease: 'Bounce.easeOut', onComplete: () => this.drawRoom() });
-    else packet.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
-      if (!this.modal && this.flow.takeSnack()) this.scene.start('chapter2-memory');
+    // 掉落补间要跑 950ms，期间包装上已经写着「点击进入回忆」。这里统一绑点击，
+    // 否则这近一秒里点它没有任何反应，玩家只会读成“点不中”，得再点一次。
+    packet.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
+      if (this.modal || !this.flow.takeSnack()) return;
+      // 取走后掐掉补间，避免它结束后再 drawRoom() 又生成一包；重进房间本就从头开始。
+      this.snackShown = false;
+      this.tweens.killTweensOf(snack);
+      this.scene.start('chapter2-memory');
     });
+    if (fall) this.tweens.add({ targets: snack, y: 463, duration: 950, ease: 'Bounce.easeOut', onComplete: () => this.drawRoom() });
   }
 }
