@@ -6,11 +6,15 @@ import {
   clearSavedProgress,
   type ChapterOneRoomProgress,
 } from '../gameplay/ChapterOneRoomProgress';
+import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
+import { albumPhotoCount } from '../story/Album';
+import { completedChapters } from '../island/Progress';
 
 /** 统一水彩风格游戏主菜单：包含新游戏、继续游戏(读档)、关卡选择、重置存档 */
 export default class MenuScene extends Phaser.Scene {
   private savedProgress!: ChapterOneRoomProgress;
   private hasSave = false;
+  private album?: AlbumHandle;
 
   constructor() {
     super('menu');
@@ -130,7 +134,23 @@ export default class MenuScene extends Phaser.Scene {
       this.openStageSelectModal();
     });
 
-    // 4. 重置存档
+    // 4. 相册：章节收集与回忆照片，未开局也可查看
+    createMenuBtn(
+      '【 相册 】',
+      true,
+      '#2b3a34',
+      '#3f574d',
+      () => {
+        if (this.album) return;
+        this.album = showAlbumUI({
+          completed: completedChapters(),
+          onClose: () => { this.album = undefined; },
+        });
+      },
+      `已收录 ${albumPhotoCount(completedChapters())} / 6`,
+    );
+
+    // 5. 重置存档
     if (this.hasSave) {
       createMenuBtn('重置并清空存档', true, '#362424', '#523434', () => {
         clearSavedProgress();
@@ -157,6 +177,12 @@ export default class MenuScene extends Phaser.Scene {
       } else {
         this.scene.start('intro');
       }
+    });
+
+    // 相册是挂在 body 上的 DOM 覆盖层，离开菜单时必须自己收掉，否则会跟到下一个场景。
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.album?.close();
+      this.album = undefined;
     });
   }
 

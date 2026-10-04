@@ -35,3 +35,26 @@ test('album view is reachable from the island with the current chapter state', (
   // 相册不自建进度存档：完成状态只有 island/Progress.ts 一处真源。
   assert.doesNotMatch(read('src/story/Album.ts'), /localStorage|ProgressPersistence/);
 });
+
+test('album is also reachable from the prologue and the main menu', () => {
+  for (const scene of ['src/scenes/IntroScene.ts', 'src/scenes/MenuScene.ts']) {
+    const source = read(scene);
+    assert.match(
+      source,
+      /showAlbumUI\(\{\s*completed: completedChapters\(\)/,
+      `${scene} must open the album with the shared chapter state`,
+    );
+  }
+  // 相册是挂在 body 上的 DOM 覆盖层，离开场景不收掉就会跟到下一个场景。
+  for (const scene of ['src/scenes/IntroScene.ts', 'src/scenes/MenuScene.ts']) {
+    assert.match(read(scene), /SHUTDOWN/, `${scene} must close the album on shutdown`);
+  }
+});
+
+test('album photos go through Vite so production builds include them', () => {
+  const ui = read('src/ui/AlbumUI.ts');
+  assert.match(ui, /CHAPTER_PHOTOS/);
+  // 字面路径不会被打包：必须 `?url` 引入，否则生产环境相册显示不出照片。
+  assert.match(ui, /assets\/story\/[^']+\.svg\?url/);
+  assert.match(ui, /seek-album__photo-img/);
+});

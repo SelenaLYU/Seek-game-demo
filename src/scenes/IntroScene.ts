@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { applyHDCamera, BASE_HEIGHT, BASE_WIDTH } from '../systems/Resolution';
+import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
+import { completedChapters } from '../island/Progress';
 
 /** 开场动画接口占位。新动画到货后只替换本场景，不影响后续流程。 */
 export default class IntroScene extends Phaser.Scene {
@@ -40,6 +42,18 @@ export default class IntroScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
     back.on('pointerup', () => this.scene.start('menu'));
 
+    // 序章也能打开相册：看完开场就可以回看已经找回的记忆。
+    let album: AlbumHandle | undefined;
+    const albumButton = this.add
+      .text(0, 0, '相册', {
+        fontFamily: 'sans-serif',
+        fontSize: '14px',
+        color: '#d5d5d5',
+        backgroundColor: '#242424',
+        padding: { x: 12, y: 7 },
+      })
+      .setInteractive({ useHandCursor: true });
+
     const next = this.add
       // 全局音乐开关占用最右上角；跳过按钮固定在右下角，避免二者重叠。
       .text(0, 0, '跳过动画 →', {
@@ -64,6 +78,7 @@ export default class IntroScene extends Phaser.Scene {
       const top = BASE_HEIGHT / 2 - visibleHeight / 2;
       const bottom = BASE_HEIGHT / 2 + visibleHeight / 2;
       back.setPosition(left + 24, top + 22);
+      albumButton.setPosition(left + 24, top + 22 + 38);
       next.setPosition(right - 24, bottom - 24);
     };
     placeCornerControls();
@@ -81,8 +96,21 @@ export default class IntroScene extends Phaser.Scene {
     this.input.keyboard?.once('keydown-SPACE', proceed);
     this.input.keyboard?.once('keydown-ESC', () => this.scene.start('menu'));
     const autoAdvance = this.time.delayedCall(3000, proceed);
+
+    // 打开相册时暂停自动进场：看了两秒就被自动推进下一关很难看。
+    albumButton.on('pointerup', () => {
+      if (album) return;
+      autoAdvance.paused = true;
+      album = showAlbumUI({
+        completed: completedChapters(),
+        onClose: () => { album = undefined; autoAdvance.paused = false; },
+      });
+    });
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       autoAdvance.remove(false);
+      album?.close();
+      album = undefined;
       this.input.keyboard?.off('keydown-SPACE', proceed);
       this.scale.off(Phaser.Scale.Events.RESIZE, placeCornerControls);
     });
