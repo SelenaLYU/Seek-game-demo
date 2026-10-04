@@ -95,9 +95,6 @@ const DOOR_UNLOCK_DELAY_MS = 700;
 /** 门还锁着时的状态栏提示节流 ms */
 const DOOR_HINT_THROTTLE_MS = 2200;
 
-/** 海面亮带（海心礁右缘 → 世界右缘之外）：把浪区从水彩背景里托出来 */
-const SEA_SURFACE = { left: 1660, right: 3120, top: 500, bottom: 545 };
-
 /** 海鸥（源图 1774×887）：抓取点=双脚之间，源图 ≈(730, 800) */
 const GULL = { scale: 0.142, gripX: 730, gripY: 800 };
 
@@ -129,7 +126,8 @@ export type ReefRole =
   | 'gull-launch' // 起跳高台：全线最高点，跃起抓海鸥
   | 'gull-landing' // 海心落脚礁：海鸥甩落后的落脚点
   | 'wave-climb' // 浪前爬升礁：+60 爬升，为浪区抬升难度
-  | 'wave-sprint'; // 浪前冲刺礁：助跑起跳上第一朵浪（浪后不再设落脚礁：见下面 REEFS 注释）
+  | 'wave-sprint' // 浪前冲刺礁：助跑起跳上滚浪
+  | 'wave-landing'; // 浪后落脚礁：接住浪上跳下来的角色
 
 /**
  * 可站立面档案的一段（源图坐标，srcRight 为开区间）：
@@ -157,7 +155,7 @@ export type ReefPlacement = {
 export type ReefSpec = ReefPlacement & { stand: readonly ReefStandStep[] };
 
 export type WaveSpec = {
-  id: 'W1' | 'W2';
+  id: 'W1';
   /** 浪脊中心 x（碰撞体左右各 39.06px） */
   ridgeCenter: number;
   /** 浪脊顶面 y */
@@ -177,35 +175,32 @@ type LayoutSpec = {
   reefs: readonly ReefSpec[];
   /** 单只海鸥横渡核心深海海峡的往返航线 */
   gull: { fromX: number; toX: number; fromY: number; toY: number; speed: number };
-  /** 连续两朵浪（阶段 3 起改为「向前滚 → 消散」的限时平台） */
+  /** 单朵长距离滚浪（向前滚 → 消散的限时平台） */
   waves: readonly WaveSpec[];
   key: { x: number; y: number };
   landing: { left: number; right: number; top: number };
   door: { openingCenterX: number };
 };
 
-/** 礁石阵：低起伏阶梯 → 最高起跳台 → 海心礁 → 浪区前爬升/冲刺礁
- *  浪区之后**故意不设落脚礁**：二段跳的水平行程实测 648px（落差 +35 时），
- *  若在浪后放一块落脚礁，玩家可以一次二段跳直接绕过两朵限时滚浪（"不踩也能过"）；
- *  把右岸左缘放到 2570（缝 694px > 648）才能让"必须踩浪"成立。 */
+/** 礁石阵：起步阶梯 → 海鸥起跳台 → 海心落脚礁 → 浪前准备段 → 浪后实体落脚面。
+ *  浪后落脚礁刻意放到冲刺礁二段跳极限之外，让玩家先借滚浪向前，再跳上安全落点。 */
 const REEFS: readonly ReefPlacement[] = [
-  // 第一块下沉并左移：避免视觉上“叠在后面的礁石上”，起步也更像从海里踏上第一块礁石
+  // 第一块下沉并左移：作为韩梅梅的直接出生平台。
   { standCenter: 420, top: 430, scale: 0.14, label: '初级低礁', role: 'warmup-low' },
   { standCenter: 620, top: 320, scale: 0.165, label: '耸立高礁', role: 'warmup-tall' },
-  { standCenter: 830, top: 395, scale: 0.14, label: '低位平礁', role: 'warmup-flat' },
-  { standCenter: 1040, top: 250, scale: 0.185, label: '▲ 起跳高台', role: 'gull-launch' },
+  // 按反馈略抬高第三、第四块，让上升节奏更连贯。
+  { standCenter: 830, top: 375, scale: 0.14, label: '低位平礁', role: 'warmup-flat' },
+  { standCenter: 1040, top: 235, scale: 0.185, label: '▲ 起跳高台', role: 'gull-launch' },
   { standCenter: 1620, top: 360, scale: 0.17, label: '海心落脚礁', role: 'gull-landing' },
-  // 浪前两块的几何是按 tools/sim-jumps.mjs 的真实物理反算的（改之前先跑那个脚本）：
-  //   · 爬升礁 top 285→300：原来从海心礁右缘起跳要在 36.6px 行程内爬 75px，角净空只剩 5.5px，
-  //     照蓄力不足就撞左壁掉海；降到 60px 爬升后“轻按长跳”都能落住。
-  //   · 冲刺礁加宽（0.15→0.24）并右移 10px：原来只有 70.65px 宽、落差 125px，
-  //     全速走出爬升礁右缘都会因为落点偏右而掸下去。
+  // 浪前爬升与冲刺平台保留，确保起跳浪区有明确准备段。
   { standCenter: 1750, top: 300, scale: 0.15, label: '▲ 浪前爬升礁', role: 'wave-climb' },
   { standCenter: 1850, top: 405, scale: 0.24, label: '浪前冲刺礁', role: 'wave-sprint' },
+  // 单浪之后补上实体落脚面：后景水彩礁石本身没有碰撞，不能让角色落到背景后继续坠海。
+  { standCenter: 2590, top: 360, scale: 0.18, label: '浪后落脚礁', role: 'wave-landing' },
 ];
 
 /**
- * 实测的平整可站立面档案（源图坐标，七块共用——阶段 1 只有这一张 1774×887 礁石素材）。
+ * 实测的平整可站立面档案（源图坐标，八块共用——阶段 1 只有这一张 1774×887 礁石素材）。
  *
  * 素材是一整块连续岩体，顶边是一条缓起伏的水彩岩脊。逐列取 alpha>128 的顶面 y，
  * 再用分段常量做 minimax 拟合（每段取 min/max 中值），得到两段实测偏差 ≤ 8 源 px 的平整岩面：
@@ -230,7 +225,7 @@ const REEF_STAND_FLAT_TOP: readonly ReefStandStep[] = [
   { srcLeft: 846, srcRight: 1098, srcTop: 260 },
 ];
 
-/** 逐块可站立面档案：必须覆盖每个 role；七块目前数值相同，换图/换裁切时各块独立调整 */
+/** 逐块可站立面档案：必须覆盖每个 role；八块目前数值相同，换图/换裁切时各块独立调整 */
 const REEF_STANDS: Record<ReefRole, readonly ReefStandStep[]> = {
   'warmup-low': REEF_STAND_FLAT_TOP,
   'warmup-tall': REEF_STAND_FLAT_TOP,
@@ -239,6 +234,7 @@ const REEF_STANDS: Record<ReefRole, readonly ReefStandStep[]> = {
   'gull-landing': REEF_STAND_FLAT_TOP,
   'wave-climb': REEF_STAND_FLAT_TOP,
   'wave-sprint': REEF_STAND_FLAT_TOP,
+  'wave-landing': REEF_STAND_FLAT_TOP,
 };
 
 /** 取某块礁石的可站立面档案（role 漏登记直接抛，避免静默退回旧常量） */
@@ -279,47 +275,47 @@ export const reefSpriteOrigin = (reef: ReefSpec): { x: number; y: number } => ({
   y: reef.top - standAnchorTop(reef.stand) * reef.scale,
 });
 
-/** 连续两朵浪：踩上即起滚，被托着前移；滚到尽头开始消散，没跳走就落水 */
+/** 单朵滚浪：从冲刺礁前方开始，长距离向岸边推送后消散 */
 const WAVES: readonly WaveSpec[] = [
-  // 两朵浪整体右移并略下沉：避开浪前礁石，读起来更像在海面滚而不是叠在石头上
-  { id: 'W1', ridgeCenter: 2060, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 42, rollDistance: 75 },
-  { id: 'W2', ridgeCenter: 2320, top: 384, amplitude: 16, periodMs: 2800, rollSpeed: 42, rollDistance: 75 },
+  { id: 'W1', ridgeCenter: 2000, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 56, rollDistance: 360 },
 ];
 
 /**
  * 完整高低起伏跑酷关卡路线（世界 2870×540）：
- * 阶段 1：海岸沙滩 (0..280) → 错落礁石阶梯（低 415 → 陡峭高崖 320 → 俯冲平石 395 → 巍峨起跳塔 250！）
+ * 阶段 1：从第一块低礁（420）起步 → 错落礁石阶梯（低 430 → 高崖 320 → 平礁 375 → 起跳台 235）
  * 阶段 2：自高台跳起抓唯一一只飞鸥（1100~1460）→ 翱翔掠过深洋 → 甩向海心落脚礁（1620）
- * 阶段 3：浪前爬升礁（1750，+60 爬升）→ 浪前冲刺礁（1850）→ 连续两朵浪（W1 2060 / W2 2320）→ 右岸大陆（2600）
- * 阶段 4：右岸大陆（2500..2870）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 走回石门（openingCenterX 2680）进入记忆之房！
+ * 阶段 3：浪前爬升礁（1750）→ 浪前冲刺礁（1850）→ 单朵滚浪（2000）→ 浪后落脚礁（2590）→ 右岸大陆（2660）
+ * 阶段 4：右岸大陆（2660..2870）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 落地走回石门进入记忆之房！
  */
 export const LAYOUT: LayoutSpec = {
   startBeach: { left: 0, right: 280, top: 440 },
   reefs: REEFS.map(placement => ({ ...placement, stand: reefStand(placement.role) })),
-  gull: { fromX: 1100, toX: 1460, fromY: 195, toY: 215, speed: 95 },
+  gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
   waves: WAVES,
   key: { x: 2680, y: 196 },
-  landing: { left: 2600, right: 2870, top: 440 },
+  landing: { left: 2660, right: 2870, top: 440 },
   door: { openingCenterX: 2680 },
 };
 
-/** 关卡起点：出生点与 HUD「回到起点」共用（沙滩地面之上 45px） */
-const START_POINT = { x: 80, y: LAYOUT.startBeach.top - 45 };
+/** 第一块低礁是实际出生平台：韩梅梅从图中这块礁石上开始，而不是左侧沙滩。 */
+const START_REEF = LAYOUT.reefs.find(reef => reef.role === 'warmup-low');
+if (!START_REEF) throw new Error('LAYOUT 缺少起始低礁 warmup-low');
+const START_POINT = { x: START_REEF.standCenter, y: START_REEF.top - 45 };
 
 /** 复活点：standCenter 为触发用的站立中心 x（角色 x + 40 内即命中） */
 type RespawnPoint = { standCenter: number; x: number; y: number };
 
 /**
  * 落水后的安全复活点（由 LAYOUT 派生并按 standCenter 升序）：
- * 沙滩起点 → 每块礁石（顶面上方 40px）→ 右岸大陆；越靠右的落点越近，复活不倒退。
+ * 起始低礁 → 其他礁石（顶面上方 40px）；越靠右的落点越近，复活不倒退。
  */
 const RESPAWN_POINTS: readonly RespawnPoint[] = [
   { standCenter: START_POINT.x, x: START_POINT.x, y: START_POINT.y },
-  ...LAYOUT.reefs.map(r => ({ standCenter: r.standCenter, x: r.standCenter, y: r.top - 40 })),
+  ...LAYOUT.reefs
+    .filter(r => r.role !== START_REEF.role)
+    .map(r => ({ standCenter: r.standCenter, x: r.standCenter, y: r.top - 40 })),
 ].sort((a, b) => a.standCenter - b.standCenter);
-// 注：右岸大陆不再是复活点。它左侧 30px 就是石门区域（门洞 2599.8~2760.2），
-// 在右岸复活会一睁眼就压在门区里（拿到钥匙时=直接进门，没拿到=反复刷"先去摘钥匙"）；
-// 而且"浪区不可绕过"要求右岸离冲刺礁 694px，死一次跑回浪区正好是这一段的代价。
+// 注：右岸大陆不作为复活点，避免复活时直接落入石门交互区；浪后落脚礁是浪区唯一的安全复活面。
 
 /** 海鸥引导标签的触发范围（由海鸥航线派生） */
 const GULL_PROMPT_RANGE = { left: LAYOUT.gull.fromX - 150, right: LAYOUT.gull.toX + 90 };
@@ -330,8 +326,8 @@ const WAVE_PROMPT_RANGE = {
   right: Math.max(...LAYOUT.waves.map(w => w.ridgeCenter)) + 120,
 };
 
-/** 起点教学卡片淡出时机：离开沙滩后（沙滩右缘 +80px） */
-const TUTORIAL_FADE_X = LAYOUT.startBeach.right + 80;
+/** 起点教学卡片淡出时机：从起始低礁向前移动 80px 后 */
+const TUTORIAL_FADE_X = START_POINT.x + 80;
 
 /** 按 role 查礁石：布局增删礁石时路标仍能对上 */
 const reefByRole = (role: ReefRole): ReefSpec => {
@@ -392,6 +388,9 @@ export default class ForestScene extends Phaser.Scene {
   private respawnLockUntil = 0;
   /** 石门解锁时刻（摘到钥匙时写入 levelClockMs + DOOR_UNLOCK_DELAY_MS） */
   private doorOpenAt = 0;
+  /** 拾钥匙后的首次落地必须先走出门洞，再走回去才允许进入。 */
+  private doorReapproachPending = false;
+  private doorReapproachSatisfied = false;
   /** 门锁提示的下次可提示时刻（节流） */
   private doorHintAt = 0;
 
@@ -399,16 +398,12 @@ export default class ForestScene extends Phaser.Scene {
   private viewportWidth = 960;
   private touchControls: Array<{ button: Phaser.GameObjects.Text; baseX: number; baseY: number }> = [];
 
-  // —— 顶部导航与指示 ——
-  private targetBeacon!: Phaser.GameObjects.Text;
-
   // —— 场景内操作与交互引导 ——
   private startTutorialBadge?: Phaser.GameObjects.Container;
   private tutorialFading = false;
   private gullPrompt!: Phaser.GameObjects.Text;
   private gullGrabRing!: Phaser.GameObjects.Arc;
   private crestPrompt!: Phaser.GameObjects.Text;
-  private keyBeacon?: Phaser.GameObjects.Container;
   private helpModal?: Phaser.GameObjects.Container;
 
   // —— 单只海鸥 ——
@@ -422,7 +417,6 @@ export default class ForestScene extends Phaser.Scene {
   private waves: WaveEntity[] = [];
 
   private door?: Phaser.GameObjects.Image;
-  private doorHint?: Phaser.GameObjects.Text;
   private get progress(): ChapterOneRoomProgress {
     return this.progressSession.state;
   }
@@ -467,6 +461,8 @@ export default class ForestScene extends Phaser.Scene {
     this.levelClockMs = 0;
     this.respawnLockUntil = 0;
     this.doorOpenAt = 0;
+    this.doorReapproachPending = false;
+    this.doorReapproachSatisfied = this.keyCollected;
     this.doorHintAt = 0;
     this.touchControls = [];
     applyHDCamera(this, 'expand-horizontal');
@@ -585,7 +581,6 @@ export default class ForestScene extends Phaser.Scene {
   private applyScreenSpaceOffset(): void {
     const off = screenSpaceOrigin(this);
     this.statusText?.setPosition(18 + off.x, 500 + off.y);
-    this.targetBeacon?.setPosition(this.viewportWidth - 32 + off.x, 66 + off.y);
     for (const control of this.touchControls) {
       control.button.setPosition(control.baseX + off.x, control.baseY + off.y);
     }
@@ -597,20 +592,12 @@ export default class ForestScene extends Phaser.Scene {
       scene: this,
       title: '第一章 · 海边的记忆',
       stageKey: 'forest',
+      minimal: true,
       initialScore: this.progress.score,
       initialLives: this.progress.lives,
       initialObjective: this.keyCollected
         ? '带着金钥匙落地，走进右侧石门'
         : '越过海面滚浪区，跳起摘取右侧门楣上的金钥匙',
-      // 不拿钥匙就能从 HUD 直接跳到下一关（开局第一帧就点得到，整关会被跳过）
-      onNext: () => {
-        if (!canEnterChapterOneRoom(this.progress)) {
-          this.setStatus('先去石门门楣上摘下金钥匙，再走进右侧石门。');
-          return;
-        }
-        this.scene.start('room');
-      },
-      nextLabel: '下一关: 记忆之房 →',
       onRestart: () => this.restartLevel(),
       onHelp: () => this.toggleHelpModal(),
       onHome: () => this.scene.start('menu'),
@@ -619,25 +606,6 @@ export default class ForestScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-H', () => this.toggleHelpModal());
     this.input.keyboard?.on('keydown-ESC', () => this.gameHud.showPauseModal());
 
-    this.targetBeacon = this.add
-      .text(this.viewportWidth - 32, 66, '✦ 金钥匙在右侧门楣上 →', {
-        fontFamily: 'sans-serif',
-        fontSize: '13px',
-        color: '#ffefc6',
-        backgroundColor: '#3f2e14ee',
-        padding: { x: 10, y: 6 },
-      })
-      .setOrigin(1, 0)
-      .setScrollFactor(0)
-      .setDepth(100)
-      .setVisible(false);
-    this.tweens.add({
-      targets: this.targetBeacon,
-      alpha: { from: 0.75, to: 1 },
-      duration: 750,
-      yoyo: true,
-      repeat: -1,
-    });
   }
 
   update(_time: number, delta: number): void {
@@ -677,71 +645,19 @@ export default class ForestScene extends Phaser.Scene {
     const body = this.player.view.body as Phaser.Physics.Arcade.Body;
     const x = this.player.view.x;
     const grounded = body.blocked.down || body.touching.down;
-
-    // 更新海鸥交互引导浮标
-    const handY = this.player.view.y - 34;
-    const nearGull =
-      Phaser.Math.Distance.Between(x, handY, this.gullVine.handX, this.gullVine.handY) < 140;
-
-    if (this.player.attached) {
-      this.gullPrompt.setPosition(this.gullVine.handX, this.gullVine.handY + 36);
-      this.gullPrompt.setVisible(true);
-      this.gullPrompt.setText('[A / D] 蓄力摆荡    [空格 / ↑] 甩向对岸');
-      this.gullPrompt.setBackgroundColor('#244636f2');
-    } else if (nearGull) {
-      this.gullPrompt.setPosition(this.gullVine.handX, this.gullVine.handY + 36);
-      this.gullPrompt.setVisible(true);
-      this.gullPrompt.setText('跳起触碰即可【自动抓牢海鸥】');
-      this.gullPrompt.setBackgroundColor('#17352bf2');
-    } else if (x > GULL_PROMPT_RANGE.left && x < GULL_PROMPT_RANGE.right) {
-      this.gullPrompt.setPosition(this.gullVine.handX, this.gullVine.handY + 36);
-      this.gullPrompt.setVisible(true);
-      this.gullPrompt.setText('飞鸥渡海 · 跳向双脚自动抓牢');
-      this.gullPrompt.setBackgroundColor('#17352caa');
-    } else {
-      this.gullPrompt.setVisible(false);
+    if (this.doorReapproachPending && grounded) {
+      const halfOpening = ((DOOR.openingRight - DOOR.openingLeft) * DOOR.scale) / 2;
+      const openingLeft = LAYOUT.door.openingCenterX - halfOpening;
+      const openingRight = LAYOUT.door.openingCenterX + halfOpening;
+      if (body.right < openingLeft || body.left > openingRight) {
+        this.doorReapproachPending = false;
+        this.doorReapproachSatisfied = true;
+        this.setStatus('落地了，走近石门进入记忆之房。');
+      }
     }
 
-    // 浪尖提示：跟随当前活动浪，按「待机 / 剩余 > 0.9s / 剩余 ≤ 0.9s」三态给不同文案
-    const activeWave = this.activeWaveNear(x);
-    if (activeWave && x > WAVE_PROMPT_RANGE.left && x < WAVE_PROMPT_RANGE.right) {
-      this.crestPrompt.setPosition(activeWave.body.x + activeWave.body.width / 2, activeWave.body.y - 40);
-      this.crestPrompt.setVisible(true);
-      if (activeWave.state === 'rolling') {
-        const remaining = (activeWave.rollDistance - activeWave.rolled) / activeWave.rollSpeed;
-        const urgent = remaining <= WAVE_RIDE.warnSeconds;
-        this.crestPrompt.setText(urgent ? '⚠ 浪快散了！现在跳走' : '∿ 滚浪前移中 · 跟上它');
-        this.crestPrompt.setBackgroundColor(urgent ? '#5a2222f2' : '#1b3b4bf2');
-      } else if (activeWave.state === 'dissolving') {
-        this.crestPrompt.setText('⚠ 浪散了！');
-        this.crestPrompt.setBackgroundColor('#5a2222f2');
-      } else {
-        this.crestPrompt.setText('∿ 滚浪 · 踩上浪脊，浪会托着你前滚');
-        this.crestPrompt.setBackgroundColor('#1b3b4bf2');
-      }
-    } else {
-      this.crestPrompt.setVisible(false);
-    }
-
-    // 屏幕右侧视野外目标箭头引导
-    const viewRight = this.cameras.main.worldView.right;
-    if (!this.keyCollected) {
-      if (LAYOUT.key.x > viewRight - 30) {
-        this.targetBeacon.setVisible(true);
-        this.targetBeacon.setText('✦ 金钥匙在右侧门楣上 →');
-      } else {
-        this.targetBeacon.setVisible(false);
-      }
-    } else if (!this.enteredRoom) {
-      if (LAYOUT.door.openingCenterX > viewRight - 40) {
-        this.targetBeacon.setVisible(true);
-        this.targetBeacon.setText('🚪 石门在最右侧 →');
-      } else {
-        this.targetBeacon.setVisible(false);
-      }
-    } else {
-      this.targetBeacon.setVisible(false);
-    }
+    this.gullPrompt.setVisible(false);
+    this.crestPrompt.setVisible(false);
 
     // 走出起点后平滑淡出教学卡片
     if (!this.tutorialFading && x > TUTORIAL_FADE_X && this.startTutorialBadge) {
@@ -753,6 +669,7 @@ export default class ForestScene extends Phaser.Scene {
         onComplete: () => {
           this.startTutorialBadge?.destroy();
           this.startTutorialBadge = undefined;
+          this.statusText.setVisible(false);
         },
       });
     }
@@ -930,7 +847,7 @@ export default class ForestScene extends Phaser.Scene {
     wave.rolled = 0;
     this.sfx.bounce();
     Effects.dust(this, wave.body.x + wave.body.width / 2, wave.body.y, 6, 22);
-    this.setStatus('踩上滚浪！趁它散开之前跳到下一朵浪或右岸。');
+    this.setStatus('踩上滚浪！趁它散开之前跳到浪后落脚礁。');
   }
 
   private updateWaves(): void {
@@ -1129,7 +1046,6 @@ export default class ForestScene extends Phaser.Scene {
       this.saveProgress();
       keyImage.destroy();
       keyZone.destroy();
-      this.destroyKeyBeacon();
       this.sfx.key();
       Effects.sparkBurst(this, LAYOUT.key.x, LAYOUT.key.y);
       this.markKeyCollected(true);
@@ -1140,23 +1056,18 @@ export default class ForestScene extends Phaser.Scene {
     });
   }
 
-  private destroyKeyBeacon(): void {
-    this.keyBeacon?.destroy();
-    this.keyBeacon = undefined;
-  }
-
   private markKeyCollected(announce: boolean): void {
+    // 现场摘钥匙后必须落地、离开门洞再走回去；旧存档已有钥匙则直接允许正常进门。
+    this.doorReapproachPending = announce;
+    this.doorReapproachSatisfied = !announce;
+    // 不额外显示钥匙方向/状态牌：门楣上只保留可拾取的实体钥匙。
     this.gameHud?.setObjective('带着金钥匙落地，走进右侧石门');
-    // 门牌也要跟着改：旧存档（keyCollected=true 直接进场）走的是这条不带 announce 的路径，
-    // 不改的话门牌会一直挂着「先摘门楣上的金钥匙」，与实际状态矛盾
-    this.doorHint?.setText('钥匙已到手 · 落地走近石门');
     if (announce) this.setStatus('摘到了门楣上的金钥匙！落地后走近石门就能进去。');
   }
 
-  /** 摘到钥匙的反馈：门已存在，只把它点亮/换成已解锁文案 */
+  /** 摘到钥匙的反馈：门已存在，只闪烁提示解锁（不额外显示钥匙提示牌） */
   private pulseDoor(): void {
     if (!this.door) return;
-    this.doorHint?.setText('钥匙已到手 · 落地走近石门');
     Effects.ring(this, this.door.x, this.door.y, 0xffe6a3);
     this.tweens.killTweensOf(this.door);
     this.tweens.add({
@@ -1184,16 +1095,6 @@ export default class ForestScene extends Phaser.Scene {
     const openingHeight = (DOOR.openingBottom - DOOR.openingTop) * DOOR.scale;
     const openingCenterX = imageLeft + ((DOOR.openingLeft + DOOR.openingRight) / 2) * DOOR.scale;
     const openingCenterY = imageTop + ((DOOR.openingTop + DOOR.openingBottom) / 2) * DOOR.scale;
-    this.doorHint = this.add
-      .text(openingCenterX, openingCenterY - openingHeight / 2 - 26, '🔒 记忆之房 · 先摘门楣上的金钥匙', {
-        fontFamily: 'sans-serif',
-        fontSize: '13px',
-        color: '#f4e8c8',
-        backgroundColor: '#24352ddd',
-        padding: { x: 8, y: 5 },
-      })
-      .setOrigin(0.5)
-      .setDepth(5);
     const doorZone = this.add.zone(openingCenterX, openingCenterY, openingWidth, openingHeight);
     this.physics.add.existing(doorZone, true);
     this.physics.add.overlap(this.player.view, doorZone, () => {
@@ -1209,44 +1110,24 @@ export default class ForestScene extends Phaser.Scene {
       // 刚摘到钥匙还挂在门楣高度、身体与门区重叠：等落地后才算数（不刷状态，保留拾取提示）
       if (this.levelClockMs < this.doorOpenAt) return;
       const pBody = this.player.view.body as Phaser.Physics.Arcade.Body;
-      // 必须落地才推得开：摘到钥匙的那一瞬身体还在门楣高度、与门区重叠，不能让他空中进门
+      // 必须落地；现场刚摘钥匙时还需先走出门洞，再走回来，不能垂直落下就自动进房。
       if (!pBody.blocked.down && !pBody.touching.down) return;
+      if (!this.doorReapproachSatisfied) return;
       if (!canEnterChapterOneRoom(this.progress)) return;
       this.enteredRoom = true;
       this.applyProgressEvent({ type: 'forest-door-entered' });
       this.saveProgress();
-      this.doorHint?.setText('回家的路，打开了…');
       this.setStatus('石门开启，发现记忆之房！');
       this.sfx.door();
       this.player.freeze();
-      this.gameHud.showLevelClearedModal({
-        title: '— 第一关·海边跑酷 通关！ —',
-        description: '你成功跨越高低错落的险峻礁石与两朵限时滚浪，\n最后跳起摘下石门门楣上的金钥匙，推开了回家的路！',
-        score: this.progress.score,
-        nextLabel: '下一关：进入记忆之房 →',
-        onNext: () => this.scene.start('room'),
-        onStay: () => {
-          this.enteredRoom = false;
-          this.player.unfreeze();
-          // 退到门洞左缘之外：否则下一帧又与门区重叠、弹窗会立刻重开
-          const openingWidth = (DOOR.openingRight - DOOR.openingLeft) * DOOR.scale;
-          const exitX = LAYOUT.door.openingCenterX - openingWidth / 2 - 60;
-          this.player.view.x = exitX;
-          (this.player.view.body as Phaser.Physics.Arcade.Body).reset(exitX, this.player.view.y);
-          this.doorHint?.setText('记忆之房 · 走近即可进入');
-          this.setStatus('你选择留在海边。随时走近石门即可前往下一关。');
-        },
-        onRestart: () => this.restartLevel(),
-        onHome: () => this.scene.start('menu'),
-      });
+      this.cameras.main.fade(260, 19, 31, 27);
+      this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('room'));
     });
   }
 
   private createInWorldGuidance(): void {
-    this.createSeaSurface();
-
     // 起点操作教学卡片
-    this.startTutorialBadge = this.add.container(230, 270).setDepth(15);
+    this.startTutorialBadge = this.add.container(230, 270).setDepth(15).setVisible(false);
     const badgeBg = this.add
       .rectangle(0, 0, 310, 68, 0x112822, 0.88)
       .setStrokeStyle(1.5, 0xe2ce9b, 0.65);
@@ -1258,7 +1139,7 @@ export default class ForestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const line2 = this.add
-      .text(0, 13, '起点先长按跳上低礁 · 后续轻按/长按 · 空中二段跳', {
+      .text(0, 13, '从这块礁石出发 · 轻按/长按跳跃 · 空中二段跳', {
         fontFamily: 'sans-serif',
         fontSize: '10px',
         color: '#bed4c5',
@@ -1314,6 +1195,7 @@ export default class ForestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     reefSign.add([signBox, signText]);
+    reefSign.setVisible(false);
     this.tweens.add({
       targets: reefSign,
       y: launchReef.top - 30,
@@ -1337,6 +1219,7 @@ export default class ForestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     reefBSign.add([signBBox, signBText]);
+    reefBSign.setVisible(false);
 
     // 浪前冲刺礁路标：从爬升礁上落下来时要提前松手，否则全速会飞过这块窄礁
     const sprintReef = reefByRole('wave-sprint');
@@ -1352,44 +1235,8 @@ export default class ForestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     sprintSign.add([sprintSignBox, sprintSignText]);
+    sprintSign.setVisible(false);
 
-    // 金钥匙光柱地标（挂在门楣上：光柱缩短上移，避开门牌文案）
-    if (!this.keyCollected) {
-      this.keyBeacon = this.add.container(LAYOUT.key.x, LAYOUT.key.y).setDepth(-3);
-      const lightRay = this.add
-        .rectangle(0, 0, 20, 180, 0xffe6a3, 0.22)
-        .setBlendMode(Phaser.BlendModes.ADD);
-      this.tweens.add({
-        targets: lightRay,
-        alpha: { from: 0.15, to: 0.4 },
-        duration: 900,
-        yoyo: true,
-        repeat: -1,
-      });
-      const keyHint = this.add
-        .text(0, -52, '✦ 金钥匙(门上)', {
-          fontFamily: 'sans-serif',
-          fontSize: '12px',
-          color: '#fff5d0',
-          backgroundColor: '#3f2d12e6',
-          padding: { x: 6, y: 3 },
-        })
-        .setOrigin(0.5);
-      this.keyBeacon.add([lightRay, keyHint]);
-    }
-  }
-
-  /** 海面亮带：把浪区从水彩背景里托出来（顶缘一道亮边标出海平线） */
-  private createSeaSurface(): void {
-    const height = SEA_SURFACE.bottom - SEA_SURFACE.top;
-    this.add
-      .rectangle(SEA_SURFACE.left, SEA_SURFACE.top, SEA_SURFACE.right - SEA_SURFACE.left, height, 0x1d6f92, 0.34)
-      .setOrigin(0, 0)
-      .setDepth(-9);
-    this.add
-      .rectangle(SEA_SURFACE.left, SEA_SURFACE.top, SEA_SURFACE.right - SEA_SURFACE.left, 2, 0x8fd6ea, 0.5)
-      .setOrigin(0, 0)
-      .setDepth(-9);
   }
 
   private toggleHelpModal(): void {

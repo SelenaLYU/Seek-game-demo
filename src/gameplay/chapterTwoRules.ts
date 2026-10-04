@@ -1,15 +1,5 @@
 export const TEACHER = { x: 28, groundY: 260 };
-/** Calibrated to the content-aligned teacher frame; feet stay on the school wall. */
-export const TEACHER_ART = {
-  width: 256, height: 497, displayHeight: 100,
-  nozzleX: 254, nozzleY: 207, originX: .5, originY: 1,
-};
-const teacherScale = TEACHER_ART.displayHeight / TEACHER_ART.height;
-/** One origin shared by the drawn beam and detection, derived from the visible nozzle. */
-export const LIGHT_ORIGIN = {
-  x: TEACHER.x + (TEACHER_ART.nozzleX - TEACHER_ART.width * TEACHER_ART.originX) * teacherScale,
-  y: TEACHER.groundY + (TEACHER_ART.nozzleY - TEACHER_ART.height * TEACHER_ART.originY) * teacherScale,
-};
+export const LIGHT_ORIGIN = { x: TEACHER.x + 18, y: TEACHER.groundY - 30 };
 export const LIGHT_LENGTH = 4200;
 export const LIGHT_HALF_ANGLE = .065;
 export const DETECTION_MS = 950;

@@ -13,7 +13,7 @@ const MUSIC_TOGGLE_DOM_ID = 'seek-music-toggle';
  * 逻辑坐标 0 落在屏幕 0，且 1 逻辑单位 = zoom 个缓冲像素（与场景世界单位一致），
  * 因此 HUD 用 logicalWorldViewportWidth() 排布即可横向铺满画布。
  *
- * 森林的 statusText / targetBeacon / 触屏键 / 帮助弹窗同属 sf0 层，需要同一补偿。
+ * 森林的 statusText / 触屏键 / 帮助弹窗同属 sf0 层，需要同一补偿。
  */
 export function screenSpaceOrigin(scene: Phaser.Scene): { x: number; y: number } {
   const cam = scene.cameras.main;
@@ -40,6 +40,8 @@ export interface GameHudConfig {
   prevLabel?: string;
   onHelp?: () => void;
   onHome?: () => void;
+  /** 只显示操作按钮，隐藏标题、生命、积分、进度与目标。 */
+  minimal?: boolean;
 }
 
 export interface GameHudHandle {
@@ -253,6 +255,17 @@ export function createGameHud(config: GameHudConfig): GameHudHandle {
     const rightX = vpW - 24 - musicToggleReserve(vpW);
     rightGroup.setPosition(rightX, 20);
     fitObjective(Math.max(120, Math.min(300, vpW * 0.42)));
+    leftGroup.setVisible(!config.minimal);
+    centerGroup.setVisible(!config.minimal);
+    objectiveText.setVisible(!config.minimal);
+
+    // 精简模式只保留右上角按钮。跳过旧 HUD 的三栏避让逻辑，否则隐藏的标题、积分仍会
+    // 参与宽度计算，把暂停/指南错误地下沉或缩小。
+    if (config.minimal) {
+      btnRow.setY(0);
+      activeModalPanel?.setPosition(off.x + vpW / 2, off.y + BASE_HEIGHT / 2);
+      return;
+    }
 
     // 三簇横向排布：排不下时逐级降级（窄屏/横屏小窗）
     const spans = () => {

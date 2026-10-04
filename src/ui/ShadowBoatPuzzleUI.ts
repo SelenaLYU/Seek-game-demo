@@ -45,8 +45,10 @@ const PIECE_ART_SIZE: Record<PieceId, { width: number; height: number }> = {
   sail: { width: 37, height: 52 },
   mast: { width: 4, height: 63 },
 };
-const PIECE_ART_SCALE = 1.7;
-const PIECE_ART_FORWARD_Y = 14;
+// 原资产造型与图案保持不变；只把三件桌面工具统一回书桌的实际尺度。
+// 旧版 1.7 倍会让笔袋、三角尺和细尺像悬在桌前，破坏同一机位的透视感。
+const PIECE_ART_SCALE = 1.3;
+const PIECE_ART_FORWARD_Y = 6;
 
 function installStyle(): void {
   document.getElementById(STYLE_ID)?.remove();

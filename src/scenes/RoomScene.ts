@@ -292,19 +292,23 @@ export default class RoomScene extends Phaser.Scene {
   /** 夜景底图自带家具；独立道具按家具支撑面摆放，而非按 PNG 画布中心估坐标。 */
   private buildNewRoomAssets(): void {
     // 队友确认这两张就是年年的画：挂在中央空墙；这是墙面画，不是书桌或家具道具。
-    this.add.rectangle(526, 160, 164, 120, 0x1b2b3a, 0.22).setDepth(0.8);
+    // 空墙在 1:2 缓冲坐标中只有约 180px 宽；旧版 160px 几乎铺满墙面，比例显得失真。
+    // 保留原画内容，只缩小并补一圈窄木框，让它与书架/窗框的建筑尺度一致。
+    this.add.rectangle(526, 160, 124, 92, 0x241b18, 0.72)
+      .setStrokeStyle(2, 0x5a4433, 0.9)
+      .setDepth(0.8);
     this.wallPicture = this.add.image(
       526,
       160,
       this.progress.shadowBoatSolved ? 'room-wall-drawing-complete' : 'room-wall-drawing-incomplete',
-    ).setDisplaySize(160, 116).setDepth(0.9).setTint(0xc4ccd6);
+    ).setDisplaySize(116, 84).setDepth(0.9).setTint(0xc4ccd6);
 
     // 先确定“物件底部接触家具的哪条边”，再用透明像素 bbox 锚定；可见宽度按承托面留边。
-    // 道具以 GPT Image 2.5 Sunburst 按背景机位与夜间光照重绘，保留原素材文件不覆盖。
     // 按队友视频里的指点：书放书柜上层、录音机与锁盒放中层、鱼缸放最右侧柜面。
-    this.addSupportedRoomProp('room-radio-art', 700, 249, 54, 2);
-    this.addSupportedRoomProp('room-book-art', 760, 172, 30, 2);
-    this.addSupportedRoomProp('room-aquarium-art', 860, 340, 44, 2);
+    // 全部沿用队友原始 PNG；这里只统一实际家具支撑面、间距与显示尺度。
+    this.addSupportedRoomProp('room-book-art', 720, 180, 32, 2);
+    this.addSupportedRoomProp('room-radio-art', 695, 250, 58, 2);
+    this.addSupportedRoomProp('room-aquarium-art', 872, 340, 52, 2);
   }
 
   /** 将透明 PNG 的可见像素水平居中，并让可见底缘恰好接触家具支撑面。 */
@@ -380,11 +384,11 @@ export default class RoomScene extends Phaser.Scene {
     // Invisible inspect targets follow the already-painted objects in the room art.
     // This avoids drawing a second clock/radio/photo/calendar over the same illustration.
     const inspectTargets: Array<{ kind: ObjectKind; x: number; y: number; w: number; h: number }> = [
-      { kind: 'radio', x: 700, y: 231, w: 62, h: 46 },
+      { kind: 'radio', x: 695, y: 231, w: 66, h: 46 },
       // 相框热区贴合可见画框；与下方木盒热区留出间隔。
-      { kind: 'photo', x: 760, y: 193, w: 48, h: 30 },
-      { kind: 'fish', x: 860, y: 321, w: 58, h: 54 },
-      { kind: 'book', x: 760, y: 158, w: 50, h: 44 },
+      { kind: 'photo', x: 782, y: 198, w: 44, h: 34 },
+      { kind: 'fish', x: 872, y: 314, w: 64, h: 58 },
+      { kind: 'book', x: 720, y: 156, w: 48, h: 50 },
       // 点击底图中已有的桌子，弹出独立书桌近景；不把另一张桌子贴回房间。
       { kind: 'desk', x: 480, y: 292, w: 270, h: 62 },
     ];
@@ -959,18 +963,12 @@ export default class RoomScene extends Phaser.Scene {
       scene: this,
       title: '第一章 · 记忆之房',
       stageKey: 'room',
+      minimal: true,
       initialScore: this.progress.score,
       initialLives: this.progress.lives,
       initialObjective: this.progress.chapterOneCompleted
         ? '触碰贝壳，重温海边回忆'
         : '收集三块童年记忆碎片',
-      onPrev: () => this.scene.start('forest'),
-      prevLabel: '← 上一关: 海边跑酷',
-      onNext: () => {
-        if (hasAllRoomFragments(this.progress)) this.touchMemoryOrb();
-        else this.showHint('先找齐三块记忆碎片，才能触碰贝壳。');
-      },
-      nextLabel: '下一关: 记忆之岛 →',
       onRestart: () => this.scene.restart(),
       onHome: () => this.scene.start('menu'),
     });
@@ -1072,13 +1070,15 @@ export default class RoomScene extends Phaser.Scene {
       ? '木盒（已空）'
       : '木盒（有电池）';
     const boxTexture = !this.progress.photoSolved ? 'room-box-closed-art' : 'room-box-open-art';
-    this.addSupportedRoomProp(boxTexture, 760, 249, 58, 2.2);
-    const boxVisibleTop = 210;
-    this.addSupportedRoomProp('room-frame-art', 760, boxVisibleTop + 3, 34, 2.3);
+    // 这些会随进度状态刷新，必须纳入 roomProgressProps；旧版直接加到 Scene，
+    // 每次刷新都会残留一套相框/锁盒/电池，造成肉眼可见的重复叠图。
+    props.add(this.addSupportedRoomProp(boxTexture, 782, 250, 56, 2.2));
+    const boxVisibleTop = 211;
+    props.add(this.addSupportedRoomProp('room-frame-art', 782, boxVisibleTop + 3, 30, 2.3));
     if (this.progress.photoSolved && !this.progress.batteryCollected) {
-      this.addSupportedRoomProp('room-battery-art', 760, 237, 24, 2.4);
+      props.add(this.addSupportedRoomProp('room-battery-art', 782, 238, 22, 2.4));
     }
-    prop(760, 229, boxLabel, true, () => {
+    prop(782, 230, boxLabel, true, () => {
       if (!this.progress.photoSolved) {
         return this.showHint('木盒锁着，盒盖上的凹槽像是在等一张完整的照片。');
       }
