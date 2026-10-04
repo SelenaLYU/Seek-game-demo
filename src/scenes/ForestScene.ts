@@ -72,9 +72,8 @@ const WAVE_RIDE = {
   dissolveMs: 900,
   /** 承重判定容差 px（脚底离浪脊顶面多近算站在浪上） */
   standTolerance: 6,
-  /** 承重判定窗口 px：|脚底 − 浪顶| 在窗口内就算站在浪上。上下浮动 ±16、物理分离滞后 1 帧（≈7px @42px/s）
-   *  都可能把瞬时差值推到 6px 以上，窗口太紧会让 carry 丢掉、玩家被浪抛下 */
-  rideWindow: 18,
+  /** 承重判定窗口 px：滚动浪面锁定高度后，只容忍物理碰撞的一帧误差 */
+  rideWindow: 8,
   /** 消散后玩家掉到浪脊以下这么多像素仍没跳走 → 判定被卷走（要大于浪体厚 60，才算真掉出浪体） */
   sinkDepth: 64,
   /** 剩余滚动时间少于该值（秒）时提示「快散开了」 */
@@ -225,6 +224,15 @@ const REEF_STAND_FLAT_TOP: readonly ReefStandStep[] = [
   { srcLeft: 846, srcRight: 1098, srcTop: 260 },
 ];
 
+/** 可玩礁站面上的水彩日光碎点：只标实际碰撞顶边，不画矩形/箭头，和背景装饰礁拉开轻微层级 */
+const REEF_SURFACE_GLINT = {
+  inset: 3,
+  color: 0xbbe36e,
+  alpha: 0.72,
+  coreColor: 0xf5ffd0,
+  coreAlpha: 0.8,
+};
+
 /** 逐块可站立面档案：必须覆盖每个 role；八块目前数值相同，换图/换裁切时各块独立调整 */
 const REEF_STANDS: Record<ReefRole, readonly ReefStandStep[]> = {
   'warmup-low': REEF_STAND_FLAT_TOP,
@@ -347,9 +355,11 @@ interface WaveEntity {
   body: Phaser.GameObjects.Rectangle;
   /** 浪脊亮条 */
   ridgeBar: Phaser.GameObjects.Rectangle;
-  /** 待机基准位（idle 正弦浮动的中心）；滚动/消散都从它出发 */
+  /** 待机基准位（idle 正弦浮动的中心） */
   baseX: number;
   baseY: number;
+  /** 起滚时锁定的浪面高度，避免托举角色时浪体上下浮动导致落地判定抖动 */
+  rollY: number;
   amplitude: number;
   periodMs: number;
   rollSpeed: number;
@@ -388,9 +398,6 @@ export default class ForestScene extends Phaser.Scene {
   private respawnLockUntil = 0;
   /** 石门解锁时刻（摘到钥匙时写入 levelClockMs + DOOR_UNLOCK_DELAY_MS） */
   private doorOpenAt = 0;
-  /** 拾钥匙后的首次落地必须先走出门洞，再走回去才允许进入。 */
-  private doorReapproachPending = false;
-  private doorReapproachSatisfied = false;
   /** 门锁提示的下次可提示时刻（节流） */
   private doorHintAt = 0;
 
@@ -461,8 +468,6 @@ export default class ForestScene extends Phaser.Scene {
     this.levelClockMs = 0;
     this.respawnLockUntil = 0;
     this.doorOpenAt = 0;
-    this.doorReapproachPending = false;
-    this.doorReapproachSatisfied = this.keyCollected;
     this.doorHintAt = 0;
     this.touchControls = [];
     applyHDCamera(this, 'expand-horizontal');
@@ -631,8 +636,8 @@ export default class ForestScene extends Phaser.Scene {
       const nearGull =
         Phaser.Math.Distance.Between(this.player.view.x, handY, this.gullVine.handX, this.gullVine.handY) < 95;
       this.gullVine.setNear(nearGull && this.gullVine.available);
-      if (nearGull && this.gullVine.available) {
-        this.player.tryGrabVine(this.gullVine);
+      if (nearGull && this.gullVine.available && this.player.tryGrabVine(this.gullVine)) {
+        this.setStatus('抓住海鸥了！按空格甩出，飞向海心落脚礁。');
       }
     }
 
@@ -645,17 +650,6 @@ export default class ForestScene extends Phaser.Scene {
     const body = this.player.view.body as Phaser.Physics.Arcade.Body;
     const x = this.player.view.x;
     const grounded = body.blocked.down || body.touching.down;
-    if (this.doorReapproachPending && grounded) {
-      const halfOpening = ((DOOR.openingRight - DOOR.openingLeft) * DOOR.scale) / 2;
-      const openingLeft = LAYOUT.door.openingCenterX - halfOpening;
-      const openingRight = LAYOUT.door.openingCenterX + halfOpening;
-      if (body.right < openingLeft || body.left > openingRight) {
-        this.doorReapproachPending = false;
-        this.doorReapproachSatisfied = true;
-        this.setStatus('落地了，走近石门进入记忆之房。');
-      }
-    }
-
     this.gullPrompt.setVisible(false);
     this.crestPrompt.setVisible(false);
 
@@ -748,13 +742,50 @@ export default class ForestScene extends Phaser.Scene {
    */
   private addReef(reef: ReefSpec): void {
     const origin = reefSpriteOrigin(reef);
+    const boxes = reefStandBoxes(reef);
     this.add
       .image(origin.x, origin.y, ART.reef)
       .setOrigin(0, 0)
       .setScale(reef.scale)
       .setDepth(-8);
+
+    // 只沿真实站面画不规则的薄荷色湿苔斑：背景中同材质的装饰礁没有这层，
+    // 玩家能读出“这里可落脚”，同时避免矩形碰撞框、描边或固定 UI。
+    const glints = this.add.graphics().setDepth(-7);
+    boxes.forEach((box, boxIndex) => {
+      const left = box.x + REEF_SURFACE_GLINT.inset;
+      const right = box.x + box.width - REEF_SURFACE_GLINT.inset;
+      const y = box.y + Math.max(2, reef.scale * REEF_STAND_TOLERANCE + 1);
+      const span = right - left;
+      // 不规则的湿苔色斑只铺在碰撞站面：用有机斑点区别底图装饰礁，避免描边/条带的 UI 语法。
+      const patchCount = Math.max(2, Math.round(span / 18));
+      const cell = span / patchCount;
+      for (let patchIndex = 0; patchIndex < patchCount; patchIndex += 1) {
+        const centerX = left + cell * (patchIndex + 0.5);
+        const centerY = y + 4.5 + ((patchIndex + boxIndex) % 2) * 0.9;
+        const halfWidth = Math.min(6.5, cell * 0.42);
+        const seed = (patchIndex * 3 + boxIndex) % 3;
+        const patch = [
+          { x: centerX - halfWidth, y: centerY + 0.4 },
+          { x: centerX - halfWidth * 0.52, y: centerY - 1.8 - seed * 0.35 },
+          { x: centerX + halfWidth * 0.05, y: centerY - 0.4 },
+          { x: centerX + halfWidth, y: centerY + 0.2 + seed * 0.2 },
+          { x: centerX + halfWidth * 0.62, y: centerY + 4.2 },
+          { x: centerX - halfWidth * 0.18, y: centerY + 5.3 },
+          { x: centerX - halfWidth * 0.78, y: centerY + 3.8 },
+        ];
+        glints.fillStyle(REEF_SURFACE_GLINT.color, REEF_SURFACE_GLINT.alpha);
+        glints.fillPoints(patch, true);
+        glints.fillStyle(REEF_SURFACE_GLINT.coreColor, REEF_SURFACE_GLINT.coreAlpha);
+        glints.fillPoints(patch.slice(1, 5).map(point => ({
+          x: centerX + (point.x - centerX) * 0.46,
+          y: centerY + (point.y - centerY) * 0.42,
+        })), true);
+      }
+    });
+
     const visibleBottom = origin.y + REEF_ART.contentBottom * reef.scale;
-    for (const box of reefStandBoxes(reef)) {
+    for (const box of boxes) {
       this.terrain.addPlatform({
         x: box.x,
         y: box.y,
@@ -813,6 +844,7 @@ export default class ForestScene extends Phaser.Scene {
         ridgeBar,
         baseX: bodyLeft,
         baseY: spec.top,
+        rollY: spec.top,
         amplitude: spec.amplitude,
         periodMs: spec.periodMs,
         rollSpeed: spec.rollSpeed,
@@ -843,6 +875,8 @@ export default class ForestScene extends Phaser.Scene {
     if (pBody.velocity.y < 0) return;
     if (!pBody.blocked.down && !pBody.touching.down && !this.isPlayerStandingOn(wave)) return;
     wave.state = 'rolling';
+    // 待机时浪面会上下浮动；一旦承载角色就锁住当前高度，防止物理落地状态和角色动画抖动。
+    wave.rollY = wave.body.y;
     wave.rollStartedAt = this.levelClockMs;
     wave.rolled = 0;
     this.sfx.bounce();
@@ -857,13 +891,10 @@ export default class ForestScene extends Phaser.Scene {
         const bob = Math.sin((now / wave.periodMs) * Math.PI * 2) * wave.amplitude;
         this.setWavePosition(wave, wave.baseX, wave.baseY + bob);
       } else if (wave.state === 'rolling') {
-        // 前移量由关卡时钟算（弹窗期间时钟不走）——不再每帧写 scale，免得吞掉消散 tween
+        // 前移量由关卡时钟算（弹窗期间时钟不走）——不再每帧写 scale，免得吞掉消散 tween。
+        // y 使用接触时锁定的 rollY，不再带入 idle bob；角色和碰撞面保持同一高度，避免看似浮空/跳帧。
         wave.rolled = Math.min(wave.rollDistance, ((now - wave.rollStartedAt) / 1000) * wave.rollSpeed);
-        // 起滚必须**保留上下浮动**：idle 时浪体在 baseY+bob 上，若起滚瞬间直接回 baseY，
-        // 浪会在玩家脚底瞬移最多 ±16px（实测 10px），一下超出站立判定窗口 → carry 不生效
-        // → 浪自己往前滚、玩家被留在原地掉海（"踩上去就被摔下来"）。
-        const bob = Math.sin((now / wave.periodMs) * Math.PI * 2) * wave.amplitude;
-        this.setWavePosition(wave, wave.baseX + wave.rolled, wave.baseY + bob);
+        this.setWavePosition(wave, wave.baseX + wave.rolled, wave.rollY);
         if (wave.rolled >= wave.rollDistance) this.startWaveDissolve(wave);
       } else if (wave.state === 'dissolving') {
         const progress = Phaser.Math.Clamp((now - wave.dissolveStartedAt) / WAVE_RIDE.dissolveMs, 0, 1);
@@ -901,6 +932,7 @@ export default class ForestScene extends Phaser.Scene {
     this.tweens.killTweensOf(wave.ridgeBar);
     wave.state = 'idle';
     wave.rolled = 0;
+    wave.rollY = wave.baseY;
     wave.rollStartedAt = 0;
     wave.dissolveStartedAt = 0;
     wave.image.setVisible(true).setAlpha(1).setScale(WAVE.scale);
@@ -1057,12 +1089,9 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   private markKeyCollected(announce: boolean): void {
-    // 现场摘钥匙后必须落地、离开门洞再走回去；旧存档已有钥匙则直接允许正常进门。
-    this.doorReapproachPending = announce;
-    this.doorReapproachSatisfied = !announce;
     // 不额外显示钥匙方向/状态牌：门楣上只保留可拾取的实体钥匙。
     this.gameHud?.setObjective('带着金钥匙落地，走进右侧石门');
-    if (announce) this.setStatus('摘到了门楣上的金钥匙！落地后走近石门就能进去。');
+    if (announce) this.setStatus('摘到了门楣上的金钥匙！落地后就能从门口进入记忆之房。');
   }
 
   /** 摘到钥匙的反馈：门已存在，只闪烁提示解锁（不额外显示钥匙提示牌） */
@@ -1110,9 +1139,8 @@ export default class ForestScene extends Phaser.Scene {
       // 刚摘到钥匙还挂在门楣高度、身体与门区重叠：等落地后才算数（不刷状态，保留拾取提示）
       if (this.levelClockMs < this.doorOpenAt) return;
       const pBody = this.player.view.body as Phaser.Physics.Arcade.Body;
-      // 必须落地；现场刚摘钥匙时还需先走出门洞，再走回来，不能垂直落下就自动进房。
+      // 必须落地才能进门；空中摘到钥匙后直接穿门会跳过回到岸上的收束动作。
       if (!pBody.blocked.down && !pBody.touching.down) return;
-      if (!this.doorReapproachSatisfied) return;
       if (!canEnterChapterOneRoom(this.progress)) return;
       this.enteredRoom = true;
       this.applyProgressEvent({ type: 'forest-door-entered' });

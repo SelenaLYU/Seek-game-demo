@@ -95,6 +95,10 @@ async function run() {
 
   // 截图辅助
   const captureScreenshot = async (name) => {
+    if (process.env.SKIP_E2E_SCREENSHOTS === '1') {
+      console.log(` ⏭ 截图跳过: ${name}`);
+      return;
+    }
     const { data } = await send('Page.captureScreenshot', { format: 'png' });
     fs.mkdirSync('screenshots', { recursive: true });
     fs.writeFileSync(`screenshots/${name}.png`, Buffer.from(data, 'base64'));
@@ -330,16 +334,20 @@ async function run() {
   console.log('--- 3. 验证奔跑状态与动画循环播放 ---');
   const runInfo = await evalJs(`new Promise(resolve => {
     const s = ${sceneJs};
-    s.player.setTouchMove(1);
+    // 起始礁较窄，先放到宽岸面做纯动画采样，避免测试本身跑出平台触发 fall。
+    s.player.teleportTo(${LAYOUT.startBeach.left + 140}, ${LAYOUT.startBeach.top - 36});
+    setTimeout(() => s.player.setTouchMove(1), 80);
     setTimeout(() => {
       resolve({
         isPlaying: s.player.sprite.anims.isPlaying,
         currentAnim: s.player.sprite.anims.currentAnim?.key,
         frameName: s.player.sprite.frame.name,
         state: s.player.state,
+        onFloor: s.player.body.onFloor(),
+        playerX: Math.round(s.player.view.x),
         vx: s.player.body.velocity.x,
       });
-    }, 250);
+    }, 230);
   })`);
   console.log('奔跑动画状态:', JSON.stringify(runInfo, null, 2));
   if (!runInfo.isPlaying || runInfo.currentAnim !== 'niannian-run') {
@@ -347,6 +355,9 @@ async function run() {
   }
   if (runInfo.state !== 'run') {
     throw new Error(`按住方向键时 Player.state 应为 run，当前: ${runInfo.state}`);
+  }
+  if (!runInfo.onFloor) {
+    throw new Error(`奔跑动画采样窗口不应长到让角色跑出出生礁：${JSON.stringify(runInfo)}`);
   }
   await captureScreenshot('test-niannian-run-verified');
 
@@ -466,6 +477,7 @@ async function run() {
           frameName: Number(s.player.sprite.frame.name),
           animKey: s.player.sprite.anims.currentAnim?.key ?? null,
           gullPrompt: s.gullPrompt.text,
+          status: s.statusText.text,
         });
         return;
       }
@@ -480,6 +492,9 @@ async function run() {
   console.log('海鸥抓取状态:', JSON.stringify(grabInfo, null, 2));
   if (!grabInfo.attached || grabInfo.textureKey !== 'char-niannian-grab') {
     throw new Error('海鸥触碰未触发自动抓牢或未切换抓取姿势！');
+  }
+  if (!grabInfo.status.includes('抓住海鸥') || !grabInfo.status.includes('按空格甩出')) {
+    throw new Error(`抓牢后应明确提示已抓住及如何甩出：${grabInfo.status}`);
   }
   // 上伸帧区间从运行中的动画注册里读（不再写死帧号，改动 GRAB_REACH/HANG 常量不会让断言失真）
   const { reachRange, hangRange } = textureInfo;
@@ -674,16 +689,34 @@ async function run() {
     throw new Error(`未站在浪脊上：y=${rideState.playerY} 期望 ≈${rideState.expectedY}`);
   }
 
-  // 浪体前移会把角色一起托走：500ms 内位移应接近 rollSpeed × 0.5s（42 → ≈21px）
+  // 浪体前移会把角色一起托走：500ms 内位移应接近 rollSpeed × 0.5s。
   const carryInfo = await evalJs(`new Promise(resolve => {
     const s = ${sceneJs};
+    const w = s.waves[${w1Index}];
     const x0 = s.player.view.x;
-    setTimeout(() => resolve({
-      dx: s.player.view.x - x0,
+    const samples = [];
+    const timer = setInterval(() => samples.push({
       onFloor: s.player.body.onFloor(),
-      waveState: s.waves[${w1Index}].state,
-      lives: s.progress.lives,
-    }), 500);
+      state: s.player.state,
+      gap: s.player.view.body.bottom - w.body.y,
+      playerY: s.player.view.y,
+      waveY: w.body.y,
+    }), 16);
+    setTimeout(() => {
+      clearInterval(timer);
+      resolve({
+        dx: s.player.view.x - x0,
+        onFloor: s.player.body.onFloor(),
+        waveState: w.state,
+        lives: s.progress.lives,
+        samples: samples.length,
+        airborneSamples: samples.filter(sample => !sample.onFloor).length,
+        airborneStates: samples.filter(sample => sample.state === 'jump' || sample.state === 'fall').length,
+        maxAbsGap: Math.max(0, ...samples.map(sample => Math.abs(sample.gap))),
+        playerYRange: Math.max(...samples.map(sample => sample.playerY)) - Math.min(...samples.map(sample => sample.playerY)),
+        waveYRange: Math.max(...samples.map(sample => sample.waveY)) - Math.min(...samples.map(sample => sample.waveY)),
+      });
+    }, 500);
   })`);
   console.log('滚浪托举状态:', JSON.stringify(carryInfo, null, 2));
   if (carryInfo.waveState !== 'rolling') {
@@ -691,6 +724,13 @@ async function run() {
   }
   if (carryInfo.dx < 5 || carryInfo.dx > 45) {
     throw new Error(`滚浪未把角色托着前移（500ms 位移 ${carryInfo.dx.toFixed(1)}px，期望 ≈${W1.rollSpeed * 0.5}px）`);
+  }
+  // 接触浪面的首个物理帧允许一次落地过渡；连续抖动才是回归（旧实现 18/31 帧离地）。
+  if (carryInfo.airborneSamples > 1 || carryInfo.airborneStates > 1) {
+    throw new Error(`角色骑浪期间不应反复离地/切跳跃帧：${JSON.stringify(carryInfo)}`);
+  }
+  if (carryInfo.playerYRange > 2 || carryInfo.waveYRange > 1 || carryInfo.maxAbsGap > 8) {
+    throw new Error(`滚动浪面与角色脚底应保持稳定贴合：${JSON.stringify(carryInfo)}`);
   }
   await captureScreenshot('test-niannian-wave-ride');
 
@@ -855,65 +895,59 @@ async function run() {
     throw new Error('取到钥匙后不应重新出现额外钥匙光柱/提示牌/UI');
   }
 
-  console.log(`--- 13. 验证摘钥匙后必须落地、离开门洞再走回石门（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
-  const groundedAtDoor = await waitFor(`(() => {
-    const s = ${sceneJs};
-    const p = s.player;
-    return {
-      ok: s.keyCollected && p.body.onFloor() && !s.enteredRoom && s.levelClockMs >= s.doorOpenAt
-        && s.doorReapproachPending && !s.doorReapproachSatisfied,
-      enteredRoom: s.enteredRoom,
-      onFloor: p.body.onFloor(),
-      playerX: Math.round(p.view.x),
-      reapproachPending: s.doorReapproachPending,
-      reapproachSatisfied: s.doorReapproachSatisfied,
-      status: s.statusText.text,
-    };
-  })()`, { label: '取钥匙后落地但不能直接自动进门', timeoutMs: 8000 });
-  console.log('落地未自动进门:', JSON.stringify(groundedAtDoor, null, 2));
-  if (!groundedAtDoor.reapproachPending || groundedAtDoor.reapproachSatisfied) {
-    throw new Error('落地后门洞重返条件应仍为 pending，不能被提前满足');
-  }
-  await sleep(100);
-  const stillBlockedAtDoor = await evalJs(`(() => {
+  console.log(`--- 13. 验证空中不能进门、取钥匙后落地即可从门口进入（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
+  // 拾取点就在门楣上方：先检查解锁延迟，再让延迟提前结束，单独验证空中仍不能进门。
+  await sleep(120);
+  const airborneBeforeUnlock = await evalJs(`(() => {
     const s = ${sceneJs};
     return {
-      ok: s.keyCollected && s.player.body.onFloor() && !s.enteredRoom
-        && s.doorReapproachPending && !s.doorReapproachSatisfied,
+      keyCollected: s.keyCollected,
       enteredRoom: s.enteredRoom,
       onFloor: s.player.body.onFloor(),
-      reapproachPending: s.doorReapproachPending,
-      reapproachSatisfied: s.doorReapproachSatisfied,
+      levelClockMs: s.levelClockMs,
+      doorOpenAt: s.doorOpenAt,
+      playerX: Math.round(s.player.view.x),
+      playerY: Math.round(s.player.view.y),
     };
   })()`);
-  if (!stillBlockedAtDoor.ok) {
-    throw new Error(`静止等待后不应自动进门或清除重返条件：${JSON.stringify(stillBlockedAtDoor)}`);
+  console.log('钥匙后空中状态:', JSON.stringify(airborneBeforeUnlock, null, 2));
+  if (!airborneBeforeUnlock.keyCollected || airborneBeforeUnlock.enteredRoom || airborneBeforeUnlock.onFloor
+    || airborneBeforeUnlock.doorOpenAt <= airborneBeforeUnlock.levelClockMs) {
+    throw new Error('拾钥匙后应仍在空中、门有解锁延迟且尚未进入');
+  }
+  await evalJs(`(() => {
+    const s = ${sceneJs};
+    s.doorOpenAt = s.levelClockMs;
+    return true;
+  })()`);
+  await sleep(80);
+  const airborneGate = await evalJs(`(() => {
+    const s = ${sceneJs};
+    return {
+      blocked: s.keyCollected && !s.enteredRoom && !s.player.body.onFloor() && s.levelClockMs >= s.doorOpenAt,
+      enteredRoom: s.enteredRoom,
+      onFloor: s.player.body.onFloor(),
+      levelClockMs: s.levelClockMs,
+      doorOpenAt: s.doorOpenAt,
+    };
+  })()`);
+  if (!airborneGate.blocked) {
+    throw new Error(`门解锁后仍应等待落地，空中进入状态异常：${JSON.stringify(airborneGate)}`);
   }
 
-  await evalJs(`(() => { ${sceneJs}.player.setTouchMove(1); return true; })()`);
-  const leftDoor = await waitFor(`(() => {
-    const s = ${sceneJs};
-    const p = s.player;
-    const outsideRight = ${LAYOUT.door.openingCenterX + 120};
-    const ok = p.body.onFloor() && p.view.x >= outsideRight && !s.enteredRoom && s.doorReapproachSatisfied;
-    if (ok) p.setTouchMove(0);
-    return { ok, playerX: Math.round(p.view.x), onFloor: p.body.onFloor(), reapproachSatisfied: s.doorReapproachSatisfied, enteredRoom: s.enteredRoom };
-  })()`, { label: '走出门洞范围', timeoutMs: 5000 });
-  console.log('离开门洞状态:', JSON.stringify(leftDoor, null, 2));
-
-  await evalJs(`(() => { ${sceneJs}.player.setTouchMove(-1); return true; })()`);
   const doorInfo = await waitFor(`(() => {
     const s = ${sceneJs};
     return {
       ok: Boolean(s.enteredRoom) && s.player.frozen,
       enteredRoom: s.enteredRoom,
       playerFrozen: s.player.frozen,
+      onFloor: s.player.body.onFloor(),
       modalOpen: s.gameHud.isModalOpen(),
       status: s.statusText.text,
       lives: s.progress.lives,
     };
-  })()`, { label: '走回石门进入记忆之房', timeoutMs: 5000 });
-  console.log('石门进入状态:', JSON.stringify(doorInfo, null, 2));
+  })()`, { label: '落地后直接从门口进入记忆之房', timeoutMs: 8000 });
+  console.log('落地进门状态:', JSON.stringify(doorInfo, null, 2));
   await captureScreenshot('test-niannian-door-cleared');
 
   console.log('--- 14. 检查全过程控制台错误日志 ---');
