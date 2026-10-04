@@ -15,7 +15,7 @@ export function showPhotoMemoryText(
     imageAlt: '童年海边的完整照片',
     layout: 'photo',
     entries: [{
-      text: '那天是韩梅梅第一次见到大海。她有一点点害怕，却又舍不得移开眼睛。爸爸妈妈陪着她站在浅水里，海风把笑声吹得很远。',
+      text: '爸爸妈妈第一次带5岁的韩梅梅见到了大海~',
     }],
     onClose,
   });
@@ -26,7 +26,7 @@ export function showFishBasinText(scene: Phaser.Scene): RoomTextHandle {
     title: '寄居蟹鱼缸',
     imageUrl: resolveImageUrl(fishBasinUrl),
     imageAlt: '寄居蟹鱼缸',
-    entries: [{ text: '小小的寄居蟹躲在壳里，安静地望着夜色。' }],
+    entries: [{ text: '这是韩梅梅那次从海边带回来的小寄居蟹。' }],
   });
 }
 

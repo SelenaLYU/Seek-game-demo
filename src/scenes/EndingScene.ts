@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import endingVideoUrl from '../../assets/animation/ending.mp4?url';
+import { fitCanvasDomOverlay } from '../ui/CanvasDomLayout';
 
 const WIDTH = 960;
 const HEIGHT = 540;
@@ -55,10 +56,7 @@ export default class EndingScene extends Phaser.Scene {
     let leaving = false;
 
     const position = () => {
-      const bounds = this.game.canvas.getBoundingClientRect();
-      root.style.left = `${bounds.left}px`;
-      root.style.top = `${bounds.top}px`;
-      root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+      fitCanvasDomOverlay(this, root, WIDTH, HEIGHT);
     };
     const enterIsland = () => {
       if (leaving) return;

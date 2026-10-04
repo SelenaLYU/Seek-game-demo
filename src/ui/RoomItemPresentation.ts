@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { resolveImageUrl } from '../assets';
-import boxClosed from '../../assets/environment/room-lockbox-closed-perspective-v1.png?url';
-import boxOpen from '../../assets/environment/room-lockbox-open-empty-perspective-v1.png?url';
-import battery from '../../assets/items/room-flashlight-battery-perspective-v1.png?url';
+import boxClosed from '../../assets/environment/room-lockbox-closed-v1.png?url';
+import boxOpen from '../../assets/environment/room-lockbox-open-battery-v1.png?url';
+import boxOpenEmpty from '../../assets/environment/room-lockbox-open-empty-perspective-v1.png?url';
+import battery from '../../assets/items/room-flashlight-battery-v1.png?url';
 import lampOff from '../../assets/environment/room-flashlight-off.png?url';
 import lampOn from '../../assets/environment/room-flashlight-on.png?url';
 
@@ -20,10 +21,9 @@ function installStyle(): void {
     .room-item-presentation img { position:absolute; width:100%; height:100%; object-fit:contain; pointer-events:none; }
     .room-item-presentation__open { opacity:0; animation:room-box-open .7s .3s forwards; }
     .room-item-presentation__closed { animation:room-box-close .7s .3s forwards; }
-    .room-item-presentation__battery { position:absolute; left:41%; top:48%; width:18%; height:22%;
+    .room-item-presentation__battery { position:absolute; left:41%; top:42%; width:20%; height:25%;
       border:0; padding:0; background:transparent; cursor:pointer; opacity:0; animation:room-box-open .3s 1s forwards; }
-    .room-item-presentation__battery img { inset:0; }
-    .room-item-presentation__battery:hover { filter:brightness(1.15); }
+    .room-item-presentation__battery:hover { outline:2px solid rgba(255,239,184,.72); border-radius:50%; }
     .room-item-presentation__close { position:absolute; top:20px; right:22px; border:1px solid #c8c4b3;
       border-radius:50%; width:38px; height:38px; color:#eee9d8; background:#28312e; font-size:24px; cursor:pointer; }
     .room-item-presentation.is-combining .room-item-presentation__stage { width:min(400px,80vw); }
@@ -33,9 +33,11 @@ function installStyle(): void {
     .room-item-presentation__lit { opacity:0; animation:room-box-open .45s 1.2s forwards;
       filter:drop-shadow(0 0 22px rgba(255,230,153,.6)); }
     .room-item-notice { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); z-index:2500;
-      max-width:80vw; margin:0; padding:16px 28px; border-radius:3px; background:rgba(240,234,219,.93);
-      color:#55534e; font:20px/1.6 KaiTi,STKaiti,"Microsoft YaHei",serif; text-align:center; pointer-events:none;
-      animation:room-notice-in .25s ease-out; }
+      max-width:80vw; margin:0; padding:16px 28px; border:1px solid rgba(255,251,239,.42); border-radius:4px;
+      background:rgba(240,234,219,.72); -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px);
+      box-shadow:0 8px 28px rgba(12,18,21,.18); color:#494640;
+      font:700 20px/1.6 KaiTi,STKaiti,"Microsoft YaHei",serif; text-align:center; pointer-events:none;
+      text-shadow:0 1px rgba(255,255,255,.28); animation:room-notice-in .25s ease-out; }
     @keyframes room-item-enter { from { opacity:0; transform:scale(.6); } to { opacity:1; transform:scale(1); } }
     @keyframes room-box-open { to { opacity:1; } }
     @keyframes room-box-close { to { opacity:0; } }
@@ -105,16 +107,12 @@ export function showRoomItemPresentation(scene: Phaser.Scene, options: {
   };
   if (options.mode === 'box') {
     addImage(boxClosed, 'room-item-presentation__closed');
-    addImage(boxOpen, 'room-item-presentation__open');
+    addImage(options.hasBattery ? boxOpen : boxOpenEmpty, 'room-item-presentation__open');
     if (options.hasBattery) {
       const cell = document.createElement('button');
       cell.className = 'room-item-presentation__battery';
       cell.setAttribute('aria-label', '拾取电池');
       cell.disabled = true;
-      const img = document.createElement('img');
-      img.src = resolveImageUrl(battery);
-      img.alt = '电池';
-      cell.append(img);
       stage.append(cell);
       timers.push(window.setTimeout(() => { cell.disabled = false; }, 1000));
       cell.onclick = () => {

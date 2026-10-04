@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 import { RADIO_PREVIEW_TEXT } from '../story/ChapterOneStory';
 import { resolveImageUrl } from '../assets';
-import radioUrl from '../../assets/environment/room-vintage-cassette-recorder-v1.png?url';
+import radioUrl from '../../assets/environment/interactive-vintage-radio-384x256.png?url';
 
 export interface RadioPuzzleHandle {
   element: HTMLDivElement;
@@ -52,21 +53,19 @@ function installStyle(): void {
     }
     .recall-radio__image { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
     .recall-radio__knob {
-      position: absolute; left: 308px; top: 118px; width: 66px; height: 66px;
-      border: 1px solid rgba(245, 207, 131, .42); border-radius: 50%;
-      background: transparent;
-      box-shadow: inset 0 0 0 2px rgba(76, 40, 18, .20);
+      position: absolute; left: 339px; top: 64px; width: 58px; height: 58px;
+      border: 0; border-radius: 50%; background: transparent; box-shadow: none;
       cursor: grab; touch-action: none; transition: box-shadow 130ms ease;
     }
     .recall-radio__knob:hover, .recall-radio__knob:focus-visible {
-      outline: none; box-shadow: inset 0 0 0 2px rgba(76, 40, 18, .20), 0 0 0 4px rgba(245, 217, 157, .20), 0 0 16px rgba(247, 211, 133, .30);
+      outline: none; box-shadow: 0 0 0 2px rgba(245, 217, 157, .16), 0 0 12px rgba(247, 211, 133, .14);
     }
     .recall-radio__knob:active { cursor: grabbing; }
     .recall-radio__knob-mark {
-      position: absolute; left: calc(50% - 2px); top: 5px; width: 4px; height: 12px;
-      border-radius: 3px; background: #ffe7aa;
-      box-shadow: 0 0 4px rgba(44, 24, 12, .7);
-      transform-origin: 2px 27px; transition: transform 190ms ease-out;
+      position: absolute; left: calc(50% - 1.5px); top: 8px; width: 3px; height: 10px;
+      border-radius: 3px; background: rgba(18, 24, 31, .70);
+      box-shadow: 0 1px rgba(255,255,255,.18);
+      transform-origin: 1.5px 21px; transition: transform 190ms ease-out;
     }
     .recall-radio__panel {
       position: absolute; left: 597px; top: 108px; width: 318px;
@@ -117,7 +116,7 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-label', '卧室里的录音机');
   root.innerHTML = `
-    <div class="recall-radio__backdrop"></div>
+    <div class="recall-radio__backdrop" data-canvas-backdrop></div>
     <div class="recall-radio__object">
       <img class="recall-radio__image" src="${resolveImageUrl(radioUrl)}" alt="卧室里的录音机">
       <button class="recall-radio__knob" type="button" aria-label="旋转收音机旋钮，切换频道"><span class="recall-radio__knob-mark"></span></button>
@@ -150,10 +149,7 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
   let allChannelsReported = false;
 
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, WIDTH, HEIGHT);
   };
   const setChannel = (next: number) => {
     if (closed || next === channel) return;

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 
 export type FragmentKind = 'photo' | 'radio' | 'shadowBoat';
 
@@ -13,16 +14,25 @@ const HEIGHT = 540;
 const STYLE_ID = 'recall-fragment-hud-style';
 const activeHuds = new WeakMap<Phaser.Scene, FragmentHudHandle>();
 
-const SHELL = 'M 32 51 C 22 50 10 44 7 34 C 3 22 10 10 21 6 C 26 4 30 7 32 12 C 34 7 38 4 43 6 C 54 10 61 22 57 34 C 54 44 42 50 32 51 Z';
+// 单面扇贝轮廓：顶部由五个自然起伏的贝壳瓣构成，底部向铰合点收拢。
+// 形状与最终出现的彩色珍珠贝保持同一种水彩轮廓语言。
+const SHELL = 'M 32 55 C 25 52 17 47 11 42 C 5 37 3 30 6 24 C 8 19 13 16 18 18 C 18 12 23 8 28 10 C 30 5 37 4 41 9 C 46 7 52 10 53 15 C 59 15 63 21 61 27 C 59 36 49 46 32 55 Z';
 
 function shellMarkup(): string {
   return `<svg class="recall-fragment-hud__shell" viewBox="0 0 64 58" aria-hidden="true">
     <defs>
       <linearGradient id="recall-fragment-shell-fill" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#fffdf1" stop-opacity=".92" />
-        <stop offset=".55" stop-color="#f4e9c9" stop-opacity=".68" />
-        <stop offset="1" stop-color="#c8b997" stop-opacity=".46" />
+        <stop offset="0" stop-color="#fff4cf" />
+        <stop offset=".34" stop-color="#f3b6a3" />
+        <stop offset=".66" stop-color="#9fcfd0" />
+        <stop offset="1" stop-color="#f8d8ad" />
       </linearGradient>
+      <radialGradient id="recall-fragment-pearl" cx="40%" cy="32%" r="68%">
+        <stop offset="0" stop-color="#ffffff" />
+        <stop offset=".45" stop-color="#fff4cd" />
+        <stop offset=".72" stop-color="#9fe6e7" />
+        <stop offset="1" stop-color="#72b9ca" />
+      </radialGradient>
       <clipPath id="recall-fragment-shell-clip"><path d="${SHELL}" /></clipPath>
     </defs>
     <g clip-path="url(#recall-fragment-shell-clip)">
@@ -32,12 +42,15 @@ function shellMarkup(): string {
     </g>
     <path class="recall-fragment-hud__shell-outline" d="${SHELL}" />
     <g class="recall-fragment-hud__ridges">
-      <path d="M 32 50 C 24 36 20 22 21 8" />
-      <path d="M 32 50 C 29 34 29 20 32 12" />
-      <path d="M 32 50 C 35 34 35 20 43 8" />
-      <path d="M 32 50 C 18 42 11 35 8 27" />
-      <path d="M 32 50 C 46 42 53 35 56 27" />
+      <path d="M 32 53 C 23 42 17 30 18 19" />
+      <path d="M 32 53 C 26 38 25 23 28 11" />
+      <path d="M 32 53 C 31 36 33 21 36 7" />
+      <path d="M 32 53 C 38 38 44 25 51 13" />
+      <path d="M 32 53 C 19 47 10 38 7 29" />
+      <path d="M 32 53 C 47 47 57 37 60 27" />
     </g>
+    <path class="recall-fragment-hud__highlight" d="M 10 27 C 18 18 26 16 33 14 C 42 11 51 14 57 21" />
+    <circle class="recall-fragment-hud__pearl" cx="32" cy="43" r="5.5" />
   </svg>`;
 }
 
@@ -61,9 +74,10 @@ function installStyle(): void {
       -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
       box-shadow: 0 5px 24px rgba(9,17,14,.15), inset 0 1px rgba(255,255,236,.10);
     }
-    .recall-fragment-hud__shell { width: 40px; height: 41px; flex: none; overflow: visible; }
+    .recall-fragment-hud__shell { width: 42px; height: 42px; flex: none; overflow: visible; }
     .recall-fragment-hud__shell-outline {
-      fill: rgba(255,249,228,.035); stroke: rgba(249,234,199,.58); stroke-width: 1.2;
+      fill: rgba(255,246,222,.055); stroke: rgba(116,76,46,.92); stroke-width: 1.55;
+      stroke-linejoin: round;
     }
     .recall-fragment-hud__piece {
       fill: url(#recall-fragment-shell-fill); opacity: 0;
@@ -71,13 +85,24 @@ function installStyle(): void {
       transition: opacity 650ms ease, filter 650ms ease;
     }
     .recall-fragment-hud__piece.is-collected {
-      opacity: 1; filter: drop-shadow(0 0 5px rgba(255,239,187,.49));
+      opacity: .96; filter: drop-shadow(0 0 5px rgba(255,224,171,.55));
     }
     .recall-fragment-hud__ridges path {
-      fill: none; stroke: rgba(182,159,113,.48); stroke-width: .85; stroke-linecap: round;
+      fill: none; stroke: rgba(126,86,55,.54); stroke-width: .82; stroke-linecap: round;
+    }
+    .recall-fragment-hud__highlight {
+      fill: none; stroke: rgba(255,255,244,.64); stroke-width: 1.05; stroke-linecap: round;
+    }
+    .recall-fragment-hud__pearl {
+      fill: url(#recall-fragment-pearl); opacity: .14;
+      stroke: rgba(255,247,214,.72); stroke-width: .8;
+      transition: opacity 650ms ease, filter 650ms ease;
     }
     .recall-fragment-hud.is-complete .recall-fragment-hud__shell {
       filter: drop-shadow(0 0 6px rgba(249,223,162,.68));
+    }
+    .recall-fragment-hud.is-complete .recall-fragment-hud__pearl {
+      opacity: 1; filter: drop-shadow(0 0 5px rgba(147,235,236,.88));
     }
     .recall-fragment-hud__copy { display: flex; flex-direction: column; min-width: 0; }
     .recall-fragment-hud__label {
@@ -111,10 +136,7 @@ export function createFragmentHud(scene: Phaser.Scene): FragmentHudHandle {
   const collected = new Set<FragmentKind>();
   let destroyed = false;
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, WIDTH, HEIGHT, 'left');
   };
   const onShutdown = () => destroy();
   const destroy = () => {

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 import {
-  PIECE_IDS, TARGET, APERTURE, WALL, LIGHT_Y, SOLUTION, SOLUTION_LIGHT_X,
+  PIECE_IDS, TARGET, APERTURE, WALL, SOLUTION, SOLUTION_LIGHT_X,
   shadowPolygon, projectToWall,
   polygonPath, alignment, clipPolygon, type Point, type PieceState, type PieceId,
 } from './shadowBoatGeometry';
@@ -48,7 +49,7 @@ const PIECE_ART_SIZE: Record<PieceId, { width: number; height: number }> = {
 };
 const PIECE_ART_SCALE = 1.7;
 // 把三件实体压回桌面透视面；影子的几何仍使用物理模型坐标，不随展示层漂移。
-const PIECE_ART_FORWARD_Y = -18;
+const PIECE_ART_FORWARD_Y = 10;
 
 function installStyle(): void {
   document.getElementById(STYLE_ID)?.remove();
@@ -225,13 +226,7 @@ function installStyle(): void {
     .seek-shadow-boat__piece:hover .seek-shadow-boat__piece-label { opacity: 1; }
     .seek-shadow-boat.is-complete .seek-shadow-boat__piece { pointer-events: none; }
 
-    /* 手电筒与滑轨 */
-    .seek-shadow-boat__range {
-      position: absolute; left: 240px; right: 280px; bottom: 42px; height: 3px;
-      background: linear-gradient(90deg, transparent, rgba(230,213,173,.3) 15%, rgba(230,213,173,.3) 85%, transparent);
-      border-radius: 2px; box-shadow: 0 1px 4px rgba(0,0,0,0.5);
-      pointer-events: none; z-index: 4;
-    }
+    /* 手电筒可自由横移；校准范围只保留在程序里，不显示辅助轨道。 */
     .seek-shadow-boat__flashlight-wrap {
       position: absolute; left: 320px; bottom: 12px; width: 64px; height: 100px;
       transform: translateX(-32px); z-index: 8; cursor: ew-resize; touch-action: none;
@@ -264,24 +259,24 @@ function installStyle(): void {
     .seek-shadow-boat__wind-guide,
     .seek-shadow-boat__wind-progress { fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .seek-shadow-boat__wind-guide {
-      stroke: rgba(18, 26, 22, 0.95); stroke-width: 3.4; opacity: .8;
+      stroke: rgba(18, 26, 22, 0.95); stroke-width: 3.7; opacity: .82;
       transition: opacity 260ms ease;
     }
     .seek-shadow-boat__wind-guide.is-current {
-      opacity: 1; filter: drop-shadow(0 0 3px rgba(245,235,207,.4));
+      opacity: 1; stroke-width: 4.4; filter: drop-shadow(0 0 3px rgba(245,235,207,.55));
       animation: seek-wind-guide-pulse 1800ms ease-in-out infinite;
     }
     .seek-shadow-boat__wind-guide.is-drawn { opacity: 0; }
     .seek-shadow-boat__wind-progress {
       stroke: rgba(255, 248, 220, 0.98); stroke-width: 6.5;
       filter: url(#seek-wind-crayon) drop-shadow(0 1px 2px rgba(32, 60, 56, 0.45));
-      transition: stroke-dashoffset 34ms linear;
+      transition: none;
     }
     .seek-shadow-boat.has-brush, .seek-shadow-boat.has-brush * { cursor: none; }
     .seek-shadow-boat__brush-cursor {
       display: none; position: absolute; width: 72px; height: 36px;
       z-index: 30; pointer-events: none; transform: translate(-18px, -30px); object-fit: contain;
-      filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5));
+      filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5)); will-change: left, top;
     }
     .seek-shadow-boat.has-brush.is-pointer-inside .seek-shadow-boat__brush-cursor { display: block; }
 
@@ -321,7 +316,7 @@ export function showShadowBoatPuzzleUI(
   root.className = 'seek-shadow-boat';
   root.tabIndex = -1;
   root.innerHTML = `
-    <div class="seek-shadow-boat__backdrop"></div>
+    <div class="seek-shadow-boat__backdrop" data-canvas-backdrop></div>
     <section class="seek-shadow-boat__panel" aria-label="墙面光影组合">
       <h2 class="seek-shadow-boat__title" data-status>挪动手电寻找视差焦点，摆动物件在海面上聚合成船</h2>
       <button class="seek-shadow-boat__close" type="button" aria-label="返回房间">×</button>
@@ -404,8 +399,7 @@ export function showShadowBoatPuzzleUI(
           </g>
         </svg>
 
-        <!-- 手电筒自由滑轨与可拖拽把手 -->
-        <div class="seek-shadow-boat__range"></div>
+        <!-- 手电筒可拖拽把手；可移动范围不绘制到画面上 -->
         <div class="seek-shadow-boat__flashlight-wrap" role="slider" aria-label="移动手电筒调整投影透视" tabindex="0">
           <span class="seek-shadow-boat__flashlight-hint">左右拖动手电筒 · 改变投影视差</span>
           <img class="seek-shadow-boat__flashlight-art" src="${resolveImageUrl(flashlightOnUrl)}" alt="" draggable="false">
@@ -453,6 +447,10 @@ export function showShadowBoatPuzzleUI(
   let windDrawing = false;
   let windPointerId: number | null = null;
   let windProgress = 0;
+  let lastWindPoint: Point | null = null;
+  let windTracePoints: Point[] = [];
+  let windOffGuideDistance = 0;
+  let windStrokeInvalid = false;
   let closed = false;
   let sailAnimation = 0;
   let settledSail: Point[] = shadowPolygon(states.sail, flashlightX);
@@ -466,15 +464,16 @@ export function showShadowBoatPuzzleUI(
   });
   root.addEventListener('pointerleave', () => root.classList.remove('is-pointer-inside'));
 
-  windProgressPaths.forEach(path => {
-    const length = path.getTotalLength();
-    path.style.strokeDasharray = `${length}`;
-    path.style.strokeDashoffset = `${length}`;
-  });
+  if (options.initialCompleted) windStrokeCount = 3;
+  const windTemplatePaths = windProgressPaths.map(path => path.getAttribute('d') ?? '');
   windProgressPaths.forEach((path, index) => {
+    path.style.strokeDasharray = 'none';
+    path.style.strokeDashoffset = '0';
     if (index < windStrokeCount) {
-      path.style.strokeDashoffset = '0';
+      path.setAttribute('d', windTemplatePaths[index]);
       windGuides[index]?.classList.add('is-drawn');
+    } else {
+      path.setAttribute('d', '');
     }
   });
   if (windStrokeCount < 3 && completed) windGuides[windStrokeCount]?.classList.add('is-current');
@@ -508,9 +507,13 @@ export function showShadowBoatPuzzleUI(
     const leftEdge = litWall.reduce((a, b) => a.x < b.x ? a : b);
     const rightEdge = litWall.reduce((a, b) => a.x > b.x ? a : b);
     const topEdgeY = Math.min(...litWall.map(p => p.y));
+    // 图片里的灯头位于手电筒上端。光锥从旋转后的灯头发出，避免看起来从手柄中段发光。
+    const tiltRadians = tilt * Math.PI / 180;
+    const beamOriginX = flashlightX + 32 * Math.sin(tiltRadians);
+    const beamOriginY = 478 - 32 * Math.cos(tiltRadians);
     lightVolume.setAttribute(
       'd',
-      `M ${flashlightX} ${LIGHT_Y} L ${leftEdge.x} ${leftEdge.y} Q 550 ${topEdgeY - 8} ${rightEdge.x} ${rightEdge.y} Z`
+      `M ${beamOriginX} ${beamOriginY} L ${leftEdge.x} ${leftEdge.y} Q 550 ${topEdgeY - 8} ${rightEdge.x} ${rightEdge.y} Z`
     );
 
     // 空间前景实物渲染
@@ -655,11 +658,35 @@ export function showShadowBoatPuzzleUI(
     };
   };
 
+  const renderWindTrace = () => {
+    const path = windProgressPaths[windStrokeCount];
+    if (!path) return;
+    if (windTracePoints.length === 0) {
+      path.setAttribute('d', '');
+      return;
+    }
+    if (windTracePoints.length === 1) {
+      const point = windTracePoints[0];
+      path.setAttribute('d', `M ${point.x.toFixed(1)} ${point.y.toFixed(1)}`);
+      return;
+    }
+    const first = windTracePoints[0];
+    let pathData = `M ${first.x.toFixed(1)} ${first.y.toFixed(1)}`;
+    for (let index = 1; index < windTracePoints.length - 1; index += 1) {
+      const point = windTracePoints[index];
+      const next = windTracePoints[index + 1];
+      const midX = (point.x + next.x) / 2;
+      const midY = (point.y + next.y) / 2;
+      pathData += ` Q ${point.x.toFixed(1)} ${point.y.toFixed(1)} ${midX.toFixed(1)} ${midY.toFixed(1)}`;
+    }
+    const last = windTracePoints[windTracePoints.length - 1];
+    pathData += ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
+    path.setAttribute('d', pathData);
+  };
+
   const finishWindStroke = () => {
     const index = (windStrokeCount + 1) as 1 | 2 | 3;
     const guide = windGuides[windStrokeCount];
-    const progressPath = windProgressPaths[windStrokeCount];
-    progressPath.style.strokeDashoffset = '0';
     guide.classList.remove('is-current');
     guide.classList.add('is-drawn');
     windStrokeCount = index;
@@ -693,25 +720,30 @@ export function showShadowBoatPuzzleUI(
     windProgress = 0;
     windDrawing = false;
     windPointerId = null;
+    lastWindPoint = null;
+    windTracePoints = [];
+    windOffGuideDistance = 0;
+    windStrokeInvalid = false;
   };
 
   const updateWindStroke = (event: PointerEvent) => {
     if (!windDrawing || windStrokeCount >= 3) return;
-    const path = windProgressPaths[windStrokeCount];
-    const length = path.getTotalLength();
+    event.preventDefault();
+    const guidePath = windGuides[windStrokeCount];
+    const guideLength = guidePath.getTotalLength();
     const samples = typeof event.getCoalescedEvents === 'function'
       ? event.getCoalescedEvents()
       : [event];
-    for (const pointerSample of samples.length > 0 ? samples : [event]) {
-      const point = windPoint(pointerSample);
+    const advanceAlongGuide = (point: Point, travelDistance: number) => {
+      if (windStrokeInvalid) return false;
       const from = Math.max(0, windProgress - 0.012);
-      const to = Math.min(1, windProgress + 0.13);
+      const to = Math.min(1, windProgress + 0.12);
       let nearest = windProgress;
       let nearestDistance = Number.POSITIVE_INFINITY;
-      // 密集采样曲线参数，尤其照顾末端回勾处方向反转，避免进度一格一格地跳。
-      for (let step = 0; step <= 72; step += 1) {
-        const candidate = from + ((to - from) * step) / 72;
-        const sample = path.getPointAtLength(candidate * length);
+      // 只在当前位置附近向前找，避免一条直线跨过回勾就被当成完成。
+      for (let step = 0; step <= 96; step += 1) {
+        const candidate = from + ((to - from) * step) / 96;
+        const sample = guidePath.getPointAtLength(candidate * guideLength);
         const distance = Math.hypot(point.x - sample.x, point.y - sample.y);
         if (distance < nearestDistance - 0.5
           || (Math.abs(distance - nearestDistance) <= 0.5 && candidate > nearest)) {
@@ -719,26 +751,63 @@ export function showShadowBoatPuzzleUI(
           nearest = candidate;
         }
       }
-      if (nearestDistance <= 31 && nearest >= windProgress - 0.008) {
-        windProgress = Math.max(windProgress, nearest);
-        path.style.strokeDashoffset = `${length * (1 - windProgress)}`;
-        if (windProgress >= .965) {
-          finishWindStroke();
-          break;
+      if (nearestDistance <= 24 && nearest >= windProgress - 0.01) {
+        windOffGuideDistance = 0;
+        const guidePoint = guidePath.getPointAtLength(nearest * guideLength);
+        // 笔迹轻微吸附到引导线，既保留玩家手势，也帮助画出清楚的回勾形状。
+        const tracePoint = {
+          x: point.x * 0.65 + guidePoint.x * 0.35,
+          y: point.y * 0.65 + guidePoint.y * 0.35,
+        };
+        const previousTracePoint = windTracePoints[windTracePoints.length - 1];
+        if (!previousTracePoint || Math.hypot(tracePoint.x - previousTracePoint.x, tracePoint.y - previousTracePoint.y) >= 1.5) {
+          windTracePoints.push(tracePoint);
+          renderWindTrace();
         }
+        windProgress = Math.max(windProgress, nearest);
+        if (windProgress >= .97) {
+          finishWindStroke();
+          return true;
+        }
+      } else {
+        windOffGuideDistance += travelDistance;
+        // 允许手抖，但离开引导线一小段以后，本笔必须松手重画。
+        if (windOffGuideDistance > 30) windStrokeInvalid = true;
       }
+      return false;
+    };
+    for (const pointerSample of samples.length > 0 ? samples : [event]) {
+      const point = windPoint(pointerSample);
+      const previous = lastWindPoint ?? point;
+      const distance = Math.hypot(point.x - previous.x, point.y - previous.y);
+      const steps = Math.max(1, Math.ceil(distance / 5));
+      const travelDistance = distance / steps;
+      for (let step = 1; step <= steps; step += 1) {
+        const t = step / steps;
+        if (advanceAlongGuide({
+          x: previous.x + (point.x - previous.x) * t,
+          y: previous.y + (point.y - previous.y) * t,
+        }, travelDistance)) return;
+      }
+      lastWindPoint = point;
     }
   };
 
   windLayer.addEventListener('pointerdown', event => {
     if (!completed || !brushEquipped || windStrokeCount >= 3) return;
-    const path = windProgressPaths[windStrokeCount];
-    const start = path.getPointAtLength(0);
+    const guidePath = windGuides[windStrokeCount];
+    const start = guidePath.getPointAtLength(0);
     const point = windPoint(event);
-    if (Math.hypot(point.x - start.x, point.y - start.y) > 34) return;
+    if (Math.hypot(point.x - start.x, point.y - start.y) > 28) return;
+    event.preventDefault();
     windDrawing = true;
     windPointerId = event.pointerId;
     windProgress = 0;
+    lastWindPoint = point;
+    windTracePoints = [point];
+    windOffGuideDistance = 0;
+    windStrokeInvalid = false;
+    renderWindTrace();
     windLayer.setPointerCapture(event.pointerId);
     updateWindStroke(event);
   });
@@ -750,20 +819,21 @@ export function showShadowBoatPuzzleUI(
     if (windLayer.hasPointerCapture(event.pointerId)) windLayer.releasePointerCapture(event.pointerId);
     if (windProgress < .965 && windStrokeCount < 3) {
       const path = windProgressPaths[windStrokeCount];
-      path.style.strokeDashoffset = `${path.getTotalLength()}`;
+      path.setAttribute('d', '');
     }
     windDrawing = false;
     windPointerId = null;
     windProgress = 0;
+    lastWindPoint = null;
+    windTracePoints = [];
+    windOffGuideDistance = 0;
+    windStrokeInvalid = false;
   };
   windLayer.addEventListener('pointerup', stopWindStroke);
   windLayer.addEventListener('pointercancel', stopWindStroke);
 
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, WIDTH, HEIGHT);
   };
   const close = (notify = true) => {
     if (closed) return;

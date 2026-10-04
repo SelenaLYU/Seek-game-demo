@@ -15,8 +15,17 @@ function sources(dir) {
 
 test('runtime sources cannot reintroduce predecessor characters or narrative media', () => {
   for (const path of sources(resolve(root, 'src'))) {
-    assert.doesNotMatch(readFileSync(path, 'utf8'), /外公|外婆|鱼鱼|回南城|动物园|radio-grandpa|family-zoo|radio-song|assets\/audio\/ending-voice\.wav/, path);
+    assert.doesNotMatch(readFileSync(path, 'utf8'), /外公|外婆|鱼鱼|回南城|radio-grandpa|radio-song|assets\/audio\/ending-voice\.wav/, path);
   }
+});
+
+test('the approved family photo drives both the puzzle and its missing inventory piece', () => {
+  const room = read('src/scenes/RoomScene.ts');
+  assert.match(room, /interactive-family-zoo-photo-frame-384x256\.png\?url/);
+  assert.match(room, /imageCrop: \{ column: 3, row: 3, columns: 4, rows: 4 \}/);
+  assert.match(room, /photoSolved \? 'room-frame-complete-art' : 'room-frame-art'/);
+  assert.match(room, /room-memory-pearl-shell-v1\.png\?url/);
+  assert.match(room, /\.image\(0, 0, 'room-memory-shell'\)/);
 });
 
 test('new-story placeholders are explicit and follow the documented childhood memory', () => {
@@ -46,7 +55,7 @@ test('all four radio channels award the photo piece directly to inventory', () =
   assert.match(radio, /options\.onAllChannelsVisited\?\.\(\)/);
   assert.match(completion, /type: 'radio-message-heard'/);
   assert.match(completion, /type: 'photo-piece-collected'/);
-  assert.match(completion, /addItem\(\{ id: 'photo-piece'/);
+  assert.match(completion, /addItem\(\{\s*id: 'photo-piece'/);
 });
 
 test('story progress is isolated from predecessor saves', () => {

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 
 export interface RoomPaintingPreviewHandle {
   element: HTMLDivElement;
@@ -17,11 +18,15 @@ function installStyle(): void {
     .seek-room-painting-preview {
       position: fixed; width: 960px; height: 540px; z-index: 1160;
       transform-origin: top left; display: grid; place-items: center;
-      background: rgba(5, 9, 8, .86); backdrop-filter: blur(5px);
       font-family: Arial, "Microsoft YaHei", sans-serif;
     }
     .seek-room-painting-preview * { box-sizing: border-box; }
+    .seek-room-painting-preview__backdrop {
+      position: absolute; inset: 0; background: rgba(5, 9, 8, .86);
+      backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+    }
     .seek-room-painting-preview__picture {
+      position: relative;
       width: 620px; height: 440px; padding: 10px;
       border: 8px solid #4a3824; border-radius: 3px;
       background: #d6c59b; box-shadow: 0 18px 48px rgba(0,0,0,.62), inset 0 0 0 1px rgba(255,240,202,.35);
@@ -50,6 +55,7 @@ export function showRoomPaintingPreview(
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '墙上的海景画');
   root.innerHTML = `
+    <div class="seek-room-painting-preview__backdrop" data-canvas-backdrop></div>
     <div class="seek-room-painting-preview__picture">
       <img src="${imageUrl}" alt="墙上的海景画">
     </div>
@@ -58,10 +64,7 @@ export function showRoomPaintingPreview(
 
   let closed = false;
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, WIDTH, HEIGHT);
   };
   const close = () => {
     if (closed) return;
@@ -79,9 +82,7 @@ export function showRoomPaintingPreview(
   };
 
   root.querySelector<HTMLButtonElement>('.seek-room-painting-preview__close')!.addEventListener('click', close);
-  root.addEventListener('pointerdown', event => {
-    if (event.target === root) close();
-  });
+  root.querySelector<HTMLElement>('.seek-room-painting-preview__backdrop')!.addEventListener('pointerdown', close);
   document.body.append(root);
   position();
   scene.scale.on(Phaser.Scale.Events.RESIZE, position);

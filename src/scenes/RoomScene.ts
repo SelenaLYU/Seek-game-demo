@@ -33,10 +33,12 @@ import { showRoomPaintingPreview } from '../ui/RoomPaintingPreview';
 import { resolveImageUrl } from '../assets';
 import { loadAudioInBackground } from '../systems/DeferredAudio';
 import roomBackgroundUrl from '../../scene/level1-memory-room-night-empty-v2-1920x1080.png?url';
-import photoFrameUrl from '../../assets/story/seek-childhood-photo-placeholder.svg?url';
+import photoFrameUrl from '../../assets/environment/interactive-family-zoo-photo-frame-384x256.png?url';
+import memoryShellUrl from '../../assets/items/room-memory-pearl-shell-v1.png?url';
 import flashlightOffUrl from '../../assets/environment/room-flashlight-off.png?url';
 import flashlightOnUrl from '../../assets/environment/room-flashlight-on.png?url';
 import paintBrushUrl from '../../assets/items/room-paint-brush.png?url';
+import fairyTaleBookUrl from '../../assets/items/room-fairytale-book-v1.png?url';
 import radioStaticUrl from '../../assets/audio/radio-static.mp3?url';
 import radioWindUrl from '../../assets/audio/radio-wind.mp3?url';
 
@@ -106,7 +108,9 @@ function visibleBounds(scene: Phaser.Scene, key: string): VisibleBox {
     let bottom = -1;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        if (data[(y * w + x) * 4 + 3] > 24) {
+        // 生成素材外围带一圈很淡的环境辉光。家具落位应以实体像素为准，
+        // 否则辉光会被当成“底面”，物件本体看起来就会悬在桌面上。
+        if (data[(y * w + x) * 4 + 3] > 220) {
           if (x < left) left = x;
           if (x > right) right = x;
           if (y < top) top = y;
@@ -170,15 +174,17 @@ export default class RoomScene extends Phaser.Scene {
   preload(): void {
     const images: Array<[string, string]> = ([
       ['room-bg', roomBackgroundUrl],
-      ['room-radio-art', 'assets/environment/room-vintage-cassette-recorder-perspective-v1.png'],
-      ['room-book-art', 'assets/items/room-fairytale-book-perspective-v1.png'],
+      ['room-radio-art', 'assets/environment/interactive-vintage-radio-384x256.png'],
+      ['room-book-art', 'assets/items/room-fairytale-book-v1.png'],
       ['room-frame-art', 'assets/environment/room-photo-frame-perspective-v1.png'],
-      ['room-box-closed-art', 'assets/environment/room-lockbox-closed-perspective-v1.png'],
-      ['room-box-open-art', 'assets/environment/room-lockbox-open-empty-perspective-v1.png'],
-      ['room-battery-art', 'assets/items/room-flashlight-battery-perspective-v1.png'],
-      ['room-aquarium-art', 'assets/environment/room-hermit-crab-aquarium-perspective-v1.png'],
+      ['room-frame-complete-art', photoFrameUrl],
+      ['room-box-closed-art', 'assets/environment/room-lockbox-closed-v1.png'],
+      ['room-box-open-art', 'assets/environment/room-lockbox-open-battery-v1.png'],
+      ['room-battery-art', 'assets/items/room-flashlight-battery-v1.png'],
+      ['room-aquarium-art', 'assets/environment/room-hermit-crab-aquarium-v1.png'],
       ['room-wall-drawing-incomplete', 'assets/environment/room-wall-drawing-incomplete.png'],
       ['room-photo', photoFrameUrl],
+      ['room-memory-shell', memoryShellUrl],
       ['room-flashlight-off', flashlightOffUrl],
       ['room-flashlight-on', flashlightOnUrl],
       ['room-paint-brush', paintBrushUrl],
@@ -299,10 +305,10 @@ export default class RoomScene extends Phaser.Scene {
 
     // 先确定“物件底部接触家具的哪条边”，再用透明像素 bbox 锚定；可见宽度按承托面留边。
     // 道具以 GPT Image 2.5 Sunburst 按背景机位与夜间光照重绘，保留原素材文件不覆盖。
-    // 录音机放在床右侧床头柜；相框与锁盒并排占用书柜中层空位。
-    this.addSupportedRoomProp('room-radio-art', 310, 304, 66, 2);
-    this.addSupportedRoomProp('room-book-art', 760, 172, 30, 2);
-    this.addSupportedRoomProp('room-aquarium-art', 765, 340, 48, 2);
+    // 使用 018e4e2 中的正面版素材；落点以当前标注为准，不沿用该提交的坐标。
+    this.addSupportedRoomProp('room-book-art', 732, 176, 40, 2);
+    this.addSupportedRoomProp('room-radio-art', 310, 306, 66, 2);
+    this.addSupportedRoomProp('room-aquarium-art', 912, 346, 52, 2);
   }
 
   /** 将透明 PNG 的可见像素水平居中，并让可见底缘恰好接触家具支撑面。 */
@@ -321,6 +327,8 @@ export default class RoomScene extends Phaser.Scene {
     const imageY = surfaceY - (bounds.bottom - (source.height - 1) / 2) * scale;
     return this.add.image(imageX, imageY, texture)
       .setDisplaySize(source.width * scale, source.height * scale)
+      // 独立摆件统一压入夜间蓝灰环境色，避免像另一层高亮贴纸。
+      .setTint(0xd6dce5)
       .setDepth(depth);
   }
 
@@ -378,10 +386,10 @@ export default class RoomScene extends Phaser.Scene {
     // Invisible inspect targets follow the already-painted objects in the room art.
     // This avoids drawing a second clock/radio/photo/calendar over the same illustration.
     const inspectTargets: Array<{ kind: ObjectKind; x: number; y: number; w: number; h: number }> = [
-      { kind: 'radio', x: 310, y: 279, w: 80, h: 54 },
-      { kind: 'photo', x: 680, y: 226, w: 54, h: 42 },
-      { kind: 'fish', x: 765, y: 314, w: 68, h: 58 },
-      { kind: 'book', x: 760, y: 158, w: 50, h: 44 },
+      { kind: 'radio', x: 310, y: 281, w: 80, h: 54 },
+      { kind: 'photo', x: 735, y: 207, w: 58, h: 50 },
+      { kind: 'fish', x: 912, y: 320, w: 68, h: 58 },
+      { kind: 'book', x: 732, y: 149, w: 58, h: 58 },
       // 点击底图中已有的桌子，弹出独立书桌近景；不把另一张桌子贴回房间。
       { kind: 'desk', x: 480, y: 292, w: 270, h: 62 },
     ];
@@ -410,7 +418,9 @@ export default class RoomScene extends Phaser.Scene {
       case 'book':
         this.openDomPanel(() => showOtherRoomText(this, {
           title: '童话书',
-          entries: [{ text: '书页已经泛黄，边角被反复翻阅得柔软了。' }],
+          imageUrl: resolveImageUrl(fairyTaleBookUrl),
+          imageAlt: '月夜兔子封面的童话书',
+          entries: [{ text: '这是韩梅梅最喜欢的故事，妈妈经常给她讲。整本故事书已经被翻得有点皱巴了。' }],
         }));
         break;
       case 'desk':
@@ -419,23 +429,14 @@ export default class RoomScene extends Phaser.Scene {
       case 'photo':
         if (this.progress.photoSolved) {
           this.openDomPanel(() => showPhotoMemoryText(this, photoFrameUrl));
-        } else if (!this.progress.photoMissingPieceCollected) {
-          this.showHint('照片还缺一块。先听完收音机里的四个频道。', 4200);
         } else {
           this.openPuzzle();
         }
         break;
       case 'radio':
-        if (this.progress.radioMessageHeard) {
-          this.openDomPanel(() =>
-            showOtherRoomText(this, {
-              title: '卧室里的录音机',
-              entries: [{ text: '录音机关联的记忆碎片已经找齐。正式录音内容待制作。' }],
-            }),
-          );
-        } else {
-          this.openRadio();
-        }
+        // 解完后录音机仍保留原来的调频交互，玩家可以随时回来重听四个频道。
+        // completeRadioSequence 自己会拦住重复发拼图和记忆碎片。
+        this.openRadio();
         break;
     }
   }
@@ -476,16 +477,17 @@ export default class RoomScene extends Phaser.Scene {
     this.panel = layer;
 
     this.panelBackdrop(layer);
-    layer.add(this.panelTitle(480, 58, '把照片拼回原样'));
-    layer.add(
-      this.add
-        .text(480, 82, '把碎片拖回相框 · 放对位置会自动吸住', {
-          fontFamily: 'sans-serif',
+    layer.add(this.panelTitle(480, 72, '把照片拼回原样'));
+    const subtitle = this.add
+        .text(480, 101, '把碎片拖回相框 · 放对位置会自动吸住', {
+          fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
           fontSize: '13px',
+          fontStyle: 'bold',
           color: '#cbb98a',
         })
-        .setOrigin(0.5),
-    );
+        .setOrigin(0.5)
+        .setResolution(Math.max(2, bufferScaleOf(this)));
+    layer.add(subtitle);
     // × 放在 D 的碎片 HUD 挂件（右上 DOM，逻辑区 y 13..73）正下方：
     // 原先 (922,34) 与挂件重叠，× 被毛玻璃压得发糊（HUD 设了 pointer-events:none
     // 不挡点击，但视觉干扰，2026-09-24 实机确认后下移）
@@ -639,11 +641,6 @@ export default class RoomScene extends Phaser.Scene {
               this.applyProgressEvent({ type: 'photo-base-arranged' });
               this.saveProgress();
               this.showHint('照片还差最后一块。去收音机旁找找。', 4500);
-              const gap = this.add.text(homeXY(15).x, homeXY(15).y, '缺片', {
-                fontFamily: 'sans-serif', fontSize: '13px', color: '#715d3b',
-                backgroundColor: 'rgba(240,232,212,.78)', padding: { x: 8, y: 5 },
-              }).setOrigin(0.5);
-              layer.add(gap);
             } else {
               this.time.delayedCall(300, () => this.onPuzzleSolved(layer));
             }
@@ -667,11 +664,6 @@ export default class RoomScene extends Phaser.Scene {
       this.applyProgressEvent({ type: 'photo-base-arranged' });
       this.saveProgress();
       this.showHint('照片还差最后一块。去收音机旁找找。', 4500);
-      const gap = this.add.text(homeXY(15).x, homeXY(15).y, '缺片', {
-        fontFamily: 'sans-serif', fontSize: '13px', color: '#715d3b',
-        backgroundColor: 'rgba(240,232,212,.78)', padding: { x: 8, y: 5 },
-      }).setOrigin(0.5);
-      layer.add(gap);
     }
 
     // Recover if the player reopens after placing the last piece but before its completion delay fired.
@@ -712,11 +704,6 @@ export default class RoomScene extends Phaser.Scene {
         this.puzzleSolved = false;
         this.time.delayedCall(delay + 300, () => {
           this.showHint('照片还差最后一块。去收音机旁找找。', 4500);
-          const gap = this.add.text(homeXY(15).x, homeXY(15).y, '缺片', {
-            fontFamily: 'sans-serif', fontSize: '13px', color: '#715d3b',
-            backgroundColor: 'rgba(240,232,212,.78)', padding: { x: 8, y: 5 },
-          }).setOrigin(0.5);
-          layer.add(gap);
         });
         return;
       }
@@ -831,7 +818,13 @@ export default class RoomScene extends Phaser.Scene {
     // 先让玩家看到四个频道已完成，再自动收起收音机；拼块随后落入道具栏。
     this.time.delayedCall(700, () => {
       if (this.radioPanel) this.closePanel();
-      this.inventoryBar?.addItem({ id: 'photo-piece', glyph: '拼', label: '照片拼块' });
+      this.inventoryBar?.addItem({
+        id: 'photo-piece',
+        glyph: '拼',
+        label: '照片拼块',
+        imageUrl: photoFrameUrl,
+        imageCrop: { column: 3, row: 3, columns: 4, rows: 4 },
+      });
       this.showHint('录音机弹出了一块照片拼图，已经自动放进道具栏。现在可以去拼照片了。', 5200);
     });
   }
@@ -874,24 +867,21 @@ export default class RoomScene extends Phaser.Scene {
 
   private spawnMemoryOrb(): void {
     // 悬在方桌上空（挂钟 234 与桌面 360 之间），避开挂钟与相框
-    this.memoryOrb = this.add.container(480, 305).setDepth(6);
-    // Shell greybox: approved story object, formal watercolor artwork still pending.
-    const shell = this.add.graphics();
-    shell.fillStyle(0xf1dfbb, 1);
-    shell.fillPoints([
-      new Phaser.Math.Vector2(-8, 21), new Phaser.Math.Vector2(-38, -5),
-      new Phaser.Math.Vector2(-30, -27), new Phaser.Math.Vector2(-12, -38),
-      new Phaser.Math.Vector2(12, -38), new Phaser.Math.Vector2(30, -27),
-      new Phaser.Math.Vector2(38, -5), new Phaser.Math.Vector2(8, 21),
-    ], true);
-    shell.lineStyle(2, 0xb99d75, 1);
-    for (const x of [-28, -14, 0, 14, 28]) shell.lineBetween(0, 18, x, -25);
-    const label = this.add.text(0, 45, '贝壳', {
-      fontSize: '12px', color: '#f1dfbb', backgroundColor: '#172d23',
-    }).setOrigin(0.5);
-    const hit = this.add.circle(0, 0, 44, 0xffffff, 0).setInteractive({ useHandCursor: true });
-    hit.on('pointerdown', () => this.touchMemoryOrb());
-    this.memoryOrb.add([shell, label, hit]);
+    // 贝壳覆盖在书桌热区上方；否则同一次点击会被后面的书桌交互截走。
+    this.memoryOrb = this.add.container(480, 305).setDepth(30);
+    const shell = this.add.image(0, 0, 'room-memory-shell')
+      .setDisplaySize(112, 112);
+    const hit = this.add.circle(0, 0, 50, 0xffffff, 0).setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', (
+      _pointer: Phaser.Input.Pointer,
+      _localX: number,
+      _localY: number,
+      event: Phaser.Types.Input.EventData,
+    ) => {
+      event.stopPropagation();
+      this.touchMemoryOrb();
+    });
+    this.memoryOrb.add([shell, hit]);
     this.orbLight = this.lights.addLight(480, 305, 240, GOLD, 0.8);
     this.tweens.add({
       targets: this.memoryOrb,
@@ -1032,7 +1022,13 @@ export default class RoomScene extends Phaser.Scene {
 
   private restoreInventory(): void {
     if (this.progress.photoMissingPieceCollected && !this.progress.photoSolved) {
-      this.inventoryBar?.addItem({ id: 'photo-piece', glyph: '拼', label: '照片拼块' });
+      this.inventoryBar?.addItem({
+        id: 'photo-piece',
+        glyph: '拼',
+        label: '照片拼块',
+        imageUrl: photoFrameUrl,
+        imageCrop: { column: 3, row: 3, columns: 4, rows: 4 },
+      });
     }
     if (this.progress.flashlightCollected && !this.progress.flashlightPlaced) this.addFlashlightToInventory();
     if (this.progress.batteryCollected && !this.progress.flashlightPowered) {
@@ -1053,7 +1049,7 @@ export default class RoomScene extends Phaser.Scene {
 
   private addFlashlightToInventory(): void {
     this.inventoryBar?.addItem({
-      id: 'flashlight', glyph: '光', label: this.progress.flashlightPowered ? '手电筒（有电）' : '手电筒',
+      id: 'flashlight', glyph: '光', label: '手电筒',
       iconUrl: resolveImageUrl(this.progress.flashlightPowered ? flashlightOnUrl : flashlightOffUrl),
     });
   }
@@ -1115,14 +1111,17 @@ export default class RoomScene extends Phaser.Scene {
     const props = this.add.container(0, 0).setDepth(3);
     this.roomProgressProps = props;
     // Rebuilt props belong to this container so old closed boxes and batteries disappear.
+    const boxShowsBattery = this.progress.photoSolved && !this.progress.batteryCollected;
     props.add(this.addSupportedRoomProp(
-      this.progress.photoSolved ? 'room-box-open-art' : 'room-box-closed-art', 735, 249, 58, 2.2,
+      boxShowsBattery ? 'room-box-open-art' : 'room-box-closed-art', 735, 249, 58, 2.2,
     ));
-    props.add(this.addSupportedRoomProp('room-frame-art', 680, 249, 42, 2.3));
-    if (this.progress.photoSolved && !this.progress.batteryCollected) {
-      props.add(this.addSupportedRoomProp('room-battery-art', 735, 237, 24, 2.4));
-    }
-    const boxHit = this.add.rectangle(735, 232, 64, 38, 0, 0)
+    // 拼图完成后，大场景里的相框也换成同一张海边全家照；完成前仍保留空相框。
+    const frameTexture = this.progress.photoSolved ? 'room-frame-complete-art' : 'room-frame-art';
+    const frame = this.addSupportedRoomProp(frameTexture, 735, 230, 42, 2.4);
+    if (!this.progress.photoSolved) frame.setTint(0x9eabbc);
+    props.add(frame);
+    // 只让盒子正面下沿接收点击，避免与压在盒盖上的相框热区重叠。
+    const boxHit = this.add.rectangle(735, 244, 64, 22, 0, 0)
       .setInteractive({ useHandCursor: true });
     props.add(boxHit);
     boxHit.on('pointerdown', () => {
@@ -1253,27 +1252,37 @@ export default class RoomScene extends Phaser.Scene {
     // 与 D 的文字面板同款标题色/字号，玩法面板与文字面板读作同一套界面
     return this.add
       .text(x, y, text, {
-        fontFamily: 'sans-serif',
+        fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
         fontSize: '20px',
+        fontStyle: 'bold',
         color: '#f0dfb5',
       })
       .setOrigin(0.5)
+      .setResolution(Math.max(2, bufferScaleOf(this)))
       .setShadow(0, 1, '#06090a', 3);
   }
 
   private addCloseButton(layer: Phaser.GameObjects.Container, x: number, y: number): void {
-    const btn = this.add
-      .text(x, y, '×', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '28px',
-        color: '#f0dfb5',
-      })
-      .setOrigin(0.5)
+    // 视觉上只留一枚小叉；透明热区仍足够大，方便鼠标点击。
+    const hit = this.add
+      .rectangle(x, y, 28, 28, 0x000000, 0.001)
       .setInteractive({ useHandCursor: true });
-    btn.on('pointerover', () => btn.setColor('#fff7e4'));
-    btn.on('pointerout', () => btn.setColor('#f0dfb5'));
-    btn.on('pointerdown', () => this.closePanel());
-    layer.add(btn);
+    const glyph = this.add.graphics();
+    const drawGlyph = (color: number, alpha: number, width: number) => {
+      glyph.clear();
+      glyph.lineStyle(width, color, alpha);
+      glyph.lineBetween(x - 4, y - 4, x + 4, y + 4);
+      glyph.lineBetween(x + 4, y - 4, x - 4, y + 4);
+    };
+    drawGlyph(0xfff1cf, 0.82, 1.6);
+    hit.on('pointerover', () => {
+      drawGlyph(0xffffff, 1, 2);
+    });
+    hit.on('pointerout', () => {
+      drawGlyph(0xfff1cf, 0.82, 1.6);
+    });
+    hit.on('pointerdown', () => this.closePanel());
+    layer.add([hit, glyph]);
   }
 
   private closePanel(): void {

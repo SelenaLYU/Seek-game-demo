@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 
 export interface RoomInventoryItem {
   id: string;
@@ -6,6 +7,13 @@ export interface RoomInventoryItem {
   glyph: string;
   imageUrl?: string;
   iconUrl?: string;
+  /** 从整张图片中裁出一个网格区域作为物品图标。 */
+  imageCrop?: {
+    column: number;
+    row: number;
+    columns: number;
+    rows: number;
+  };
   label: string;
 }
 
@@ -43,7 +51,7 @@ function installStyle(): void {
     }
     .seek-room-inventory * { box-sizing: border-box; }
     .seek-room-inventory__drawer {
-      position: absolute; right: 14px; bottom: 14px; width: 230px; height: 34px;
+      position: absolute; right: 14px; bottom: 14px; width: 330px; height: 56px;
       display: flex; align-items: stretch;
       transform: translateX(0); opacity: 1;
       transition: right 400ms cubic-bezier(.22,.82,.24,1),
@@ -56,10 +64,12 @@ function installStyle(): void {
     }
     .seek-room-inventory.is-collapsed .seek-room-inventory__drawer {
       right: 0;
+      height: 34px;
       transform: translateX(calc(100% - 28px));
     }
+    .seek-room-inventory.is-collapsed .seek-room-inventory__toggle { width: 28px; height: 34px; }
     .seek-room-inventory__shelf {
-      width: 202px; height: 34px; padding: 3px 4px;
+      width: 294px; height: 56px; padding: 5px 6px;
       display: flex; align-items: center; gap: 4px;
       border: 1px solid rgba(239,220,174,.22); border-left: 0;
       border-radius: 0 8px 8px 0;
@@ -68,7 +78,7 @@ function installStyle(): void {
       box-shadow: 0 5px 18px rgba(4,10,8,.20), inset 0 1px rgba(255,250,229,.06);
     }
     .seek-room-inventory__slot {
-      position: relative; width: 45px; height: 26px; flex: none;
+      position: relative; width: 67px; height: 46px; flex: none;
       display: flex; align-items: center; justify-content: center;
       border: 1px solid rgba(233,216,176,.18); border-radius: 5px;
       background: rgba(225,218,192,.035);
@@ -80,13 +90,14 @@ function installStyle(): void {
       border: 1px dashed rgba(244,228,187,.055); pointer-events: none;
     }
     .seek-room-inventory__slot-number {
-      position: absolute; top: 2px; left: 4px; font: 7px/1 Georgia, serif;
+      position: absolute; top: 3px; left: 5px; font: 8px/1 Georgia, serif;
       color: rgba(238,222,186,.22);
     }
     .seek-room-inventory__item {
       position: absolute; inset: 2px; z-index: 1; border: 0; border-radius: 4px;
-      display: grid; grid-template-columns: 18px 1fr; align-items: center; gap: 2px;
-      padding: 1px 2px; color: rgba(247,233,198,.88); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+      padding: 1px; color: rgba(247,233,198,.88); cursor: pointer;
       background: linear-gradient(145deg, rgba(108,100,76,.38), rgba(55,61,50,.36));
       box-shadow: 0 2px 6px rgba(0,0,0,.14);
       transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
@@ -104,25 +115,27 @@ function installStyle(): void {
       animation: seek-inventory-drop 620ms cubic-bezier(.19,.9,.26,1.18) both;
     }
     .seek-room-inventory__glyph {
-      width: 18px; height: 20px; display: grid; place-items: center;
-      border-radius: 3px; border: 1px solid rgba(255,240,203,.22);
-      background: rgba(244,225,179,.075); font: 11px/1 Georgia, serif;
+      width: 100%; height: 100%; display: grid; place-items: center;
+      border: 0; background: transparent; font: 700 22px/1 Georgia, serif;
       text-shadow: 0 1px 3px rgba(0,0,0,.45);
     }
     .seek-room-inventory__item-image {
-      width: 18px; height: 20px; object-fit: contain; pointer-events: none;
+      width: calc(100% - 2px); height: calc(100% - 2px); object-fit: contain; pointer-events: none;
       filter: drop-shadow(0 1px 3px rgba(0,0,0,.42));
     }
+    .seek-room-inventory__item-image.is-cropped {
+      position: absolute; max-width: none; max-height: none; object-fit: fill;
+      filter: none;
+    }
     .seek-room-inventory__label {
-      overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-      font-size: 7px; line-height: 1.1; letter-spacing: 0;
+      display: none;
     }
     .seek-room-inventory__toggle {
-      width: 28px; height: 34px; flex: none; border: 1px solid rgba(239,220,174,.22);
+      width: 36px; height: 56px; flex: none; border: 1px solid rgba(239,220,174,.22);
       border-radius: 8px 0 0 8px; color: rgba(243,223,173,.82); cursor: pointer;
       background: linear-gradient(180deg, rgba(62,68,55,.72), rgba(24,31,27,.78));
       box-shadow: -4px 5px 15px rgba(4,10,8,.17), inset 0 1px rgba(255,250,229,.06);
-      font: 14px/1 Georgia, serif; transition: color 150ms ease, background 150ms ease;
+      font: 18px/1 Georgia, serif; transition: color 150ms ease, background 150ms ease;
     }
     .seek-room-inventory__toggle:hover,
     .seek-room-inventory__toggle:focus-visible {
@@ -236,6 +249,14 @@ export function createRoomInventoryUI(
             className: 'seek-room-inventory__glyph',
             textContent: item.glyph,
           });
+      if (icon instanceof HTMLImageElement && item.imageCrop) {
+        const { column, row, columns, rows } = item.imageCrop;
+        icon.classList.add('is-cropped');
+        icon.style.width = `${columns * 100}%`;
+        icon.style.height = `${rows * 100}%`;
+        icon.style.left = `${-column * 100}%`;
+        icon.style.top = `${-row * 100}%`;
+      }
       icon.setAttribute('aria-hidden', 'true');
       const label = document.createElement('span');
       label.className = 'seek-room-inventory__label';
@@ -293,10 +314,7 @@ export function createRoomInventoryUI(
   });
 
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, WIDTH, HEIGHT, 'right');
   };
 
   const onShutdown = () => handle.destroy();
