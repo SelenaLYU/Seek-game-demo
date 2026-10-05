@@ -52,7 +52,13 @@ PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、
 2. ~~相册接入正式照片，并把入口扩展到序章/主菜单。~~（2026-10-05 完成：第一章照片已接正式美术，入口见 `AlbumUI`）
 3. 贝壳正式美术：只剩 HUD 合成进度里那段代码绘制的贝壳轮廓待换成美术。
 4. ~~第一章结尾改用同风格分镜占位~~（2026-10-05 完成）；正式动画到位后替换 `EndingScene` 即可。
-5. 第一关体验遗留：石门右侧裁切、礁石下方隐形碰撞墙、抓放海鸥位置突跳、触屏适配——**先实测复现再修**，`archive/2026-10-02-bugs-and-ux-review.md` 里的条目不可直接当待修清单。
+5. 第一关体验遗留：**已实测复现**（2026-10-05，工具 `tools/probe-level1-experience.mjs`，基线 **1/8 通过**）：
+   - **已不存在**：礁石下方隐形碰撞墙（碰撞柱已改为停在岩体贴图内容底边 327/374/402/444/449/499/524，全部 < 水面 540；只有起点沙滩与右岸两块厚地面按设计到 540）。
+   - **待修 · 石门右侧裁切**：门美术不透明内容右缘 2913.2 vs 世界右界 2870 → **出界 43.2px**（含透明边 51.3px）。互动区在界内，只是美术被切。
+   - **待修 · 抓海鸥瞬间突跳**：真实自动抓取半径是 `tryGrabVine` 默认的 **78px**（场景里 95px 那个只是握点光环的 near 判定）。入口 76px 时单帧位移：渲染框中心 25.4px / 脚底 17.7px / 顶点 33.2px / 碰撞体中心 35.7px。放在 90ms 收回补间里的松手段已有改善（旧账的「瞬间 39px」已被 tween 替代），现在最大 21.8px/帧。
+   - **待修 · 触屏（仅竖屏）**：390×844 dpr2 → 缓冲 960×2078、zoom 3.847、逻辑视口宽 250。▶/↑ 重叠 134.7×204.3px（▶ 有 59% 按不到）；状态栏被 zoom 放大 3.85× 后宽 1623.6px，**右溢 732.8px**；起点教学卡只剩 90px 可见且文案是键盘键位。横屏 844×390 三项均正常。
+   - 另记（玩家不可见但会影响后续设计）：悬挂期间 `body.enable=false`，Phaser 会跳过 `preUpdate/update/postUpdate`，**碰撞体一直停在抓取前的位置**，松手那一帧才跳回握点。以后若想让海鸥带人撞到礁石／门区，这里会立刻变成 bug。
+   - `archive/2026-10-02-bugs-and-ux-review.md` 里的条目仍不可直接当待修清单：其中 P1-5（隐形墙）、P2-2（松手 39px 突跳）已经被后续代码修掉了。
 6. 推送分支 + 开 PR。
 
 需要用户决策：旧素材（6 张已删文件的删除动作、`assets/level2/qilou` 等未跟踪美术）如何处置；并发编辑归属（见下）。
@@ -78,6 +84,7 @@ npm run build               # tsc --noEmit + vite build
 - 调试入口：`?scene=forest` / `?scene=room` / `?scene=island` / `?scene=chapter2` / `?scene=chapter2-room` / `?scene=chapter2-memory` / `?scene=chapter3-preview`。
 - 美术改动后跑一次 `/usr/bin/python3 tools/optimize-images.py`（PNG 保留，生成同名 WebP）。
 - 加载改动用 `node tools/probe-load-perf.mjs` 验收（`ORIGIN=http://localhost:4173` 量生产包）。
+- 第一关四条体验遗留（石门裁切／礁石隐形墙／抓放海鸥突跳／触屏适配）用 `node tools/probe-level1-experience.mjs` 量，改前改后各跑一次看数字（`--json` 出原始数据；截图写 `screenshots/level1-experience/`；任一阈值超标退出码 1）。它的探针里记了两个坑：手动步进不推进 tween（量松手补间必须走真实 rAF），以及 sf0 层位置被 `screenSpaceOrigin` 补偿但**尺寸仍被 zoom 放大**（触屏判定要在放大后的缓冲像素里比边界）。
 - 测试里 `import` 相对模块需要带 `.ts` 后缀（node 直跑 ESM），`tsconfig` 已开 `allowImportingTsExtensions`。
 - Vite 只打包被 `import` 的素材；用字面路径加载的文件（如 `scene/*.png`）必须改成 `import ... ?url`，否则构建产物里没有这张图。
 - 浏览器验收脚本可用 Playwright：`import { chromium } from '/Users/simon/node_modules/playwright/index.mjs'`，启动加 `--enable-unsafe-swiftshader`；在 WebGL 画布上叠加 DOM 时避免大面积 `backdrop-filter`（会拖慢截图与渲染）。
