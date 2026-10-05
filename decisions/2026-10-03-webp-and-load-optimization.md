@@ -117,10 +117,16 @@ Phaser 里资源有两条互不相通的加载方式，WebP 必须同时接住�
   「素材审查面板」那张未接入清单（含 22.2MB 宽幅底图）会被误判成运行时加载。
   角色序列帧按规则 2 走豁免（`assets/character/`）。
 
+### 已完成（2026-10-05）：素材审查面板 WebP 补漏
+
+AssetReviewOverlay 的 `<img>` 现通过 `resolveImageUrl(entry.path)` 加载；列表与页脚仍展示 PNG 真源路径，便于核对素材。第二关房间调试背景也改为经 resolver 加载。`RUNTIME_IMAGES` 新增面板列出的 12 张：便利店 masters 6 张、骑楼图集 4 张、小卖部背景 1 张、骑楼宽幅底图 1 张；未触碰并行会话的中间产物。
+
+- 12 张：29.889MB PNG → 3.17MB WebP（节省 89.4%）。
+- 面板 21 个条目：52.38MB → 5.233MB（节省 90.0%）；宽幅底图 22.2MB → 2.12MB。
+- 优化清单总量：109.22MB → 10.81MB（节省 90.1%）；`--check` 通过。
+- `npm test` 55/55、`npm run build`、`tools/probe-level1-experience.mjs` 12/12 通过；浏览器面板 21/21 加载成功、0 console error / 失败请求，宽幅图目视无色损（3 张小图由 Vite 内联为 data URL，正常）。
+- `tools/test-e2e.mjs` 与 `tools/probe-load-perf.mjs` 未运行：缺少 Chrome CDP `127.0.0.1:9333` 调试实例（ECONNREFUSED）；dev/preview 服务本身可用。
+
 ### 还没做
 
-- [ ] 只被**素材审查面板**（`ChapterTwoRoomScene` 的 AssetReviewOverlay 清单，标注「未接入」）
-     引用的图还没 WebP：`chapter2-qilou-water-town-background-hd-7360x2200.png`（22.2MB）、
-     骑楼图集 4 张、便利店 masters 6 张。它们不在玩家进场路径上，等第二关定稿、真正接入时
-     一起登记更稳妥（现在登记等于给未定稿的图加一份可能过期的 WebP）。
 - [ ] 上一轮的两条仍然有效（旧故事遗留音视频待确认删除；`index` chunk 拆分等第二关定稿）。

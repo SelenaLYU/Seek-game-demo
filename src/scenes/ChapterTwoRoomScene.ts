@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { applyHDCamera } from '../systems/Resolution';
+import { resolveImageUrl } from '../assets';
 import { ChapterTwoRoomFlow } from '../gameplay/chapterTwoRoomFlow';
 import { GOODS, FIXED, CLUES, CAP_POINTS, CAP_EDGES } from '../gameplay/bottleCapPuzzle';
 import { createRoomInventoryUI, type RoomInventoryUIHandle } from '../ui/RoomInventoryUI';
@@ -61,7 +62,7 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
   preload(): void {
     this.artMode = isStoreArtMode();
     // 只有调试模式才拉这张 3MB 的背景，正常流程的加载量不变
-    if (this.artMode && !this.textures.exists(STORE_BG_KEY)) this.load.image(STORE_BG_KEY, STORE_BG_PATH);
+    if (this.artMode && !this.textures.exists(STORE_BG_KEY)) this.load.image(STORE_BG_KEY, resolveImageUrl(STORE_BG_PATH));
   }
   create(): void {
     this.artMode = isStoreArtMode();

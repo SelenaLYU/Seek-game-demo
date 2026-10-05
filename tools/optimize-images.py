@@ -114,6 +114,20 @@ RUNTIME_IMAGES: tuple[str, ...] = (
     "assets/level2/night-v1/s02.png",
     "assets/level2/night-v1/teacher.png",
     "assets/level2/night-v1/w01.png",
+    # —— 第二关素材审查面板（AssetReviewOverlay 按需逐张打开；不在玩家进场关键路径）——
+    # 这 12 张由审查面板展示，统一走 resolveImageUrl；母版仍保留 PNG 真源。
+    "assets/scenes/chapter2/chapter2-convenience-store-stocked-night-v3-style-corrected-1920x1080.png",
+    "assets/level2/convenience-store/interactive/story-props-master-v1.png",
+    "assets/level2/convenience-store/interactive/puzzle-goods-caps-master-v1.png",
+    "assets/level2/convenience-store/interactive/collection-and-snack-master-v1.png",
+    "assets/level2/convenience-store/optional/growth-marks-observation-master-v3-wonky-chalk-handwriting.png",
+    "assets/level2/convenience-store/optional/optional-observation-props-master-v1.png",
+    "assets/level2/convenience-store/optional/lilei-shelf-hide-states-white-shirt-floral-shorts-v1.png",
+    "assets/scenes/chapter2/chapter2-qilou-water-town-background-hd-7360x2200.png",
+    "assets/level2/qilou/chapter2-platform-tiles-4x2.png",
+    "assets/level2/qilou/chapter2-cover-modules-5x2.png",
+    "assets/level2/qilou/chapter2-static-obstacles-3x3.png",
+    "assets/level2/qilou/chapter2-dynamic-goal-modules-4x2.png",
 )
 
 # 有透明通道的道具统一用更高的 q（alpha 边缘更容易被抹），背景/实拍用低一档即可。

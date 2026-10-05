@@ -105,6 +105,22 @@ test('runtime images are all WebP-backed, so no scene can silently ship PNGs', (
   );
 });
 
+test('asset-review panel resolves every review image to WebP', () => {
+  const overlay = readFileSync(at('src/ui/AssetReviewOverlay.ts'), 'utf8');
+  const room = readFileSync(at('src/scenes/ChapterTwoRoomScene.ts'), 'utf8');
+  const reviewPaths = [
+    ...room.matchAll(/path:\s*'(assets\/[^']+\.(?:png|jpg|jpeg))'/g),
+  ].map(m => m[1]);
+  const storeBg = room.match(/const STORE_BG_PATH = '(assets\/[^']+\.(?:png|jpg|jpeg))'/)?.[1];
+  assert.ok(storeBg, 'AssetReviewOverlay 的小卖部背景 path 应该能解析出来');
+  reviewPaths.push(storeBg);
+  assert.equal(reviewPaths.length, 21, `素材审查面板应列出 21 个资产，实际 ${reviewPaths.length}`);
+  const missing = reviewPaths.filter(p => !existsSync(at(webpOf(p))));
+  assert.deepEqual(missing, [], `审查面板图缺 WebP：\n  ${missing.join('\n  ')}`);
+  assert.match(overlay, /image\.src\s*=\s*resolveImageUrl\(entry\.path\)/);
+  assert.match(room, /load\.image\(STORE_BG_KEY,\s*resolveImageUrl\(STORE_BG_PATH\)\)/);
+});
+
 test('no WebP is older than its PNG source', () => {
   const stale = runtimeImages().filter(p => {
     if (!existsSync(at(p)) || !existsSync(at(webpOf(p)))) return false;

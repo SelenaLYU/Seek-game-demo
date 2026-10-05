@@ -44,6 +44,8 @@
 
 验收记录（2026-10-05，WebP 补漏）：记忆之房传输 **16710KB → 2611KB**（png 8 张 → 0 张）、第二关夜骑楼 **11903KB → 1487KB**；`ORIGIN=http://localhost:4173 node tools/probe-load-perf.mjs --runs=3` 海边 212ms / 房间 381ms、0 长任务 0 失败；`?scene=chapter2` 逐个 texture 检查 10/10 存在且尺寸正确、0 console error；两个场景截图眼检无色损；`npm test` 54/54；`tools/probe-level1-experience.mjs` 12/12；`tools/test-e2e.mjs` 14/14。根因与防线见 `decisions/2026-10-03-webp-and-load-optimization.md` 第 7 节。
 
+验收记录（2026-10-05，第二关素材审查面板 WebP）：AssetReviewOverlay 与房间调试背景接入 `resolveImageUrl()`；审查清单 12 张图新增 WebP，总清单 **109.22MB → 10.81MB（节省 90.1%）**。面板浏览器逐个检查 **21/21** 加载成功，0 console error / 失败请求；宽幅底图目视无色损。`npm test` 55/55、`npm run build`、`tools/probe-level1-experience.mjs` 12/12、`tools/optimize-images.py --check` 通过。`tools/test-e2e.mjs` 与 `tools/probe-load-perf.mjs` 因 Chrome CDP `127.0.0.1:9333` 未启动而未运行；待补验。详见 `decisions/2026-10-03-webp-and-load-optimization.md` 第 7 节。
+
 ## 4. 第二关（Selena 那一侧）现状
 
 PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、瓶盖一盘一笔画、六幕可点击分镜、回岛点亮第二段、岛屿章节列表 1–3、第三关入口提示「未完待续」+ 选项查看**第三关站位预告**（3 秒灰盒，可跳过，自动回岛）。
