@@ -1,4 +1,17 @@
 import { albumEntries, albumPhotoCount, ALBUM_SIZE } from '../story/Album';
+import { resolveImageUrl } from '../assets';
+import chapter1PhotoUrl from '../../assets/story/chapter1-family-photo-seaside.png?url';
+
+/**
+ * 每章回忆照片：回忆动画定格的那张图，就是相册里这一格的照片。
+ * 第一章已接入正式照片（与结尾分镜里定格的是同一张，`assets/story/` 只有一份真源）。
+ * 其余章节美术到货后只需在此登记路径；相册数据与 UI 都不用改。
+ * 必须经 Vite `?url` 引入，否则生产包不会包含该图（字面路径不会被打包）。
+ * 走 `resolveImageUrl` 取同目录 WebP，PNG 仍是美术真源。
+ */
+const CHAPTER_PHOTOS: Readonly<Record<number, string>> = {
+  1: resolveImageUrl(chapter1PhotoUrl),
+};
 
 export interface AlbumHandle {
   element: HTMLElement;
@@ -47,6 +60,8 @@ function installStyle(): void {
       margin-top: auto; height: 62px; border-radius: 6px; border: 1px dashed rgba(242, 234, 214, .35);
       display: grid; place-items: center; font-size: 12px; color: #b9ab8c; text-align: center; line-height: 1.5;
     }
+    .seek-album__photo--filled { padding: 0; border-style: solid; overflow: hidden; }
+    .seek-album__photo-img { display: block; width: 100%; height: 100%; object-fit: cover; }
     .seek-album__note { margin: 18px 0 0; font-size: 12px; color: #a89b7f; line-height: 1.7; }
     @media (max-width: 820px) { .seek-album__grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 560px) { .seek-album__grid { grid-template-columns: 1fr; } .seek-album__book { padding: 18px; } }
@@ -54,7 +69,7 @@ function installStyle(): void {
   document.head.append(style);
 }
 
-/** 相册骨架：六格章节登记 + 获得状态。正式照片美术接入后只替换卡片内部。 */
+/** 相册：六格章节登记 + 获得状态 + 已到位的回忆照片（未到位的仍是明确占位）。 */
 export function showAlbumUI(options: { completed: readonly number[]; onClose?: () => void }): AlbumHandle {
   installStyle();
   const abort = new AbortController();
@@ -67,13 +82,19 @@ export function showAlbumUI(options: { completed: readonly number[]; onClose?: (
 
   const entries = albumEntries(options.completed);
   const cards = entries.map(entry => {
+    const photo = entry.unlocked ? CHAPTER_PHOTOS[entry.chapter] : undefined;
+    const photoMarkup = !entry.unlocked
+      ? '&#8203;'
+      : photo
+        ? `<img class="seek-album__photo-img" src="${photo}" alt="${entry.label} 的回忆照片" loading="lazy">`
+        : '照片待制作<br>（正式美术接入后替换）';
     const card = document.createElement('article');
     card.className = `seek-album__card${entry.unlocked ? '' : ' seek-album__card--locked'}`;
     card.innerHTML = `
       <span class="seek-album__slot">${String(entry.chapter).padStart(2, '0')} / ${String(ALBUM_SIZE).padStart(2, '0')}</span>
       <span class="seek-album__label">${entry.unlocked ? entry.label : '尚未找回'}</span>
       <span class="seek-album__memory">${entry.unlocked ? `记忆物 · ${entry.memory}` : '完成这一段人生后回到这里'}</span>
-      <span class="seek-album__photo">${entry.unlocked ? '照片待制作<br>（正式美术接入后替换）' : '&#8203;'}</span>`;
+      <span class="seek-album__photo${photo ? ' seek-album__photo--filled' : ''}">${photoMarkup}</span>`;
     return card;
   });
 
@@ -95,7 +116,7 @@ export function showAlbumUI(options: { completed: readonly number[]; onClose?: (
 
   const note = document.createElement('p');
   note.className = 'seek-album__note';
-  note.textContent = '相册骨架：章节登记与获得状态已接通，正式照片、序章入口和结局揭示待接入。';
+  note.textContent = '章节登记与获得状态已接通，序章与主菜单也能打开相册；回忆照片按各章素材到位情况显示，未到位的仍是占位。结局揭示待接入。';
 
   book.append(head, grid, note);
   root.append(book);

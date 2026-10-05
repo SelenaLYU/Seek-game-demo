@@ -5,8 +5,6 @@ import type { ChapterOneRoomProgress } from '../gameplay/ChapterOneRoomProgress'
 import { ChapterOneRoomSession } from '../gameplay/ChapterOneRoomSession';
 import {
   canAwardRoomFragment,
-  canCollectFlashlightBattery,
-  canCollectPhotoMissingPiece,
   canDrawWind,
   canOpenShadowBoatPuzzle,
   canPowerFlashlight,
@@ -30,15 +28,17 @@ import {
   showOtherRoomText,
 } from '../ui/RoomInteractionCopy';
 import { createGameHud, type GameHudHandle } from '../ui/GameHud';
-import { showRoomDeskPopup, type RoomDeskPopupHandle } from '../ui/RoomDeskPopup';
+import { showRoomItemNotice, showRoomItemPresentation } from '../ui/RoomItemPresentation';
+import { showRoomPaintingPreview } from '../ui/RoomPaintingPreview';
 import { resolveImageUrl } from '../assets';
 import { loadAudioInBackground } from '../systems/DeferredAudio';
 import roomBackgroundUrl from '../../scene/level1-memory-room-night-empty-v2-1920x1080.png?url';
-import photoFrameUrl from '../../assets/story/seek-childhood-photo-placeholder.svg?url';
-import { RADIO_PREVIEW_MS } from '../story/ChapterOneStory';
+import photoFrameUrl from '../../assets/environment/interactive-family-zoo-photo-frame-384x256.png?url';
+import memoryShellUrl from '../../assets/items/room-memory-pearl-shell-v1.png?url';
 import flashlightOffUrl from '../../assets/environment/room-flashlight-off.png?url';
 import flashlightOnUrl from '../../assets/environment/room-flashlight-on.png?url';
 import paintBrushUrl from '../../assets/items/room-paint-brush.png?url';
+import fairyTaleBookUrl from '../../assets/items/room-fairytale-book-v1.png?url';
 import radioStaticUrl from '../../assets/audio/radio-static.mp3?url';
 import radioWindUrl from '../../assets/audio/radio-wind.mp3?url';
 
@@ -108,7 +108,9 @@ function visibleBounds(scene: Phaser.Scene, key: string): VisibleBox {
     let bottom = -1;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        if (data[(y * w + x) * 4 + 3] > 24) {
+        // 生成素材外围带一圈很淡的环境辉光。家具落位应以实体像素为准，
+        // 否则辉光会被当成“底面”，物件本体看起来就会悬在桌面上。
+        if (data[(y * w + x) * 4 + 3] > 220) {
           if (x < left) left = x;
           if (x > right) right = x;
           if (y < top) top = y;
@@ -134,11 +136,10 @@ export default class RoomScene extends Phaser.Scene {
   private fragmentHud?: FragmentHudHandle;
   private inventoryBar?: RoomInventoryUIHandle;
   private shadowBoatPanel?: ShadowBoatPuzzleHandle;
-  private deskPopup?: RoomDeskPopupHandle;
+  private pendingPhotoStory = false;
   private gameHud!: GameHudHandle;
   private fragments = new Set<string>();
   private progressSession!: ChapterOneRoomSession;
-  private missingPhotoSprite?: Phaser.GameObjects.Image;
   private wallPicture?: Phaser.GameObjects.Image;
   private memoryOrb: Phaser.GameObjects.Container | null = null;
   private roomProgressProps?: Phaser.GameObjects.Container;
@@ -159,7 +160,6 @@ export default class RoomScene extends Phaser.Scene {
   private orbLight?: Phaser.GameObjects.Light;
   private radioLight?: Phaser.GameObjects.Light;
   private radioSound?: Phaser.Sound.BaseSound;
-  private radioPreviewTimer?: Phaser.Time.TimerEvent;
   /** 电台音频按需加载的请求序号：切频道/关面板时 +1，作废在飞的回调 */
   private radioRequestId = 0;
 
@@ -174,16 +174,17 @@ export default class RoomScene extends Phaser.Scene {
   preload(): void {
     const images: Array<[string, string]> = ([
       ['room-bg', roomBackgroundUrl],
-      ['room-radio-art', 'assets/environment/room-vintage-cassette-recorder-perspective-v1.png'],
-      ['room-book-art', 'assets/items/room-fairytale-book-perspective-v1.png'],
+      ['room-radio-art', 'assets/environment/interactive-vintage-radio-384x256.png'],
+      ['room-book-art', 'assets/items/room-fairytale-book-v1.png'],
       ['room-frame-art', 'assets/environment/room-photo-frame-perspective-v1.png'],
-      ['room-box-closed-art', 'assets/environment/room-lockbox-closed-perspective-v1.png'],
-      ['room-box-open-art', 'assets/environment/room-lockbox-open-empty-perspective-v1.png'],
-      ['room-battery-art', 'assets/items/room-flashlight-battery-perspective-v1.png'],
-      ['room-aquarium-art', 'assets/environment/room-hermit-crab-aquarium-perspective-v1.png'],
+      ['room-frame-complete-art', photoFrameUrl],
+      ['room-box-closed-art', 'assets/environment/room-lockbox-closed-v1.png'],
+      ['room-box-open-art', 'assets/environment/room-lockbox-open-battery-v1.png'],
+      ['room-battery-art', 'assets/items/room-flashlight-battery-v1.png'],
+      ['room-aquarium-art', 'assets/environment/room-hermit-crab-aquarium-v1.png'],
       ['room-wall-drawing-incomplete', 'assets/environment/room-wall-drawing-incomplete.png'],
-      ['room-wall-drawing-complete', 'assets/environment/room-wall-drawing-complete.png'],
       ['room-photo', photoFrameUrl],
+      ['room-memory-shell', memoryShellUrl],
       ['room-flashlight-off', flashlightOffUrl],
       ['room-flashlight-on', flashlightOnUrl],
       ['room-paint-brush', paintBrushUrl],
@@ -230,6 +231,7 @@ export default class RoomScene extends Phaser.Scene {
     this.orbLight = undefined;
     this.radioLight = undefined;
     this.puzzleSolved = false;
+    this.pendingPhotoStory = false;
 
     applyHDCamera(this);
 
@@ -254,7 +256,6 @@ export default class RoomScene extends Phaser.Scene {
     this.restoreInventory();
     this.restoreFragmentHud();
     this.installRoomProgressObjects();
-    this.spawnMissingPhotoPiece();
     if (hasAllRoomFragments(this.progress)) this.spawnMemoryOrb();
 
     // Explicit visual-review route; never appears in normal play or as a keyboard shortcut.
@@ -263,6 +264,7 @@ export default class RoomScene extends Phaser.Scene {
     }
 
     this.cameras.main.fadeIn(250, 20, 18, 26);
+    if (canPowerFlashlight(this.progress)) this.time.delayedCall(350, () => this.combineFlashlight());
 
     if (import.meta.env.DEV) {
       (window as unknown as Record<string, unknown>).__roomScene = this;
@@ -292,23 +294,21 @@ export default class RoomScene extends Phaser.Scene {
   /** 夜景底图自带家具；独立道具按家具支撑面摆放，而非按 PNG 画布中心估坐标。 */
   private buildNewRoomAssets(): void {
     // 队友确认这两张就是年年的画：挂在中央空墙；这是墙面画，不是书桌或家具道具。
-    // 空墙在 1:2 缓冲坐标中只有约 180px 宽；旧版 160px 几乎铺满墙面，比例显得失真。
-    // 保留原画内容，只缩小并补一圈窄木框，让它与书架/窗框的建筑尺度一致。
-    this.add.rectangle(526, 160, 124, 92, 0x241b18, 0.72)
-      .setStrokeStyle(2, 0x5a4433, 0.9)
-      .setDepth(0.8);
+    this.add.rectangle(526, 160, 140, 102, 0x1b2b3a, 0.22).setDepth(0.8);
     this.wallPicture = this.add.image(
       526,
       160,
-      this.progress.shadowBoatSolved ? 'room-wall-drawing-complete' : 'room-wall-drawing-incomplete',
-    ).setDisplaySize(116, 84).setDepth(0.9).setTint(0xc4ccd6);
+      'room-wall-drawing-incomplete',
+    ).setDisplaySize(136, 98).setDepth(0.9).setTint(0xc4ccd6)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.openCompletedPainting());
 
     // 先确定“物件底部接触家具的哪条边”，再用透明像素 bbox 锚定；可见宽度按承托面留边。
-    // 按队友视频里的指点：书放书柜上层、录音机与锁盒放中层、鱼缸放最右侧柜面。
-    // 全部沿用队友原始 PNG；这里只统一实际家具支撑面、间距与显示尺度。
-    this.addSupportedRoomProp('room-book-art', 720, 180, 32, 2);
-    this.addSupportedRoomProp('room-radio-art', 695, 250, 58, 2);
-    this.addSupportedRoomProp('room-aquarium-art', 872, 340, 52, 2);
+    // 道具以 GPT Image 2.5 Sunburst 按背景机位与夜间光照重绘，保留原素材文件不覆盖。
+    // 使用 018e4e2 中的正面版素材；落点以当前标注为准，不沿用该提交的坐标。
+    this.addSupportedRoomProp('room-book-art', 732, 176, 40, 2);
+    this.addSupportedRoomProp('room-radio-art', 310, 306, 66, 2);
+    this.addSupportedRoomProp('room-aquarium-art', 912, 346, 52, 2);
   }
 
   /** 将透明 PNG 的可见像素水平居中，并让可见底缘恰好接触家具支撑面。 */
@@ -327,6 +327,8 @@ export default class RoomScene extends Phaser.Scene {
     const imageY = surfaceY - (bounds.bottom - (source.height - 1) / 2) * scale;
     return this.add.image(imageX, imageY, texture)
       .setDisplaySize(source.width * scale, source.height * scale)
+      // 独立摆件统一压入夜间蓝灰环境色，避免像另一层高亮贴纸。
+      .setTint(0xd6dce5)
       .setDepth(depth);
   }
 
@@ -384,13 +386,10 @@ export default class RoomScene extends Phaser.Scene {
     // Invisible inspect targets follow the already-painted objects in the room art.
     // This avoids drawing a second clock/radio/photo/calendar over the same illustration.
     const inspectTargets: Array<{ kind: ObjectKind; x: number; y: number; w: number; h: number }> = [
-      // Camera zoom transforms pointer coordinates back to world space; this
-      // hotspot follows the bedside radio's actual visible position.
-      { kind: 'radio', x: 310, y: 281, w: 132, h: 92 },
-      // 相框热区贴合可见画框；与下方木盒热区留出间隔。
-      { kind: 'photo', x: 782, y: 198, w: 44, h: 34 },
-      { kind: 'fish', x: 872, y: 314, w: 64, h: 58 },
-      { kind: 'book', x: 720, y: 156, w: 48, h: 50 },
+      { kind: 'radio', x: 310, y: 281, w: 80, h: 54 },
+      { kind: 'photo', x: 735, y: 207, w: 58, h: 50 },
+      { kind: 'fish', x: 912, y: 320, w: 68, h: 58 },
+      { kind: 'book', x: 732, y: 149, w: 58, h: 58 },
       // 点击底图中已有的桌子，弹出独立书桌近景；不把另一张桌子贴回房间。
       { kind: 'desk', x: 480, y: 292, w: 270, h: 62 },
     ];
@@ -419,7 +418,9 @@ export default class RoomScene extends Phaser.Scene {
       case 'book':
         this.openDomPanel(() => showOtherRoomText(this, {
           title: '童话书',
-          entries: [{ text: '书页已经泛黄，边角被反复翻阅得柔软了。' }],
+          imageUrl: resolveImageUrl(fairyTaleBookUrl),
+          imageAlt: '月夜兔子封面的童话书',
+          entries: [{ text: '这是韩梅梅最喜欢的故事，妈妈经常给她讲。整本故事书已经被翻得有点皱巴了。' }],
         }));
         break;
       case 'desk':
@@ -433,16 +434,9 @@ export default class RoomScene extends Phaser.Scene {
         }
         break;
       case 'radio':
-        if (this.progress.radioMessageHeard) {
-          this.openDomPanel(() =>
-            showOtherRoomText(this, {
-              title: '卧室里的录音机',
-              entries: [{ text: '录音机关联的记忆碎片已经找齐。正式录音内容待制作。' }],
-            }),
-          );
-        } else {
-          this.openRadio();
-        }
+        // 解完后录音机仍保留原来的调频交互，玩家可以随时回来重听四个频道。
+        // completeRadioSequence 自己会拦住重复发拼图和记忆碎片。
+        this.openRadio();
         break;
     }
   }
@@ -483,16 +477,17 @@ export default class RoomScene extends Phaser.Scene {
     this.panel = layer;
 
     this.panelBackdrop(layer);
-    layer.add(this.panelTitle(480, 58, '把照片拼回原样'));
-    layer.add(
-      this.add
-        .text(480, 82, '把碎片拖回相框 · 放对位置会自动吸住', {
-          fontFamily: 'sans-serif',
+    layer.add(this.panelTitle(480, 72, '把照片拼回原样'));
+    const subtitle = this.add
+        .text(480, 101, '把碎片拖回相框 · 放对位置会自动吸住', {
+          fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
           fontSize: '13px',
+          fontStyle: 'bold',
           color: '#cbb98a',
         })
-        .setOrigin(0.5),
-    );
+        .setOrigin(0.5)
+        .setResolution(Math.max(2, bufferScaleOf(this)));
+    layer.add(subtitle);
     // × 放在 D 的碎片 HUD 挂件（右上 DOM，逻辑区 y 13..73）正下方：
     // 原先 (922,34) 与挂件重叠，× 被毛玻璃压得发糊（HUD 设了 pointer-events:none
     // 不挡点击，但视觉干扰，2026-09-24 实机确认后下移）
@@ -646,11 +641,6 @@ export default class RoomScene extends Phaser.Scene {
               this.applyProgressEvent({ type: 'photo-base-arranged' });
               this.saveProgress();
               this.showHint('照片还差最后一块。去收音机旁找找。', 4500);
-              const gap = this.add.text(homeXY(15).x, homeXY(15).y, '缺片', {
-                fontFamily: 'sans-serif', fontSize: '13px', color: '#715d3b',
-                backgroundColor: 'rgba(240,232,212,.78)', padding: { x: 8, y: 5 },
-              }).setOrigin(0.5);
-              layer.add(gap);
             } else {
               this.time.delayedCall(300, () => this.onPuzzleSolved(layer));
             }
@@ -674,11 +664,6 @@ export default class RoomScene extends Phaser.Scene {
       this.applyProgressEvent({ type: 'photo-base-arranged' });
       this.saveProgress();
       this.showHint('照片还差最后一块。去收音机旁找找。', 4500);
-      const gap = this.add.text(homeXY(15).x, homeXY(15).y, '缺片', {
-        fontFamily: 'sans-serif', fontSize: '13px', color: '#715d3b',
-        backgroundColor: 'rgba(240,232,212,.78)', padding: { x: 8, y: 5 },
-      }).setOrigin(0.5);
-      layer.add(gap);
     }
 
     // Recover if the player reopens after placing the last piece but before its completion delay fired.
@@ -719,11 +704,6 @@ export default class RoomScene extends Phaser.Scene {
         this.puzzleSolved = false;
         this.time.delayedCall(delay + 300, () => {
           this.showHint('照片还差最后一块。去收音机旁找找。', 4500);
-          const gap = this.add.text(homeXY(15).x, homeXY(15).y, '缺片', {
-            fontFamily: 'sans-serif', fontSize: '13px', color: '#715d3b',
-            backgroundColor: 'rgba(240,232,212,.78)', padding: { x: 8, y: 5 },
-          }).setOrigin(0.5);
-          layer.add(gap);
         });
         return;
       }
@@ -758,6 +738,7 @@ export default class RoomScene extends Phaser.Scene {
     this.saveProgress();
     this.gainFragment('photo');
     this.inventoryBar?.removeItem('photo-piece');
+    this.pendingPhotoStory = true;
     this.installRoomProgressObjects();
     // 完成效果：完整照片淡入合拢 → 金光扫过 + 光环 → 停一拍再收起进文字面板
     //（几何与 openPuzzle 共用 PUZZLE_BOARD——新棋盘在左侧 408×272，居中值是旧版）
@@ -788,9 +769,8 @@ export default class RoomScene extends Phaser.Scene {
       if (this.panel !== layer) {
         return; // 演出期间面板被关掉：不发碎片
       }
-      this.closePanel();
       this.cameras.main.flash(140, 230, 207, 151);
-      this.openDomPanel(() => showPhotoMemoryText(this, photoFrameUrl));
+      this.closePanel();
     });
   }
 
@@ -817,13 +797,35 @@ export default class RoomScene extends Phaser.Scene {
             this.playRadioAudio('radio-wind');
             break;
           case 3:
-            this.playRadioPreview();
+            this.stopRadioAudio();
             break;
           case 4:
             this.stopRadioAudio();
             break;
         }
       },
+      onAllChannelsVisited: () => this.completeRadioSequence(),
+    });
+  }
+
+  private completeRadioSequence(): void {
+    if (this.progress.radioMessageHeard) return;
+    this.applyProgressEvent({ type: 'radio-message-heard' });
+    this.applyProgressEvent({ type: 'photo-piece-collected' });
+    this.saveProgress();
+    this.gainFragment('radio');
+
+    // 先让玩家看到四个频道已完成，再自动收起收音机；拼块随后落入道具栏。
+    this.time.delayedCall(700, () => {
+      if (this.radioPanel) this.closePanel();
+      this.inventoryBar?.addItem({
+        id: 'photo-piece',
+        glyph: '拼',
+        label: '照片拼块',
+        imageUrl: photoFrameUrl,
+        imageCrop: { column: 3, row: 3, columns: 4, rows: 4 },
+      });
+      this.showHint('录音机弹出了一块照片拼图，已经自动放进道具栏。现在可以去拼照片了。', 5200);
     });
   }
 
@@ -865,24 +867,21 @@ export default class RoomScene extends Phaser.Scene {
 
   private spawnMemoryOrb(): void {
     // 悬在方桌上空（挂钟 234 与桌面 360 之间），避开挂钟与相框
-    this.memoryOrb = this.add.container(480, 305).setDepth(6);
-    // Shell greybox: approved story object, formal watercolor artwork still pending.
-    const shell = this.add.graphics();
-    shell.fillStyle(0xf1dfbb, 1);
-    shell.fillPoints([
-      new Phaser.Math.Vector2(-8, 21), new Phaser.Math.Vector2(-38, -5),
-      new Phaser.Math.Vector2(-30, -27), new Phaser.Math.Vector2(-12, -38),
-      new Phaser.Math.Vector2(12, -38), new Phaser.Math.Vector2(30, -27),
-      new Phaser.Math.Vector2(38, -5), new Phaser.Math.Vector2(8, 21),
-    ], true);
-    shell.lineStyle(2, 0xb99d75, 1);
-    for (const x of [-28, -14, 0, 14, 28]) shell.lineBetween(0, 18, x, -25);
-    const label = this.add.text(0, 45, '贝壳 · 美术占位', {
-      fontSize: '12px', color: '#f1dfbb', backgroundColor: '#172d23',
-    }).setOrigin(0.5);
-    const hit = this.add.circle(0, 0, 44, 0xffffff, 0).setInteractive({ useHandCursor: true });
-    hit.on('pointerdown', () => this.touchMemoryOrb());
-    this.memoryOrb.add([shell, label, hit]);
+    // 贝壳覆盖在书桌热区上方；否则同一次点击会被后面的书桌交互截走。
+    this.memoryOrb = this.add.container(480, 305).setDepth(30);
+    const shell = this.add.image(0, 0, 'room-memory-shell')
+      .setDisplaySize(112, 112);
+    const hit = this.add.circle(0, 0, 50, 0xffffff, 0).setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', (
+      _pointer: Phaser.Input.Pointer,
+      _localX: number,
+      _localY: number,
+      event: Phaser.Types.Input.EventData,
+    ) => {
+      event.stopPropagation();
+      this.touchMemoryOrb();
+    });
+    this.memoryOrb.add([shell, hit]);
     this.orbLight = this.lights.addLight(480, 305, 240, GOLD, 0.8);
     this.tweens.add({
       targets: this.memoryOrb,
@@ -918,22 +917,19 @@ export default class RoomScene extends Phaser.Scene {
       duration: 520,
       ease: 'Quad.easeOut',
     });
-    this.gameHud.showLevelClearedModal({
-      title: '— 第一章·记忆之房 完美通关！ —',
-      description: '照片拼图、收音机调频、光影小船三块记忆碎片全部找齐！\n三块碎片合成贝壳，唤起一家三口的海边回忆。',
-      score: this.progress.score,
-      nextLabel: '下一关：启程前往记忆之岛 →',
-      onNext: () => {
-        this.cameras.main.fade(520, 23, 45, 35);
-        this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('ending', { completedChapter: 1 }));
-      },
-      onStay: () => {
-        this.orbTouched = false;
-        this.showHint('留在房间继续回味童年物件。');
-      },
-      onRestart: () => this.scene.restart(),
-      onHome: () => this.scene.start('menu'),
-    });
+    this.cameras.main.fade(520, 23, 45, 35);
+    this.cameras.main.once('camerafadeoutcomplete', () => this.scene.start('ending', { completedChapter: 1 }));
+  }
+
+  /** 解谜完成后再次点墙画，只看正面的画本身，不重开桌面、光影或三笔风。 */
+  private openCompletedPainting(): void {
+    if (this.interacting || this.orbTouched || !this.progress.shadowBoatSolved) return;
+    this.interacting = true;
+    showRoomPaintingPreview(
+      this,
+      resolveImageUrl('assets/environment/room-wall-drawing-incomplete.png'),
+      () => { this.interacting = false; },
+    );
   }
 
   // ---------- HUD / 面板公共件 ----------
@@ -996,7 +992,13 @@ export default class RoomScene extends Phaser.Scene {
     this.inventoryBar = createRoomInventoryUI(this, {
       onItemSelected: item => {
         this.shadowBoatPanel?.setBrushEquipped(item?.id === 'paint-brush');
-        if (item) this.showHint(`已选择：${item.label}`, 1800);
+        if (item?.id === 'flashlight' && this.shadowBoatPanel) {
+          this.applyProgressEvent({ type: 'flashlight-placed' });
+          this.saveProgress();
+          this.shadowBoatPanel.setFlashlightEquipped(true);
+          this.inventoryBar?.removeItem('flashlight');
+        }
+        if (item?.id === 'photo-piece' && !this.interacting) this.openObject('photo');
       },
     });
   }
@@ -1020,12 +1022,19 @@ export default class RoomScene extends Phaser.Scene {
 
   private restoreInventory(): void {
     if (this.progress.photoMissingPieceCollected && !this.progress.photoSolved) {
-      this.inventoryBar?.addItem({ id: 'photo-piece', glyph: '拼', label: '照片拼块' });
+      this.inventoryBar?.addItem({
+        id: 'photo-piece',
+        glyph: '拼',
+        label: '照片拼块',
+        imageUrl: photoFrameUrl,
+        imageCrop: { column: 3, row: 3, columns: 4, rows: 4 },
+      });
     }
+    if (this.progress.flashlightCollected && !this.progress.flashlightPlaced) this.addFlashlightToInventory();
     if (this.progress.batteryCollected && !this.progress.flashlightPowered) {
-      this.inventoryBar?.addItem({ id: 'flashlight-battery', glyph: '电', label: '手电筒电池' });
+      this.inventoryBar?.addItem({ id: 'flashlight-battery', glyph: '电', label: '电池' });
     }
-    if (this.progress.paintBrushCollected) {
+    if (this.progress.paintBrushCollected && !this.progress.paintBrushUsed) {
       this.inventoryBar?.addItem({ id: 'paint-brush', glyph: '笔', label: '画笔', iconUrl: paintBrushUrl });
     }
   }
@@ -1038,185 +1047,135 @@ export default class RoomScene extends Phaser.Scene {
     }
   }
 
-  /** Place the progression items as small, clickable props within the existing room art. */
-  private installRoomProgressObjects(): void {
-    this.roomProgressProps?.destroy(true);
-    const props = this.add.container(0, 0).setDepth(2);
-    this.roomProgressProps = props;
-    const prop = (
-      x: number, y: number, label: string, enabled: boolean, action: () => void,
-      hitWidth = 36, hitHeight = 25,
-    ) => {
-      const card = this.add.container(x, y);
-      const back = this.add.ellipse(0, 1, 22, 5, 0x171b16, enabled ? 0.2 : 0.12);
-      const text = this.add.text(0, -12, label, {
-        fontFamily: 'sans-serif', fontSize: '9px', color: enabled ? '#f5e6bd' : '#c2bba7',
-        backgroundColor: '#171b16aa', padding: { x: 3, y: 2 },
-      }).setOrigin(0.5).setAlpha(0);
-      card.add([back, text]);
-      props.add(card);
-      if (enabled) {
-        const hit = this.add.rectangle(0, 0, hitWidth, hitHeight, 0x000000, 0).setInteractive({ useHandCursor: true });
-        card.add(hit);
-        hit.on('pointerdown', () => {
-          if (!this.interacting && !this.orbTouched) action();
-        });
-        hit.on('pointerover', () => text.setAlpha(1));
-        hit.on('pointerout', () => text.setAlpha(0));
-      }
-    };
-
-    const boxLabel = !this.progress.photoSolved
-      ? '木盒（锁着）'
-      : this.progress.batteryCollected
-      ? '木盒（已空）'
-      : '木盒（有电池）';
-    const boxTexture = !this.progress.photoSolved ? 'room-box-closed-art' : 'room-box-open-art';
-    // 这些会随进度状态刷新，必须纳入 roomProgressProps；旧版直接加到 Scene，
-    // 每次刷新都会残留一套相框/锁盒/电池，造成肉眼可见的重复叠图。
-    props.add(this.addSupportedRoomProp(boxTexture, 782, 250, 56, 2.2));
-    const boxVisibleTop = 211;
-    props.add(this.addSupportedRoomProp('room-frame-art', 782, boxVisibleTop + 3, 30, 2.3));
-    if (this.progress.photoSolved && !this.progress.batteryCollected) {
-      props.add(this.addSupportedRoomProp('room-battery-art', 782, 238, 22, 2.4));
-    }
-    prop(782, 230, boxLabel, true, () => {
-      if (!this.progress.photoSolved) {
-        return this.showHint('木盒锁着，盒盖上的凹槽像是在等一张完整的照片。');
-      }
-      if (this.progress.batteryCollected) {
-        return this.showHint('木盒里已经空了。');
-      }
-      this.applyProgressEvent({ type: 'battery-collected' });
-      this.saveProgress();
-      this.inventoryBar?.addItem({ id: 'flashlight-battery', glyph: '电', label: '手电筒电池' });
-      this.showHint('打开木盒，找到了一节旧手电筒电池。去装到手电筒上。');
-      this.installRoomProgressObjects();
-    }, 60, 40);
-    // 渲染正式手电筒物件（开/关状态共用相同位置、缩放与中心锚点）
-    const flashlightTexture = this.progress.flashlightPowered ? 'room-flashlight-on' : 'room-flashlight-off';
-    const flashlightSprite = this.add.image(484, 318, flashlightTexture)
-      .setDisplaySize(16, 24)
-      .setOrigin(0.5, 0.5)
-      .setTint(OBJECT_TINT)
-      .setInteractive({ useHandCursor: true });
-    props.add(flashlightSprite);
-
-    const flashlightLabel = this.add.text(484, 334, this.progress.flashlightPowered ? '手电筒（已点亮）' : '手电筒', {
-      fontFamily: 'sans-serif', fontSize: '9px', color: '#f5e6bd', backgroundColor: '#0c1511aa', padding: { x: 3, y: 2 }
-    }).setOrigin(0.5).setAlpha(0);
-    props.add(flashlightLabel);
-
-    flashlightSprite.on('pointerover', () => {
-      flashlightSprite.setTint(0xfffae8);
-      flashlightLabel.setAlpha(1);
+  private addFlashlightToInventory(): void {
+    this.inventoryBar?.addItem({
+      id: 'flashlight', glyph: '光', label: '手电筒',
+      iconUrl: resolveImageUrl(this.progress.flashlightPowered ? flashlightOnUrl : flashlightOffUrl),
     });
-    flashlightSprite.on('pointerout', () => {
-      flashlightSprite.setTint(OBJECT_TINT);
-      flashlightLabel.setAlpha(0);
-    });
-    flashlightSprite.on('pointerdown', () => {
-      if (this.interacting || this.orbTouched) return;
-      if (!this.progress.flashlightPowered) {
-        if (!canPowerFlashlight(this.progress) || !this.inventoryBar?.hasItem('flashlight-battery')) {
-          return this.showHint('手电筒没有电池。先打开照片拼图旁的木盒。');
-        }
-        this.applyProgressEvent({ type: 'flashlight-powered' });
-        this.inventoryBar?.removeItem('flashlight-battery');
-        this.saveProgress();
-        this.installRoomProgressObjects();
-        this.showHint('手电筒亮了。墙上的影子可以继续拼合。');
-        return;
-      }
-      if (canOpenShadowBoatPuzzle(this.progress)) this.openShadowBoatPuzzle();
-    });
-
-    if (!this.progress.paintBrushCollected) {
-      // 渲染正式扁头水彩排笔
-      const brushSprite = this.add.image(446, 318, 'room-paint-brush')
-        .setDisplaySize(18, 9)
-        .setOrigin(0.5, 0.5)
-        .setAngle(-8)
-        .setTint(OBJECT_TINT)
-        .setInteractive({ useHandCursor: true });
-      props.add(brushSprite);
-
-      const brushLabel = this.add.text(446, 329, '扁头水彩笔', {
-        fontFamily: 'sans-serif', fontSize: '9px', color: '#f5e6bd', backgroundColor: '#0c1511aa', padding: { x: 3, y: 2 }
-      }).setOrigin(0.5).setAlpha(0);
-      props.add(brushLabel);
-
-      brushSprite.on('pointerover', () => {
-        brushSprite.setTint(0xfffae8);
-        brushSprite.y = 316;
-        brushLabel.setAlpha(1);
-      });
-      brushSprite.on('pointerout', () => {
-        brushSprite.setTint(OBJECT_TINT);
-        brushSprite.y = 318;
-        brushLabel.setAlpha(0);
-      });
-      brushSprite.on('pointerdown', () => {
-        if (this.interacting || this.orbTouched) return;
-        this.applyProgressEvent({ type: 'paint-brush-collected' });
-        this.saveProgress();
-        this.inventoryBar?.addItem({ id: 'paint-brush', glyph: '笔', label: '画笔', iconUrl: paintBrushUrl });
-        this.installRoomProgressObjects();
-        this.showHint('先收好画笔。影子对齐后才能在墙上画风。');
-      });
-    }
   }
 
-  private spawnMissingPhotoPiece(): void {
-    if (!canCollectPhotoMissingPiece(this.progress) || this.missingPhotoSprite) return;
-    const key = 'photo-tile-3-3';
-    if (!this.textures.exists(key)) {
-      const source = this.textures.get('room-photo').getSourceImage() as CanvasImageSource & { width: number; height: number };
-      const canvas = document.createElement('canvas');
-      const tileW = source.width / 4;
-      const tileH = source.height / 4;
-      canvas.width = tileW;
-      canvas.height = tileH;
-      canvas.getContext('2d')?.drawImage(source, tileW * 3, tileH * 3, tileW, tileH, 0, 0, tileW, tileH);
-      this.textures.addCanvas(key, canvas);
-    }
-    const piece = this.add.image(344, 331, key).setDisplaySize(38, 26).setDepth(4)
-      .setInteractive({ useHandCursor: true });
-    this.missingPhotoSprite = piece;
-    this.tweens.add({ targets: piece, alpha: 0.62, y: 328, duration: 900, yoyo: true, repeat: -1 });
-    piece.on('pointerdown', () => {
-      if (this.interacting || !canCollectPhotoMissingPiece(this.progress)) return;
-      this.applyProgressEvent({ type: 'photo-piece-collected' });
-      this.saveProgress();
-      piece.destroy();
-      this.missingPhotoSprite = undefined;
-      this.inventoryBar?.addItem({ id: 'photo-piece', glyph: '拼', label: '照片拼块' });
-      this.showHint(this.progress.photoBaseArranged ? '缺失的一块找到了。回去补上照片。' : '找到了一块照片碎片。');
+  private combineFlashlight(): void {
+    if (!canPowerFlashlight(this.progress) || this.interacting) return;
+    this.interacting = true;
+    showRoomItemPresentation(this, {
+      mode: 'combine',
+      onCombined: () => {
+        this.applyProgressEvent({ type: 'flashlight-powered' });
+        this.saveProgress();
+        this.inventoryBar?.removeItem('flashlight-battery');
+        this.addFlashlightToInventory();
+        this.installRoomProgressObjects();
+      },
+      onClose: () => {
+        this.interacting = false;
+        showRoomItemNotice(this, '手电筒亮了，已经收进物品栏。');
+      },
     });
+  }
+
+  private openBatteryBox(): void {
+    if (this.interacting) return;
+    if (!this.progress.photoSolved) {
+      showRoomItemNotice(this, '无法打开。');
+      return;
+    }
+    this.interacting = true;
+    showRoomItemPresentation(this, {
+      mode: 'box',
+      hasBattery: !this.progress.batteryCollected,
+      onTakeBattery: () => {
+        this.applyProgressEvent({ type: 'battery-collected' });
+        this.saveProgress();
+        this.inventoryBar?.addItem({ id: 'flashlight-battery', glyph: '电', label: '电池' });
+        this.installRoomProgressObjects();
+      },
+      onClose: () => {
+        this.interacting = false;
+        if (canPowerFlashlight(this.progress)) this.combineFlashlight();
+        else if (this.progress.batteryCollected && !this.progress.flashlightPowered) {
+          showRoomItemNotice(this, '你捡到了一节电池。');
+        }
+      },
+    });
+  }
+
+  private openCompletedPhotoStory(): void {
+    this.openDomPanel(() => showPhotoMemoryText(this, photoFrameUrl, () => {
+      // 文字面板先恢复场景，再在下一拍打开中央木盒，避免两个 UI 重叠。
+      this.time.delayedCall(30, () => this.openBatteryBox());
+    }));
+  }
+
+  private installRoomProgressObjects(): void {
+    this.roomProgressProps?.destroy(true);
+    const props = this.add.container(0, 0).setDepth(3);
+    this.roomProgressProps = props;
+    // Rebuilt props belong to this container so old closed boxes and batteries disappear.
+    const boxShowsBattery = this.progress.photoSolved && !this.progress.batteryCollected;
+    props.add(this.addSupportedRoomProp(
+      boxShowsBattery ? 'room-box-open-art' : 'room-box-closed-art', 735, 249, 58, 2.2,
+    ));
+    // 拼图完成后，大场景里的相框也换成同一张海边全家照；完成前仍保留空相框。
+    const frameTexture = this.progress.photoSolved ? 'room-frame-complete-art' : 'room-frame-art';
+    const frame = this.addSupportedRoomProp(frameTexture, 735, 230, 42, 2.4);
+    if (!this.progress.photoSolved) frame.setTint(0x9eabbc);
+    props.add(frame);
+    // 只让盒子正面下沿接收点击，避免与压在盒盖上的相框热区重叠。
+    const boxHit = this.add.rectangle(735, 244, 64, 22, 0, 0)
+      .setInteractive({ useHandCursor: true });
+    props.add(boxHit);
+    boxHit.on('pointerdown', () => {
+      if (!this.interacting && !this.orbTouched) this.openBatteryBox();
+    });
+
+    const floorItem = (key: string, x: number, y: number, w: number, h: number, angle: number, pickup: () => void) => {
+      const sprite = this.add.image(x, y, key).setDisplaySize(w, h).setAngle(angle)
+        .setTint(0xc5c5ba).setInteractive({ useHandCursor: true });
+      props.add(sprite);
+      sprite.on('pointerover', () => sprite.setTint(OBJECT_TINT));
+      sprite.on('pointerout', () => sprite.setTint(0xc5c5ba));
+      sprite.on('pointerdown', () => {
+        if (!this.interacting && !this.orbTouched) pickup();
+      });
+    };
+    // Flat scattered props: no added shadows, floating hover movement or name labels.
+    if (!this.progress.flashlightCollected) {
+      floorItem('room-flashlight-off', 530, 431, 25, 43, 104, () => {
+        this.applyProgressEvent({ type: 'flashlight-collected' });
+        this.saveProgress();
+        this.addFlashlightToInventory();
+        this.installRoomProgressObjects();
+        if (canPowerFlashlight(this.progress)) this.combineFlashlight();
+        else showRoomItemNotice(this, '你捡到了一个手电筒。');
+      });
+    }
+    if (!this.progress.paintBrushCollected) {
+      floorItem('room-paint-brush', 432, 449, 78, 29, 22, () => {
+        this.applyProgressEvent({ type: 'paint-brush-collected' });
+        this.saveProgress();
+        this.inventoryBar?.addItem({ id: 'paint-brush', glyph: '笔', label: '画笔', iconUrl: resolveImageUrl(paintBrushUrl) });
+        this.installRoomProgressObjects();
+        showRoomItemNotice(this, '你捡到了一支画笔。');
+      });
+    }
   }
 
   private openDeskPopup(): void {
-    if (this.interacting || this.deskPopup || this.orbTouched) return;
-    this.interacting = true;
-    this.deskPopup = showRoomDeskPopup(this, {
-      puzzleAvailable: canOpenShadowBoatPuzzle(this.progress),
-      onEnterPuzzle: () => {
-        const popup = this.deskPopup;
-        this.deskPopup = undefined;
-        popup?.close();
-        this.openShadowBoatPuzzle();
-      },
-      onClose: () => {
-        this.deskPopup = undefined;
-        this.interacting = false;
-      },
-    });
+    if (this.interacting || this.orbTouched) return;
+    if (!this.progress.flashlightPowered) {
+      showRoomItemNotice(this, '手电筒缺少电池，没办法照光。');
+      return;
+    }
+    this.openShadowBoatPuzzle();
+    this.inventoryBar?.clearSelection();
+    this.inventoryBar?.setExpanded(true);
   }
 
   private openShadowBoatPuzzle(): void {
-    if (this.interacting || this.shadowBoatPanel) return;
+    if (this.interacting || this.shadowBoatPanel || !canOpenShadowBoatPuzzle(this.progress)) return;
     this.interacting = true;
     this.shadowBoatPanel = showShadowBoatPuzzleUI(this, {
+      initialFlashlightEquipped: this.progress.flashlightPlaced,
       initialAligned: this.progress.shadowBoatAligned,
       initialWindStrokeCount: this.progress.windStrokeCount,
       initialCompleted: this.progress.shadowBoatSolved,
@@ -1240,8 +1199,10 @@ export default class RoomScene extends Phaser.Scene {
       onCompleted: () => {
         if (this.progress.shadowBoatSolved) return;
         this.applyProgressEvent({ type: 'shadow-boat-solved' });
+        this.applyProgressEvent({ type: 'paint-brush-used' });
         this.saveProgress();
-        this.wallPicture?.setTexture('room-wall-drawing-complete');
+        this.inventoryBar?.removeItem('paint-brush');
+        this.inventoryBar?.clearSelection();
         this.gainFragment('shadowBoat');
         this.showHint('三笔风吹动了纸船，第三块记忆碎片出现了。', 4500);
       },
@@ -1291,27 +1252,37 @@ export default class RoomScene extends Phaser.Scene {
     // 与 D 的文字面板同款标题色/字号，玩法面板与文字面板读作同一套界面
     return this.add
       .text(x, y, text, {
-        fontFamily: 'sans-serif',
+        fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
         fontSize: '20px',
+        fontStyle: 'bold',
         color: '#f0dfb5',
       })
       .setOrigin(0.5)
+      .setResolution(Math.max(2, bufferScaleOf(this)))
       .setShadow(0, 1, '#06090a', 3);
   }
 
   private addCloseButton(layer: Phaser.GameObjects.Container, x: number, y: number): void {
-    const btn = this.add
-      .text(x, y, '×', {
-        fontFamily: 'Arial, sans-serif',
-        fontSize: '28px',
-        color: '#f0dfb5',
-      })
-      .setOrigin(0.5)
+    // 视觉上只留一枚小叉；透明热区仍足够大，方便鼠标点击。
+    const hit = this.add
+      .rectangle(x, y, 28, 28, 0x000000, 0.001)
       .setInteractive({ useHandCursor: true });
-    btn.on('pointerover', () => btn.setColor('#fff7e4'));
-    btn.on('pointerout', () => btn.setColor('#f0dfb5'));
-    btn.on('pointerdown', () => this.closePanel());
-    layer.add(btn);
+    const glyph = this.add.graphics();
+    const drawGlyph = (color: number, alpha: number, width: number) => {
+      glyph.clear();
+      glyph.lineStyle(width, color, alpha);
+      glyph.lineBetween(x - 4, y - 4, x + 4, y + 4);
+      glyph.lineBetween(x + 4, y - 4, x - 4, y + 4);
+    };
+    drawGlyph(0xfff1cf, 0.82, 1.6);
+    hit.on('pointerover', () => {
+      drawGlyph(0xffffff, 1, 2);
+    });
+    hit.on('pointerout', () => {
+      drawGlyph(0xfff1cf, 0.82, 1.6);
+    });
+    hit.on('pointerdown', () => this.closePanel());
+    layer.add([hit, glyph]);
   }
 
   private closePanel(): void {
@@ -1327,20 +1298,10 @@ export default class RoomScene extends Phaser.Scene {
       this.radioLight = undefined;
     }
     this.pauseRoomBgm(false);
-    if (this.progress.radioMessageHeard) this.spawnMissingPhotoPiece();
-  }
-
-  /** Silent, explicitly labelled development preview; never plays predecessor dialogue. */
-  private playRadioPreview(): void {
-    this.stopRadioAudio();
-    this.radioPreviewTimer = this.time.delayedCall(RADIO_PREVIEW_MS, () => {
-      this.radioPreviewTimer = undefined;
-      if (!this.radioPanel || this.radioPanel.getChannel() !== 3 || this.progress.radioMessageHeard) return;
-      this.applyProgressEvent({ type: 'radio-message-heard' });
-      this.saveProgress();
-      this.gainFragment('radio');
-      this.showHint('录音占位流程已完成。关闭面板后可拾取照片碎片。', 4200);
-    });
+    if (this.pendingPhotoStory) {
+      this.pendingPhotoStory = false;
+      this.openCompletedPhotoStory();
+    }
   }
 
   /**
@@ -1371,8 +1332,6 @@ export default class RoomScene extends Phaser.Scene {
   private stopRadioAudio(): void {
     // 作废在飞的后台加载回调（切频道/关面板都算）
     this.radioRequestId += 1;
-    this.radioPreviewTimer?.remove(false);
-    this.radioPreviewTimer = undefined;
     const sound = this.radioSound;
     this.radioSound = undefined;
     if (!sound) return;

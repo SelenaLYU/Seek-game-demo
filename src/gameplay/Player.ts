@@ -5,6 +5,32 @@ import grabSheetUrl from '../../assets/character/char-niannian-grab-up-right-128
 import { Effects } from './Effects';
 import { Vine } from './Vine';
 
+/** 摆动障碍共用的 ω（rad/ms）：scene 与规则测试共用；竹竿周期 ≈ 2992ms。 */
+export const SWING_OMEGA = .0021;
+
+/** 第二层「甩动竹竿」真源：支点、杆长、相位与摆幅（scene SWINGS[1] 引用）；周期 2π/Ω ≈ 2992ms。 */
+export const BAMBOO = { x: 930, y: 492, length: 112, phase: 1.7, amplitude: .6 } as const;
+
+/** 竹竿摆角 θ(t) = amplitude·sin(Ωt + phase)。 */
+export function bambooAngle(timeMs: number): number {
+  return Math.sin(timeMs * SWING_OMEGA + BAMBOO.phase) * BAMBOO.amplitude;
+}
+
+/** 点到线段距离（scene 与测试共用；同 Phaser.Math.Dist.Family 线段公式）。 */
+export function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const abx = bx - ax, aby = by - ay;
+  const lengthSquared = abx * abx + aby * aby;
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lengthSquared));
+  return Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
+}
+
+/** 玩家中心到竹竿杆身（支点→杆端）的最小距离，timeMs 为场景 time 口径。 */
+export function bambooClearance(px: number, py: number, timeMs: number): number {
+  const angle = bambooAngle(timeMs);
+  return distanceToSegment(px, py, BAMBOO.x, BAMBOO.y,
+    BAMBOO.x + Math.sin(angle) * BAMBOO.length, BAMBOO.y + Math.cos(angle) * BAMBOO.length);
+}
+
 export type PlayerState = 'idle' | 'run' | 'jump' | 'fall';
 
 /** Player 用到的音效接口，Sfx 模块实现；测试或静音时可注入空实现 */
@@ -117,8 +143,23 @@ export class Player {
   /** 待机呼吸：周期 1.9s、纵向 ±1.5%（头顶起伏约 ±1.2px，脚底不动） */
   private static readonly IDLE_BREATH_MS = 1900;
   private static readonly IDLE_BREATH_SCALE = 0.015;
-  /** 松手过渡：悬挂身体收回待机锚点的时长 */
-  private static readonly RELEASE_SETTLE_MS = 90;
+  /**
+   * 松手过渡：悬挂身体收回待机锚点的时长。
+   * 悬挂时身体画在握点下方 (HANG_SOLE−握点)×GRAB_SCALE，松手后要回到“脚底对齐碰撞体底边”，
+   * 这一步视觉上必须滑 53px（不动根节点/碰撞体是为了保住甩出弹道）。
+   * 90ms + Quad.easeOut 实测峰值 21.8px/帧（还是读作抽一下）；
+   * 160ms + Sine.easeInOut 峰值 ≈9px/帧，读作“收身进入飞行”。
+   */
+  private static readonly RELEASE_SETTLE_MS = 160;
+  /**
+   * 抓取接近时长：抓住那一瞬容器原点从“身体中心”换成“握点”，还带着最多 78px 的抓取距离，
+   * 硬切会让角色单帧位移 25px（探针 C1，入口 76px 时渲染框中心 25.4px）读作瞬移。
+   * 这里把「根节点平移 + 旋转 + 精灵锚点」一起在这段时间里插值到抓取姿态，
+   * 配合抓取图自带的「蹬地→上伸→抓住」序列，读作被海鸥带住。
+   * 缓动必须用 InOut：锚点从「脚底对齐」换到「握点对齐」本身就有 ~101px 的局部偏移，
+   * Cubic.Out 会把 39% 的量全挤在第一帧（实测单帧 34.6px，跟硬切差不多）。
+   */
+  private static readonly GRAB_APPROACH_MS = 130;
 
   /**
    * 三张序列帧由 Player 统一下发，场景 preload 里调用。
@@ -251,6 +292,18 @@ export class Player {
   /** 松手瞬间身体仍在握点下方，这个下沉量用 90ms 收回待机锚点（px，正=更靠下） */
   private releaseLift = 0;
   private releaseTween: Phaser.Tweens.Tween | null = null;
+  /** 抓取接近的插值进度 0..1；1 表示已完全贴合握点（恒等路径） */
+  private grabApproach = 1;
+  /** 抓住那一瞬的根节点位置/旋转与精灵锚点；只在接近过程中非空 */
+  private grabApproachFrom: {
+    x: number;
+    y: number;
+    rotation: number;
+    spriteX: number;
+    spriteY: number;
+    originX: number;
+    originY: number;
+  } | null = null;
 
   constructor(scene: Phaser.Scene, options: PlayerOptions) {
     this.scene = scene;
@@ -603,15 +656,57 @@ export class Player {
     this.body.setVelocity(0, 0);
     this.body.enable = false;
     this.opts.sfx?.grab();
+    // 记录换个姿态前的现场：接下来 110ms 从它插值到抓取姿态（见 GRAB_APPROACH_MS）
+    this.grabApproachFrom = {
+      x: this.view.x,
+      y: this.view.y,
+      rotation: this.view.rotation,
+      spriteX: this.sprite.x,
+      spriteY: this.sprite.y,
+      originX: this.sprite.originX,
+      originY: this.sprite.originY,
+    };
+    this.grabApproach = 0;
     // 换装抓花序列：帧内的小茉莉钉在花环上，播放"蹬地→抓住→挂稳"
     this.sprite.anims.stop();
     this.currentAnim = '';
     this.enterGrabVisual();
     this.shadow.setAlpha(0.1);
-    // 容器原点=抓点（双手拳心钉在上面），身体随 −angle 绕它摆动
+    // 容器原点=抓点（双手拳心钉在上面），身体随 −angle 绕它摆动。
+    // 位置与旋转由 updateVineGrab 里的接近插值接管，这里不再硬切。
     this.view.setScale(this.facing, 1);
-    this.view.setPosition(vine.handX, vine.handY);
-    this.view.setRotation(-vine.angle);
+    this.applyGrabApproach(0, vine.handX, vine.handY, -vine.angle);
+  }
+
+  /**
+   * 抓取接近：根节点位置/旋转 + 精灵锚点一起插值到抓取姿态。
+   * 用 Sine.InOut（不是 Out）：两端速度为零，第一帧只走 ~4%，不会开局就抽一下。
+   */
+  private applyGrabApproach(delta: number, handX: number, handY: number, rotation: number): void {
+    const from = this.grabApproachFrom;
+    if (!from) {
+      this.view.setPosition(handX, handY);
+      this.view.setRotation(rotation);
+      return;
+    }
+    this.grabApproach = Math.min(1, this.grabApproach + delta / Player.GRAB_APPROACH_MS);
+    const t = Phaser.Math.Easing.Sine.InOut(this.grabApproach);
+    this.view.setPosition(
+      Phaser.Math.Linear(from.x, handX, t),
+      Phaser.Math.Linear(from.y, handY, t),
+    );
+    this.view.setRotation(Phaser.Math.Linear(from.rotation, rotation, t));
+    // 精灵锚点同时从"脚底对齐身体中心"过渡到"握点对齐花心"：
+    // 只补根节点不动锚点的话，锚点硬切自己就占 18px（探针实测入口≈0 时）。
+    this.sprite.setOrigin(
+      Phaser.Math.Linear(from.originX, Player.GRAB_GRIP.x, t),
+      Phaser.Math.Linear(from.originY, Player.GRAB_GRIP.y, t),
+    );
+    this.sprite.setPosition(
+      Phaser.Math.Linear(from.spriteX, 0, t),
+      Phaser.Math.Linear(from.spriteY, 0, t),
+    );
+    if (this.grabApproach >= 1) this.grabApproachFrom = null;
   }
 
   /** 抓鸥视觉：从抓取图上伸序列的第一帧开始，双手拳心对齐抓点 */
@@ -636,13 +731,22 @@ export class Player {
     this.sprite.anims.stop();
     this.currentAnim = '';
     this.poseKey = '';
+    // 抓住后立刻松手时精灵还在接近过渡里（锚点是中间值），必须用"当前实际脚底相对
+    // 根节点的偏移"当起点；不然锚点一硬切回脚底对齐就会跳一下。
+    const midApproach = this.grabApproachFrom !== null && this.grabApproach < 1;
+    const currentFeetOffset = midApproach
+      ? this.sprite.y + (1 - this.sprite.originY) * Player.FRAME_H * this.sprite.scaleY
+      : 0;
     this.sprite.setTexture(Player.IDLE_SHEET, Player.IDLE_FRAME);
     this.sprite.setOrigin(0.5, 1);
     this.sprite.setScale(JUMP_SCALE);
     const target = Player.spriteY(this.opts.height, JUMP_SCALE, IDLE_SOLE);
     this.poseY = target;
-    const hangDrop =
-      (HANG_SOLE - Player.GRAB_GRIP.y * Player.FRAME_H) * GRAB_SCALE - this.opts.height / 2;
+    const hangDrop = midApproach
+      ? currentFeetOffset - target
+      : (HANG_SOLE - Player.GRAB_GRIP.y * Player.FRAME_H) * GRAB_SCALE - this.opts.height / 2;
+    this.grabApproachFrom = null;
+    this.grabApproach = 1;
     this.settleFromGrab(hangDrop);
   }
 
@@ -656,7 +760,7 @@ export class Player {
       targets: settle,
       lift: 0,
       duration: Player.RELEASE_SETTLE_MS,
-      ease: 'Quad.easeOut',
+      ease: 'Sine.easeInOut',
       onUpdate: () => {
         this.releaseLift = settle.lift;
       },
@@ -717,9 +821,9 @@ export class Player {
       (this.isDown('S') || this.isDown('DOWN') ? 1 : 0);
     vine.update(delta, { dirX, climb });
 
-    // 花心钉在花环上：容器原点=握点，身体绕手掌/花摆动（旋转 −θ 头朝锚点）
-    this.view.setPosition(vine.handX, vine.handY);
-    this.view.setRotation(-vine.angle);
+    // 花心钉在花环上：容器原点=握点，身体绕手掌/花摆动（旋转 −θ 头朝锚点）；
+    // 抓取后的前 110ms 从抓住瞬间的位置/锚点插值过来（见 GRAB_APPROACH_MS）
+    this.applyGrabApproach(delta, vine.handX, vine.handY, -vine.angle);
     if (dirX !== 0) {
       this.facing = dirX > 0 ? 1 : -1;
       this.displayedFacing = this.facing;
@@ -745,6 +849,8 @@ export class Player {
   /** 死亡重生：传送回重生点并清状态；钥匙等进度由场景字段保留 */
   teleportTo(x: number, y: number): void {
     this.attachedVine = null;
+    this.grabApproachFrom = null;
+    this.grabApproach = 1;
     this.frozen = false;
     this.airFromJump = false;
     this.clearGrabSettle();

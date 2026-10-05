@@ -1,5 +1,21 @@
+/**
+ * HUD 贝壳图标（42px 显示）用的是房间书桌那只正式水彩贝的缩小版：
+ * `assets/items/room-memory-pearl-shell-hud-v1.png`（168×168，37KB）。
+ * 派生自 `room-memory-pearl-shell-v1.png`（1254×1254，1.7MB）：裁 alpha bbox →
+ * 补 4% 透明边 → LANCZOS 缩到 168。源图改了要重新派生：
+ *   /usr/bin/python3 - <<'PY'
+ *   from PIL import Image
+ *   src = Image.open('assets/items/room-memory-pearl-shell-v1.png').convert('RGBA')
+ *   art = src.crop(src.getbbox()); side = int(max(art.size) * 1.08)
+ *   c = Image.new('RGBA', (side, side), (0, 0, 0, 0))
+ *   c.paste(art, ((side - art.width) // 2, (side - art.height) // 2), art)
+ *   c.resize((168, 168), Image.LANCZOS).save('assets/items/room-memory-pearl-shell-hud-v1.png', optimize=True)
+ *   PY
+ * 不直接用 1.7MB 的源图：HUD 是常驻 DOM 层，没必要为 42px 背一张 1254px 的图。
+ */
 import Phaser from 'phaser';
 import { fitCanvasDomOverlay } from './CanvasDomLayout';
+import shellArtUrl from '../../assets/items/room-memory-pearl-shell-hud-v1.png?url';
 
 export type FragmentKind = 'photo' | 'radio' | 'shadowBoat';
 
@@ -14,44 +30,17 @@ const HEIGHT = 540;
 const STYLE_ID = 'recall-fragment-hud-style';
 const activeHuds = new WeakMap<Phaser.Scene, FragmentHudHandle>();
 
-// 单面扇贝轮廓：顶部由五个自然起伏的贝壳瓣构成，底部向铰合点收拢。
-// 形状与最终出现的彩色珍珠贝保持同一种水彩轮廓语言。
-const SHELL = 'M 32 55 C 25 52 17 47 11 42 C 5 37 3 30 6 24 C 8 19 13 16 18 18 C 18 12 23 8 28 10 C 30 5 37 4 41 9 C 46 7 52 10 53 15 C 59 15 63 21 61 27 C 59 36 49 46 32 55 Z';
-
+// 贝壳用房间书桌上那张正式水彩图（见文件头的派生说明），不再手绘轮廓。
+// 三片记忆各对应贝壳的一条带子（左 / 中 / 右）：未收集时是全图的淡色残影，
+// 收齐一片点亮一片，三片到齐再给整只壳加暖光。
 function shellMarkup(): string {
-  return `<svg class="recall-fragment-hud__shell" viewBox="0 0 64 58" aria-hidden="true">
-    <defs>
-      <linearGradient id="recall-fragment-shell-fill" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#fff4cf" />
-        <stop offset=".34" stop-color="#f3b6a3" />
-        <stop offset=".66" stop-color="#9fcfd0" />
-        <stop offset="1" stop-color="#f8d8ad" />
-      </linearGradient>
-      <radialGradient id="recall-fragment-pearl" cx="40%" cy="32%" r="68%">
-        <stop offset="0" stop-color="#ffffff" />
-        <stop offset=".45" stop-color="#fff4cd" />
-        <stop offset=".72" stop-color="#9fe6e7" />
-        <stop offset="1" stop-color="#72b9ca" />
-      </radialGradient>
-      <clipPath id="recall-fragment-shell-clip"><path d="${SHELL}" /></clipPath>
-    </defs>
-    <g clip-path="url(#recall-fragment-shell-clip)">
-      <path class="recall-fragment-hud__piece" data-piece="photo" d="M 0 0 H 25 L 32 52 H 0 Z" />
-      <path class="recall-fragment-hud__piece" data-piece="radio" d="M 23 0 H 41 L 32 52 Z" />
-      <path class="recall-fragment-hud__piece" data-piece="shadowBoat" d="M 39 0 H 64 V 58 H 32 Z" />
-    </g>
-    <path class="recall-fragment-hud__shell-outline" d="${SHELL}" />
-    <g class="recall-fragment-hud__ridges">
-      <path d="M 32 53 C 23 42 17 30 18 19" />
-      <path d="M 32 53 C 26 38 25 23 28 11" />
-      <path d="M 32 53 C 31 36 33 21 36 7" />
-      <path d="M 32 53 C 38 38 44 25 51 13" />
-      <path d="M 32 53 C 19 47 10 38 7 29" />
-      <path d="M 32 53 C 47 47 57 37 60 27" />
-    </g>
-    <path class="recall-fragment-hud__highlight" d="M 10 27 C 18 18 26 16 33 14 C 42 11 51 14 57 21" />
-    <circle class="recall-fragment-hud__pearl" cx="32" cy="43" r="5.5" />
-  </svg>`;
+  const layer = (kind: FragmentKind | 'ghost') =>
+    kind === 'ghost'
+      ? `<img class="recall-fragment-hud__art recall-fragment-hud__art--ghost" src="${shellArtUrl}" alt="" />`
+      : `<img class="recall-fragment-hud__art recall-fragment-hud__art--piece" data-piece="${kind}" src="${shellArtUrl}" alt="" />`;
+  return `<div class="recall-fragment-hud__shell" aria-hidden="true">
+    ${layer('ghost')}${layer('photo')}${layer('radio')}${layer('shadowBoat')}
+  </div>`;
 }
 
 function installStyle(): void {
@@ -74,35 +63,38 @@ function installStyle(): void {
       -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
       box-shadow: 0 5px 24px rgba(9,17,14,.15), inset 0 1px rgba(255,255,236,.10);
     }
-    .recall-fragment-hud__shell { width: 42px; height: 42px; flex: none; overflow: visible; }
-    .recall-fragment-hud__shell-outline {
-      fill: rgba(255,246,222,.055); stroke: rgba(116,76,46,.92); stroke-width: 1.55;
-      stroke-linejoin: round;
+    .recall-fragment-hud__shell { position: relative; width: 42px; height: 42px; flex: none; }
+    .recall-fragment-hud__art {
+      position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+      /* 1024 级源图缩到 42px：交给浏览器平滑，不要出现锯齿 */
+      image-rendering: auto;
     }
-    .recall-fragment-hud__piece {
-      fill: url(#recall-fragment-shell-fill); opacity: 0;
-      filter: drop-shadow(0 0 0 rgba(255,241,188,0));
-      transition: opacity 650ms ease, filter 650ms ease;
+    /* 未收集：正式美术的淡色残影，替掉旧的手绘灰盒轮廓。
+       opacity/brightness 是实拍调出来的：太暗（只降 brightness）在 42px 下只剩一坨黑，
+       太淡则看不出是什么东西——这组是「看得出是那只贝、但明显没点亮」。 */
+    .recall-fragment-hud__art--ghost {
+      opacity: .38; filter: grayscale(.75) brightness(1.18) saturate(.4) contrast(.85);
     }
-    .recall-fragment-hud__piece.is-collected {
-      opacity: .96; filter: drop-shadow(0 0 5px rgba(255,224,171,.55));
+    .recall-fragment-hud__art--piece {
+      opacity: 0; transition: opacity 650ms ease;
     }
-    .recall-fragment-hud__ridges path {
-      fill: none; stroke: rgba(126,86,55,.54); stroke-width: .82; stroke-linecap: round;
+    /* 三条带子用渐变遮罩而不是硬 clip：收齐一片时彩色不是被一条直线切开，
+       而是在带子边缘渐入，残影从缝里透出来——像贝壳在“渐渐显出”。 */
+    .recall-fragment-hud__art--piece[data-piece="photo"] {
+      -webkit-mask-image: linear-gradient(to right, #000 0%, #000 26%, transparent 41%);
+      mask-image: linear-gradient(to right, #000 0%, #000 26%, transparent 41%);
     }
-    .recall-fragment-hud__highlight {
-      fill: none; stroke: rgba(255,255,244,.64); stroke-width: 1.05; stroke-linecap: round;
+    .recall-fragment-hud__art--piece[data-piece="radio"] {
+      -webkit-mask-image: linear-gradient(to right, transparent 22%, #000 35%, #000 56%, transparent 71%);
+      mask-image: linear-gradient(to right, transparent 22%, #000 35%, #000 56%, transparent 71%);
     }
-    .recall-fragment-hud__pearl {
-      fill: url(#recall-fragment-pearl); opacity: .14;
-      stroke: rgba(255,247,214,.72); stroke-width: .8;
-      transition: opacity 650ms ease, filter 650ms ease;
+    .recall-fragment-hud__art--piece[data-piece="shadowBoat"] {
+      -webkit-mask-image: linear-gradient(to right, transparent 57%, #000 71%, #000 100%);
+      mask-image: linear-gradient(to right, transparent 57%, #000 71%, #000 100%);
     }
+    .recall-fragment-hud__art--piece.is-collected { opacity: 1; }
     .recall-fragment-hud.is-complete .recall-fragment-hud__shell {
       filter: drop-shadow(0 0 6px rgba(249,223,162,.68));
-    }
-    .recall-fragment-hud.is-complete .recall-fragment-hud__pearl {
-      opacity: 1; filter: drop-shadow(0 0 5px rgba(147,235,236,.88));
     }
     .recall-fragment-hud__copy { display: flex; flex-direction: column; min-width: 0; }
     .recall-fragment-hud__label {

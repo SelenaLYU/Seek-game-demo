@@ -64,6 +64,10 @@ const game = new Phaser.Game({
     autoRound: false,
   },
   render: { antialias: true, powerPreference: 'high-performance' },
+  // 本机 Chromium 的 XHR+blob 对 ~24MB 响应直接网络错误（arraybuffer/fetch 正常），
+  // 而 Phaser 图片默认走 XHR+blob——第二关背景因此一直加载失败渲染成绿棋盘。
+  // 切到 HTMLImageElement 路径绕开该 bug。
+  loader: { imageLoadType: 'HTMLImageElement' },
   input: { activePointers: 3 },
   scene: [
     BootScene, MenuScene, IntroScene, LoadingScene, ForestScene, RoomScene,
