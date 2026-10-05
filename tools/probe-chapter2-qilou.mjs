@@ -199,8 +199,12 @@ async function readStanding(floorTop) {
  *    这里改成在 preupdate 里让角色小幅摆动（±2px，不离开遮挡区），
  *    制造 `moved` 判定所需的位移——本条测的是遮挡判定盒，不是移动系统。
  */
-/** 一次测量至少要攒够这么多游戏帧，否则结论无效 */
-const MIN_FRAMES = 25;
+/**
+ * 一次测量至少要攒够这么多游戏帧，否则结论无效。
+ * 取 12 而不是 25：机器负载高时 headless 掉到 1–3fps，25 帧要等十几秒、十处遮挡叠起来就是几分钟；
+ * 而 12 帧（每帧 delta ~16ms）已足够让对照组的警觉（阈值 60ms）长起来，判据不受影响。
+ */
+const MIN_FRAMES = 12;
 
 async function measure() {
   await page.evaluate(() => {
@@ -223,7 +227,7 @@ async function measure() {
   });
   // 等够「游戏帧数」而不是墙钟：headless 下帧率会掉到 ~10fps，
   // 按 180ms 墙钟等只能拿到 1-3 帧，测不出任何东西。
-  const deadline = Date.now() + 6000;
+  const deadline = Date.now() + 20000;
   for (;;) {
     const frames = await page.evaluate(() => window.__probe?.samples.length ?? 0);
     if (frames >= MIN_FRAMES || Date.now() > deadline) break;

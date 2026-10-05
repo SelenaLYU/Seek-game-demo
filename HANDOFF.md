@@ -100,6 +100,7 @@ npm run build               # tsc --noEmit + vite build
 - 加载改动用 `node tools/probe-load-perf.mjs` 验收（`ORIGIN=http://localhost:4173` 量生产包）。
 - 第一关体验（石门裁切／礁石隐形墙／抓放海鸥突跳／触屏适配）用 `node tools/probe-level1-experience.mjs` 量，改前改后各跑一次看数字（`--json` 出原始数据；截图写 `screenshots/level1-experience/`；任一阈值超标退出码 1）。**当前 12 项全过**（A 门裁剪 · B 礁柱 · C1 抓取突跳 / C2 收身补间 / C3 收身整体 / D1–D7 触屏）。当年基线是 8 项，后来拆成 C1/C2/C3 并补了 D5–D7，所以「基线 1/8」与「现在 12/12」不是同一张表，数字对照要按同一版脚本跑。它的探针里记了两个坑：手动步进不推进 tween（量松手补间必须走真实 rAF），以及 sf0 层位置被 `screenSpaceOrigin` 补偿但**尺寸仍被 zoom 放大**（触屏判定要在放大后的缓冲像素里比边界）。测「角色在哪」不能用 `sprite.getBounds()`（含透明边的帧矩形，换帧会被读成位移），要按当前帧 alpha>128 内容中心算（脚本里 `installOpaqueCenter`）。
 - 测试里 `import` 相对模块需要带 `.ts` 后缀（node 直跑 ESM），`tsconfig` 已开 `allowImportingTsExtensions`。
+- 浏览器验收脚本（`probe-*` / `debug-chapter2-*`）在**机器负载 ≳15 时会不稳**：headless 掉到 ~3fps，Phaser 每帧 delta 被压到 ~16ms，实测出现过 room 16/17、flow 13/20、骑楼探针 9/10 这类假 FAIL（负载降下来重跑即恢复）。所以结论要在 **load < 15** 时采集；这些脚本已按「轮询到状态为止」写，不依赖固定等待。机制是：headless 掉到 ~3fps：Phaser 每帧 delta 被压到 ~16ms，于是 `delayedCall(470)` 这类计时在墙钟上要 6–10 秒才走完（实测 `restartFromCheckpoint` 6.5s，正常 60fps 下 0.47s）。所以计时相关的断言必须**轮询到状态为止**，不能固定 `waitForTimeout`；同理「站定」不能用 `body.blocked.down`（只在分离那一帧为真）。踩过的详细记录见 `tools/probe-chapter2-qilou.mjs` 与 `tools/debug-chapter2-street.mjs` 的文件头。
 - Vite 只打包被 `import` 的素材；用字面路径加载的文件（如 `scene/*.png`）必须改成 `import ... ?url`，否则构建产物里没有这张图。
 - 浏览器验收脚本可用 Playwright：`import { chromium } from '/Users/simon/node_modules/playwright/index.mjs'`，启动加 `--enable-unsafe-swiftshader`；在 WebGL 画布上叠加 DOM 时避免大面积 `backdrop-filter`（会拖慢截图与渲染）。
 
