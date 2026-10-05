@@ -40,10 +40,12 @@ const THRESHOLD = {
   doorOverhangPx: 4,
   /** 是否允许有礁石碰撞柱伸到水面（世界底 y=540）以下 */
   reefColumnToWaterline: false,
-  /** 抓取瞬间角色渲染框中心的单帧位移（px）——>24px 读作瞬移 */
+  /** 抓取瞬间角色身体中心的单帧位移（px）——>24px 读作瞬移 */
   grabSnapPx: 24,
-  /** 松手 90ms 收回过程中的单帧最大位移（px） */
-  releaseSnapPx: 12,
+  /** 松手收回补间本身的单帧最大位移（px）——纯我们可控的那部分 */
+  releaseTweenStepPx: 12,
+  /** 松手后整体单帧最大位移（px）：含甩出初速带来的 ~4px/帧，所以比补间自己宽一点 */
+  releaseBodyStepPx: 16,
   /** 触屏按钮重叠面积（逻辑 px²，>0 即失败） */
   touchOverlapPx2: 0,
   /** 状态栏右缘超出缓冲宽度的像素 */
@@ -54,6 +56,8 @@ const results = [];
 const record = (id, ok, detail) => results.push({ id, ok, detail });
 
 const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
+/** 抓取快照：C1 段落里量、最后跟其他原始数据一起 --json 输出 */
+let grabSnapshot = null;
 mkdirSync(SHOT_DIR, { recursive: true });
 
 const boot = async (page, touch = false) => {
@@ -63,7 +67,48 @@ const boot = async (page, touch = false) => {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__game?.scene?.getScene?.('forest')?.player), { timeout: 30000 });
   await page.waitForTimeout(touch ? 2500 : 1200);
+  await page.evaluate(installOpaqueCenter);
 };
+
+/**
+ * 量“角色身体在哪”，不能用 sprite.getBounds()：那是**帧矩形**，含透明边。
+ * 抓取图的悬挂帧与待机帧透明边不同，用帧矩形会把“换帧”读成“位移”。
+ * 这里按当前帧的 alpha>128 内容中心（逐帧缓存）算，并在世界坐标里取值。
+ */
+function installOpaqueCenter() {
+  const cache = {};
+  window.__opaqueCenter = (sprite) => {
+    const frame = sprite.frame;
+    const key = `${frame.texture.key}:${frame.name}`;
+    let box = cache[key];
+    if (!box) {
+      const src = frame.texture.getSourceImage();
+      const cnv = document.createElement('canvas');
+      cnv.width = frame.width;
+      cnv.height = frame.height;
+      const ctx = cnv.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(src, frame.cutX, frame.cutY, frame.width, frame.height, 0, 0, frame.width, frame.height);
+      const { data } = ctx.getImageData(0, 0, frame.width, frame.height);
+      let minX = frame.width, maxX = -1, minY = frame.height, maxY = -1;
+      for (let y = 0; y < frame.height; y++) {
+        for (let x = 0; x < frame.width; x++) {
+          if (data[(y * frame.width + x) * 4 + 3] > 128) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      box = { minX, maxX, minY, maxY };
+      cache[key] = box;
+    }
+    const lx = ((box.minX + box.maxX) / 2 - sprite.originX * frame.width) * sprite.scaleX;
+    const ly = ((box.minY + box.maxY) / 2 - sprite.originY * frame.height) * sprite.scaleY;
+    const p = sprite.getWorldTransformMatrix().transformPoint(lx, ly);
+    return { x: +p.x.toFixed(2), y: +p.y.toFixed(2) };
+  };
+}
 
 // ══════════════════════ A + B：几何（石门裁切 / 礁石碰撞柱） ══════════════════════
 {
@@ -166,12 +211,12 @@ const boot = async (page, touch = false) => {
     const step = n => { for (let i = 0; i < n; i++) { t += 16.6667; game.step(t, 16.6667); } };
     const snap = () => {
       const b = p.view.body;
-      const sb = p.sprite.getBounds();
+      const body = window.__opaqueCenter(p.sprite);
       return {
         view: [+p.view.x.toFixed(2), +p.view.y.toFixed(2)],
         bodyCenter: [+b.center.x.toFixed(2), +b.center.y.toFixed(2)],
-        feetY: +sb.bottom.toFixed(2), topY: +sb.top.toFixed(2),
-        centerY: +((sb.top + sb.bottom) / 2).toFixed(2),
+        body: [+body.x.toFixed(2), +body.y.toFixed(2)],
+        feetY: +p.sprite.getBounds().bottom.toFixed(2),
         enabled: b.enable, attached: Boolean(p.attached),
       };
     };
@@ -195,21 +240,31 @@ const boot = async (page, touch = false) => {
     return {
       attached: after.attached,
       entryDistance: +distance.toFixed(2),
-      viewJumpY: d('view'), bodyJumpCenterY: d('bodyCenter'),
-      feetJump: +(after.feetY - before.feetY).toFixed(2),
-      centerJump: +(after.centerY - before.centerY).toFixed(2),
-      topJump: +(after.topY - before.topY).toFixed(2),
-      viewJumpX: d('view', 0),
-      bodyJumpX: d('bodyCenter', 0),
+      rootJump: +Math.hypot(after.view[0] - before.view[0], after.view[1] - before.view[1]).toFixed(2),
+      bodyCenterJump: +Math.hypot(after.body[0] - before.body[0], after.body[1] - before.body[1]).toFixed(2),
+      frameRectJump: +Math.hypot(after.body[0] - before.body[0], after.body[1] - before.body[1]).toFixed(2),
+      before, after,
     };
   });
 
-  const feetJump = Math.abs(grab.feetJump);
-  const centerJump = Math.abs(grab.centerJump);
-  record('C1. 抓取瞬间突跳', grab.attached && centerJump <= THRESHOLD.grabSnapPx,
+  const bodyJump = grab.attached ? +grab.bodyCenterJump.toFixed(2) : null;
+  record('C1. 抓取瞬间突跳', grab.attached && bodyJump !== null && bodyJump <= THRESHOLD.grabSnapPx,
     grab.attached
-      ? `入口距离 ${grab.entryDistance}px（自动抓取半径 78）· 单帧位移 渲染框中心 ${centerJump}px / 脚底 ${feetJump}px / 顶点 ${Math.abs(grab.topJump)}px · 碰撞体中心 ${Math.abs(grab.bodyJumpCenterY)}px · 阈值 ≤${THRESHOLD.grabSnapPx}px`
+      ? `入口距离 ${grab.entryDistance}px（自动抓取半径 78）· 单帧位移 角色身体中心 ${bodyJump}px · 根节点 ${grab.rootJump}px · 阈值 ≤${THRESHOLD.grabSnapPx}px`
       : `未触发自动抓取（入口距离 ${grab.entryDistance}px）——探针自身失效，先修探针再谈阈值`);
+  grabSnapshot = grab;
+  globalThis.__grabErrors = errors;
+  await page.close();
+}
+
+// ══════════════════════ C2：松手收回补间（单独开页，全程真实循环） ══════════════════════
+// 必须单独一页：C1 会 game.loop.sleep() 做确定性步进，唤醒后第一帧的 delta 可能是几百 ms，
+// 会把补间一次推完，量出一个假的大位移（实测同一份代码 21.8px 与 47.9px 两个值）。
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  page.on('console', m => { if (m.type() === 'error') errors.push(m.text().slice(0, 200)); });
+  await boot(page);
 
   // ══════ C2：松手要真实循环（tween 才推进），改用 rAF 采样 ══════
   await page.evaluate(() => {
@@ -220,18 +275,16 @@ const boot = async (page, touch = false) => {
     const t0 = performance.now();
     window.__t0 = t0;
     const tick = () => {
-      const sb = p.sprite.getBounds();
+      const body = window.__opaqueCenter(p.sprite);
       window.__samples.push({
         t: +(performance.now() - t0).toFixed(1),
         viewY: +p.view.y.toFixed(2),
-        feetY: +sb.bottom.toFixed(2),
+        bodyY: body.y,
         lift: +p.releaseLift.toFixed(2),
         attached: Boolean(p.attached),
       });
       window.__raf = requestAnimationFrame(tick);
     };
-    // 唤醒真实循环：手动步进不推进 tween，量松手补间必须走 rAF
-    game.loop.wake();
     p.teleportTo(s.gullVine.handX - 60, s.gullVine.handY + 34 + 60);
     p.attachVine(s.gullVine); // 松手段只关心收回补间，直接挂上，不依赖海鸥当时的位置
     tick();
@@ -245,27 +298,46 @@ const boot = async (page, touch = false) => {
     const s = window.__samples;
     let releaseAt = -1;
     for (let i = 1; i < s.length; i++) if (!s[i].attached && s[i - 1].attached) releaseAt = i;
-    let maxStep = 0, maxAt = 0;
-    for (let i = releaseAt + 1; i < Math.min(releaseAt + 12, s.length); i++) {
-      const d = Math.abs(s[i].feetY - s[i - 1].feetY);
-      if (d > maxStep) { maxStep = d; maxAt = i; }
-    }
+    const window14 = i => s.slice(releaseAt + 1, Math.min(releaseAt + 15, i));
+    // 逐帧峰值要归一化到 16.7ms：tween 是按**时间**推进的，机器卡到 15fps 时
+    // 单帧位移天然变大（53px 补间在两帧里走完），那是帧率的锅不是补间的锅。
+    const peakPerFrame = (from, to, key) => {
+      let m = 0, at = null;
+      for (let i = from + 1; i <= to && i < s.length; i++) {
+        const dt = s[i].t - s[i - 1].t;
+        if (dt <= 0) continue;
+        const rate = (Math.abs(s[i][key] - s[i - 1][key]) / dt) * 16.667;
+        if (rate > m) { m = rate; at = [s[i].t, +dt.toFixed(1), s[i][key]]; }
+      }
+      return { perFrame: +m.toFixed(2), at };
+    };
+    const intervals = s.slice(1).map((f, i) => f.t - s[i].t).sort((a, b) => a - b);
+    const end = Math.min(releaseAt + 14, s.length - 1);
+    const tween = releaseAt >= 0 ? peakPerFrame(releaseAt, end, 'lift') : null;
+    const body = releaseAt >= 0 ? peakPerFrame(releaseAt, end, 'bodyY') : null;
     return {
       frames: s.length,
       releaseAt,
+      frameMsMedian: +intervals[Math.floor(intervals.length / 2)]?.toFixed(1),
       startLift: releaseAt >= 0 ? s[releaseAt].lift : null,
-      maxStep: +maxStep.toFixed(2),
-      maxStepWindow: releaseAt >= 0 ? s.slice(releaseAt - 1, releaseAt + 8).map(f => [f.t, f.feetY, f.lift]) : null,
+      maxTweenStep: tween?.perFrame ?? null,
+      maxTweenAt: tween?.at ?? null,
+      maxBodyStep: body?.perFrame ?? null,
+      maxBodyAt: body?.at ?? null,
+      window14: releaseAt >= 0 ? window14(s.length).map(f => [f.t, f.bodyY, f.lift]) : null,
     };
   });
   await page.close();
 
-  record('C2. 松手收回补间', release.releaseAt > 0 && release.maxStep <= THRESHOLD.releaseSnapPx,
-    `松手帧 ${release.releaseAt}/${release.frames} · 起始悬垂量 ${release.startLift}px · 10 帧内单帧最大位移 ${release.maxStep}px · 阈值 ≤${THRESHOLD.releaseSnapPx}px`);
+  // 分两个口径：补间自己（可控）+ 整体位移（含松手甩出的初速，vy ≤ −240 → 本就有 ~4px/帧）。
+  // 两者都按 16.7ms 归一化，所以换台机器跑数字可比。
+  record('C2. 松手收回补间', release.releaseAt > 0 && release.maxTweenStep <= THRESHOLD.releaseTweenStepPx,
+    `起始悬垂量 ${release.startLift}px · 补间单帧峰值 ${release.maxTweenStep}px/16.7ms · 采样间隔中位数 ${release.frameMsMedian}ms · 阈值 ≤${THRESHOLD.releaseTweenStepPx}px`);
 
-  globalThis.__grab = grab;
+  record('C3. 松手整体位移', release.releaseAt > 0 && release.maxBodyStep <= THRESHOLD.releaseBodyStepPx,
+    `松手帧 ${release.releaseAt}/${release.frames} · 角色身体单帧峰值 ${release.maxBodyStep}px/16.7ms（含甩出初速）· 阈值 ≤${THRESHOLD.releaseBodyStepPx}px`);
+
   globalThis.__release = release;
-  globalThis.__grabErrors = errors;
 }
 
 // ══════════════════════ D：触屏适配（竖屏 + 横屏） ══════════════════════
@@ -314,12 +386,57 @@ for (const [name, vp] of [['portrait', { width: 390, height: 844 }], ['landscape
       };
     })() : null;
 
+    // 按钮还要留在逻辑视口内（screen = 逻辑坐标 × zoom，所以反推回逻辑再比）
+    const logicalViewport = s.viewportWidth;
+    const offscreen = buttons
+      .map(b => ({ label: b.label, left: +(b.left / cam.zoom).toFixed(1), right: +(b.right / cam.zoom).toFixed(1) }))
+      .filter(b => b.left < -0.5 || b.right > logicalViewport + 0.5);
+
     return {
       buffer: { w: Math.round(bw), h: Math.round(bh) }, zoom: +cam.zoom.toFixed(3),
-      logicalViewportWidth: +s.viewportWidth.toFixed(1),
-      buttons, overlaps,
+      logicalViewportWidth: +logicalViewport.toFixed(1),
+      buttons, overlaps, offscreen,
       status, statusOverflowRight: +(status.right - bw).toFixed(1),
       badge: badgeInfo,
+    };
+  });
+
+  // 帮助弹窗：窄屏下 520 宽的面板会被裁掉一半，而且内容必须是触摸文案
+  touch[name].help = await page.evaluate(() => {
+    const s = window.__game.scene.getScene('forest');
+    const cam = s.cameras.main;
+    if (!s.helpModal) s.toggleHelpModal();
+    const modal = s.helpModal;
+    if (!modal) return null;
+    const panel = (modal.list ?? []).find(o => o.type === 'Container');
+    const bg = panel ? (panel.list ?? []).find(o => o.type === 'Rectangle') : null;
+    if (!panel || !bg) return null;
+    const w = bg.width * panel.scaleX, h = bg.height * panel.scaleY;
+    const logical = {
+      left: +(panel.x - w / 2).toFixed(1), right: +(panel.x + w / 2).toFixed(1),
+      top: +(panel.y - h / 2).toFixed(1), bottom: +(panel.y + h / 2).toFixed(1),
+    };
+    const screen = { left: +(logical.left * cam.zoom).toFixed(1), right: +(logical.right * cam.zoom).toFixed(1), top: +(logical.top * cam.zoom).toFixed(1), bottom: +(logical.bottom * cam.zoom).toFixed(1) };
+    const texts = (panel.list ?? []).filter(o => o.type === 'Text').map(o => o.text).join('\n');
+    // 正文与关闭按钮都是面板子对象、同一坐标系，所以直接比 getBounds 就行。
+    // 面板写死 360 高时正文（313 高）会压到按钮上（实测重叠 30.2px），这条专门盯住它。
+    const [title, desc, close] = (panel.list ?? []).filter(o => o.type === 'Text');
+    let contentOverlapPx = null;
+    let descInsidePanel = null;
+    if (title && desc && close) {
+      const b = o => o.getBounds();
+      const [tb, db, cb] = [b(title), b(desc), b(close)];
+      const xOverlap = Math.min(db.right, cb.right) - Math.max(db.left, cb.left);
+      const yOverlap = Math.min(db.bottom, cb.bottom) - Math.max(db.top, cb.top);
+      contentOverlapPx = +(xOverlap > 0 && yOverlap > 0 ? yOverlap : 0).toFixed(1);
+      descInsidePanel = db.top >= b(bg).top - 0.5 && db.bottom <= b(bg).bottom + 0.5;
+    }
+    return {
+      panelScale: +(panel.scaleX).toFixed(3), logical, screen,
+      fitsLogicalViewport: logical.left >= -0.5 && logical.right <= s.viewportWidth + 0.5 && logical.top >= -0.5 && logical.bottom <= 540.5,
+      fitsBuffer: screen.left >= -0.5 && screen.right <= s.scale.gameSize.width + 0.5 && screen.top >= -0.5 && screen.bottom <= s.scale.gameSize.height + 0.5,
+      keyboardOnlyMarkers: (texts.match(/\[\s*(A|D|空格|H|W|↑|←|→|\/)\s*\]/g) ?? []),
+      contentOverlapPx, descInsidePanel,
     };
   });
   await page.screenshot({ path: `${SHOT_DIR}/touch-${name}.png` });
@@ -329,11 +446,15 @@ for (const [name, vp] of [['portrait', { width: 390, height: 844 }], ['landscape
 
 const worstOverlap = ['portrait', 'landscape'].flatMap(k => touch[k].overlaps.map(o => ({ k, ...o })));
 const worstOverflow = Math.max(...['portrait', 'landscape'].map(k => touch[k].statusOverflowRight));
+const worstOffscreen = ['portrait', 'landscape'].flatMap(k => touch[k].offscreen.map(o => ({ k, ...o })));
 
-record('D1. 触屏按钮重叠', worstOverlap.length === 0,
-  worstOverlap.length
+record('D1. 触屏按钮重叠', worstOverlap.length === 0 && worstOffscreen.length === 0,
+  (worstOverlap.length
     ? worstOverlap.map(o => `${o.k} ${o.pair} 重叠 ${o.ox}×${o.oy}px（${o.areaPx2}px²）`).join('；')
-    : `两向均无重叠（竖屏逻辑视口宽 ${touch.portrait.logicalViewportWidth}，横屏 ${touch.landscape.logicalViewportWidth}）`);
+    : `两向均无重叠（竖屏逻辑视口宽 ${touch.portrait.logicalViewportWidth}，横屏 ${touch.landscape.logicalViewportWidth}）`)
+  + (worstOffscreen.length
+    ? `；出界：${worstOffscreen.map(o => `${o.k} ${o.label} 逻辑 ${o.left}–${o.right}`).join('；')}`
+    : ''));
 
 record('D2. 状态栏出界', worstOverflow <= THRESHOLD.statusOverflowPx,
   ['portrait', 'landscape'].map(k => `${k} 缓冲宽 ${touch[k].buffer.w} · 状态栏右缘 ${touch[k].status.right} → 溢出 ${touch[k].statusOverflowRight}px`).join('；'));
@@ -344,7 +465,31 @@ record('D3. 竖屏教学卡可见', Boolean(touch.portrait.badge?.fullyVisible),
     : '竖屏未创建教学卡');
 
 record('D4. 触屏文案', !['portrait', 'landscape'].some(k => (touch[k].badge?.texts ?? []).some(t => /\[.*(A|D|空格|H).*\]/.test(t))),
-  `教学卡文案仍为键盘键位：${JSON.stringify(touch.portrait.badge?.texts ?? [])}`);
+  `教学卡文案：${JSON.stringify(touch.portrait.badge?.texts ?? [])}`);
+
+const helpBad = ['portrait', 'landscape'].filter(k => touch[k].help && (!touch[k].help.fitsLogicalViewport || !touch[k].help.fitsBuffer));
+record('D5. 帮助弹窗适配', helpBad.length === 0,
+  ['portrait', 'landscape'].map(k => {
+    const h = touch[k].help;
+    if (!h) return `${k} 未取到面板`;
+    return `${k} 面板缩放 ${h.panelScale} · 逻辑 ${h.logical.left}-${h.logical.right}×${h.logical.top}-${h.logical.bottom}（视口 ${touch[k].logicalViewportWidth}×540）`;
+  }).join('；'));
+
+const helpKeyboard = touch.portrait.help?.keyboardOnlyMarkers ?? [];
+record('D6. 弹窗触屏文案', helpKeyboard.length === 0,
+  helpKeyboard.length ? `帮助弹窗仍是键盘键位：${JSON.stringify(helpKeyboard)}` : '帮助弹窗在触摸设备上已改为屏幕按钮文案');
+
+// 面板高度写死时正文会压到关闭按钮：这条量的是「正文与按钮有没有叠」+「正文有没有出面板底」
+const helpContentBad = ['portrait', 'landscape'].filter(k => {
+  const h = touch[k].help;
+  return !h || h.contentOverlapPx === null || h.contentOverlapPx > 0 || h.descInsidePanel === false;
+});
+record('D7. 弹窗正文不压按钮', helpContentBad.length === 0,
+  ['portrait', 'landscape'].map(k => {
+    const h = touch[k].help;
+    if (!h) return `${k} 未取到面板`;
+    return `${k} 正文与按钮重叠 ${h.contentOverlapPx}px · 正文在面板内 ${h.descInsidePanel}`;
+  }).join('；'));
 
 // ══════════════════════ 汇总 ══════════════════════
 console.log('\n=== 第一关体验探针（ORIGIN=' + ORIGIN + '）===');
@@ -352,7 +497,7 @@ for (const r of results) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.id.padEnd(1
 const failed = results.filter(r => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} 通过；截图 ${SHOT_DIR}/`);
 if (JSON_OUT) {
-  console.log(JSON.stringify({ thresholds: THRESHOLD, results, geometry: globalThis.__geometry, grab: globalThis.__grab, release: globalThis.__release, touch }, null, 2));
+  console.log(JSON.stringify({ thresholds: THRESHOLD, results, geometry: globalThis.__geometry, grab: grabSnapshot, release: globalThis.__release, touch }, null, 2));
 }
 await browser.close();
 process.exit(failed.length ? 1 : 0);

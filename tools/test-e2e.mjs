@@ -32,7 +32,7 @@ const MIRRORED_LAYOUT = {
     { id: 'W1', ridgeCenter: 2000, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 56, rollDistance: 360 }
   ],
   key: { x: 2680, y: 196 },
-  landing: { left: 2660, right: 2870, top: 440 },
+  landing: { left: 2660, right: 2930, top: 440 },
   door: { openingCenterX: 2680 },
 };
 

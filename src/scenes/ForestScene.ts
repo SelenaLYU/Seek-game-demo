@@ -113,7 +113,13 @@ const KEY = { scale: 0.1, contentCenterX: 789, contentCenterY: 520 };
 /** 海鸥抓点摆长 */
 const GULL_SWING_LENGTH = 48;
 
-const WORLD_WIDTH = 2870;
+/**
+ * 世界右界：由石门美术反推，不是拍脑袋的数。
+ * 门贴图 1536×1024 @ scale 0.314，开口中心 2680 → 贴图占 2439.0..2921.3，
+ * 不透明内容到 2913.2。旧值 2870 会把门右侧 43.2px 切掉（实拍就是一条竖直直边）。
+ * 2930 = 2921.3 + 留白，右岸地面跟到同一条边界。
+ */
+const WORLD_WIDTH = 2930;
 const WORLD_HEIGHT = 540;
 const FALL_Y = 620;
 
@@ -289,11 +295,11 @@ const WAVES: readonly WaveSpec[] = [
 ];
 
 /**
- * 完整高低起伏跑酷关卡路线（世界 2870×540）：
+ * 完整高低起伏跑酷关卡路线（世界 2930×540）：
  * 阶段 1：从第一块低礁（420）起步 → 错落礁石阶梯（低 430 → 高崖 320 → 平礁 375 → 起跳台 235）
  * 阶段 2：自高台跳起抓唯一一只飞鸥（1100~1460）→ 翱翔掠过深洋 → 甩向海心落脚礁（1620）
  * 阶段 3：浪前爬升礁（1750）→ 浪前冲刺礁（1850）→ 单朵滚浪（2000）→ 浪后落脚礁（2590）→ 右岸大陆（2660）
- * 阶段 4：右岸大陆（2660..2870）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 落地走回石门进入记忆之房！
+ * 阶段 4：右岸大陆（2660..2930）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 落地走回石门进入记忆之房！
  */
 export const LAYOUT: LayoutSpec = {
   startBeach: { left: 0, right: 280, top: 440 },
@@ -301,7 +307,7 @@ export const LAYOUT: LayoutSpec = {
   gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
   waves: WAVES,
   key: { x: 2680, y: 196 },
-  landing: { left: 2660, right: 2870, top: 440 },
+  landing: { left: 2660, right: 2930, top: 440 },
   door: { openingCenterX: 2680 },
 };
 
@@ -336,6 +342,37 @@ const WAVE_PROMPT_RANGE = {
 
 /** 起点教学卡片淡出时机：从起始低礁向前移动 80px 后 */
 const TUTORIAL_FADE_X = START_POINT.x + 80;
+
+/**
+ * 触屏按钮的排版参数（单位：逻辑像素 = 与 viewportWidth 同一坐标系）。
+ * 不要写死屏幕像素：sf0 层的位置按逻辑坐标算、尺寸被相机 zoom 放大，
+ * 16:9 缓冲下逻辑视口≈960 看不出问题，竖屏只有 ~250 —— 写死 74/154 会让跳跃键
+ * 落进右移键里（实测重叠 134.7×204.3 缓冲 px，右移键 59% 按不到）。
+ */
+const TOUCH_LAYOUT = {
+  /** 左右边距：窄屏给固定值，宽屏按比例（保底不贴屏幕边） */
+  sideInset: (vpW: number) => Math.max(12, vpW * 0.045),
+  gap: 8,
+  /** 按钮最小逻辑宽（fontSize 26 + padding 18×2）——字形不同时用实测宽度，取大值保险 */
+  minButtonWidth: 62,
+  /** 按钮中心线 y（逻辑坐标，底边留出安全区） */
+  baselineY: 460,
+} as const;
+
+/** 状态栏基准位置（逻辑坐标）：左下角对齐，多行时向上长，不越出 540 底部 */
+const STATUS_TEXT_BASE = { x: 18, y: 526 } as const;
+
+/** 起点教学卡：宽屏放在出生礁左侧，窄屏缩放并居中到出生点上方（见 layoutTutorialBadge） */
+const TUTORIAL_BADGE = { width: 310, height: 68, wideX: 230, y: 270 } as const;
+
+/**
+ * 帮助面板：宽固定、**高按正文实测高度算**（见 toggleHelpModal），窄屏整块缩放。
+ * 不要退回写死的 360：正文 313 高、关闭按钮顶在 601，两者重叠 30px（实拍正文压在按钮上）。
+ */
+const HELP_PANEL = { width: 520, y: 270, padding: 18, titleGap: 14, closeGap: 16 } as const;
+
+/** 逻辑视口高度（applyHDCamera 下恒为 540，这里只用于面板限高） */
+const LOGICAL_VIEWPORT_HEIGHT = 540;
 
 /** 按 role 查礁石：布局增删礁石时路标仍能对上 */
 const reefByRole = (role: ReefRole): ReefSpec => {
@@ -383,6 +420,8 @@ export default class ForestScene extends Phaser.Scene {
   private enteredRoom = false;
   private progressSession!: ChapterOneRoomSession;
   private statusText!: Phaser.GameObjects.Text;
+  /** 状态栏当前文案：折行/缩字号要重排，所以存原文而不是读 Text.text */
+  private statusMessage = '';
   private progressStorageUnavailable = false;
   private checkpoint = { x: START_POINT.x, y: START_POINT.y };
   private gameHud!: GameHudHandle;
@@ -404,6 +443,11 @@ export default class ForestScene extends Phaser.Scene {
   // —— scrollFactor 0 层的屏幕补偿（与 GameHud 同一套算法，否则 dpr>1 下会错位到屏幕外） ——
   private viewportWidth = 960;
   private touchControls: Array<{ button: Phaser.GameObjects.Text; baseX: number; baseY: number }> = [];
+  /** 触摸设备：屏幕按钮、文案与教程都按触摸走（桌面保持键位说明） */
+  private readonly touchMode =
+    typeof window !== 'undefined' &&
+    typeof navigator !== 'undefined' &&
+    (window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0);
 
   // —— 场景内操作与交互引导 ——
   private startTutorialBadge?: Phaser.GameObjects.Container;
@@ -487,7 +531,7 @@ export default class ForestScene extends Phaser.Scene {
     this.sfx = new Sfx(this);
     this.cameras.main.setBackgroundColor('#12506b');
 
-    // 正式水彩大背景（1900宽）：第一段正常，第二段镜像平铺衔接，无缝延展至 2870 的海天视界
+    // 正式水彩大背景（1900宽）：第一段正常，第二段镜像平铺衔接，无缝延展至 3800 的海天视界（覆盖世界 2930）
     this.add
       .image(0, 0, ART.background)
       .setOrigin(0, 0)
@@ -542,15 +586,21 @@ export default class ForestScene extends Phaser.Scene {
     if (this.keyCollected) this.markKeyCollected(false);
 
     this.statusText = this.add
-      .text(18, 500, this.keyCollected ? '钥匙已到手 · 落地走近右侧石门进入记忆之房' : '移动 [A/D]   跳跃 [空格]   触碰海鸥自动抓牢   按 [H] 查看操作指南', {
+      .text(STATUS_TEXT_BASE.x, STATUS_TEXT_BASE.y, this.keyCollected
+        ? '钥匙已到手 · 落地走近右侧石门进入记忆之房'
+        : this.touchMode
+          ? '点按 ◀ ▶ 移动   点按 ↑ 跳跃   触碰海鸥自动抓牢   点右上「指南」看说明'
+          : '移动 [A/D]   跳跃 [空格]   触碰海鸥自动抓牢   按 [H] 查看操作指南', {
         fontFamily: 'sans-serif',
         fontSize: '14px',
         color: '#dedede',
         backgroundColor: '#171717cc',
         padding: { x: 10, y: 7 },
       })
+      .setOrigin(0, 1)
       .setScrollFactor(0)
       .setDepth(100);
+    this.statusMessage = this.statusText.text;
 
     camera.startFollow(this.player.view, true, 0.1, 0.1);
     camera.setDeadzone(Math.min(180, this.viewportWidth * 0.22), 100);
@@ -582,14 +632,80 @@ export default class ForestScene extends Phaser.Scene {
   /**
    * scrollFactor 0 层的屏幕补偿：相机 zoom 也会作用于它们，不补的话
    * dpr>1 / 非 16:9 缓冲下整层会跑到屏幕外（HUD 已由 GameHud 自己补，见 screenSpaceOrigin）。
+   * 注意它只补**位置**，不抵消 zoom 对**尺寸**的放大 —— 所以每个 sf0 元素自己必须先
+   * 在逻辑坐标里排好（见 layoutStatus / layoutTouchControls / layoutTutorialBadge）。
    */
   private applyScreenSpaceOffset(): void {
     const off = screenSpaceOrigin(this);
-    this.statusText?.setPosition(18 + off.x, 500 + off.y);
+    this.layoutStatus();
+    this.layoutTouchControls();
+    this.layoutTutorialBadge();
+    this.statusText?.setPosition(STATUS_TEXT_BASE.x + off.x, STATUS_TEXT_BASE.y + off.y);
     for (const control of this.touchControls) {
       control.button.setPosition(control.baseX + off.x, control.baseY + off.y);
     }
     this.helpModal?.setPosition(off.x, off.y);
+  }
+
+  /**
+   * 状态栏：位置按逻辑坐标、尺寸却被 zoom 放大。竖屏逻辑视口只有 ~250px，
+   * 而 14px 的一行提示可以宽到 422 逻辑 px → 实拍右溢 732 缓冲 px。
+   * 先缩字号，再按显示宽度折行（中文没空格，Phaser 自带的 wordWrap 折不了）。
+   */
+  private layoutStatus(): void {
+    if (!this.statusText) return;
+    const maxWidth = Math.max(120, this.viewportWidth - 36);
+    this.statusText.setText(this.statusMessage);
+    let size = 14;
+    this.statusText.setFontSize(size);
+    while (size > 10 && this.statusText.width > maxWidth) {
+      size -= 1;
+      this.statusText.setFontSize(size);
+    }
+    if (this.statusText.width > maxWidth) {
+      const full = this.statusText.width;
+      const perLine = Math.max(4, Math.floor(this.statusMessage.length * (maxWidth / full)));
+      const lines: string[] = [];
+      for (let i = 0; i < this.statusMessage.length; i += perLine) {
+        lines.push(this.statusMessage.slice(i, i + perLine));
+      }
+      this.statusText.setText(lines.join('\n'));
+    }
+  }
+
+  /**
+   * 触屏按钮：左移/右移贴左边距，跳跃贴右边距；三者会重叠时把右移键夹到中间。
+   * 宽度要等按钮建出来才知道（箭头与汉字的实测宽度不同），所以先建后摆，
+   * 并在 resize 时重摆（updateViewport 会调 applyScreenSpaceOffset）。
+   */
+  private layoutTouchControls(): void {
+    const [left, right, jump] = this.touchControls;
+    if (!left || !right || !jump) return;
+    const vpW = this.viewportWidth;
+    const half = (control: (typeof this.touchControls)[number]) =>
+      Math.max(TOUCH_LAYOUT.minButtonWidth, control.button.width) / 2;
+    const inset = TOUCH_LAYOUT.sideInset(vpW);
+    const leftX = inset + half(left);
+    const jumpX = vpW - inset - half(jump);
+    // 右移键先按固定间距跟在左移键后面；若这样会压到跳跃键，就夹在两个键中间
+    const naturalRightX = leftX + half(left) + TOUCH_LAYOUT.gap + half(right);
+    const rightX = Math.min(naturalRightX, (leftX + jumpX) / 2);
+    left.baseX = leftX;
+    right.baseX = rightX;
+    jump.baseX = jumpX;
+    for (const control of this.touchControls) control.button.setX(control.baseX);
+  }
+
+  /**
+   * 起点教学卡是世界空间对象：竖屏可见世界窗口只有 ~250px，放不下 310 宽的卡片，
+   * 实测只剩 90px 可见（等于开局没有任何操作说明）。窄屏改成缩放 + 居中到出生点上方。
+   */
+  private layoutTutorialBadge(): void {
+    const badge = this.startTutorialBadge;
+    if (!badge) return;
+    const narrow = this.viewportWidth < TUTORIAL_BADGE.width + 24;
+    badge.setScale(narrow ? Math.max(0.6, (this.viewportWidth - 24) / TUTORIAL_BADGE.width) : 1);
+    badge.setX(narrow ? START_POINT.x : TUTORIAL_BADGE.wideX);
   }
 
   private createNavHeader(): void {
@@ -1154,20 +1270,23 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   private createInWorldGuidance(): void {
-    // 起点操作教学卡片
-    this.startTutorialBadge = this.add.container(230, 270).setDepth(15).setVisible(false);
+    // 起点操作教学卡片：宽屏是出生礁左侧的浮层，窄屏由 layoutTutorialBadge 缩放并居中
+    this.startTutorialBadge = this.add
+      .container(TUTORIAL_BADGE.wideX, TUTORIAL_BADGE.y)
+      .setDepth(15)
+      .setVisible(false);
     const badgeBg = this.add
-      .rectangle(0, 0, 310, 68, 0x112822, 0.88)
+      .rectangle(0, 0, TUTORIAL_BADGE.width, TUTORIAL_BADGE.height, 0x112822, 0.88)
       .setStrokeStyle(1.5, 0xe2ce9b, 0.65);
     const line1 = this.add
-      .text(0, -13, '移动 [ A / D ] 或 [ ← / → ]', {
+      .text(0, -13, this.touchMode ? '点按 ◀ ▶ 左右移动' : '移动 [ A / D ] 或 [ ← / → ]', {
         fontFamily: 'sans-serif',
         fontSize: '13px',
         color: '#fff3d5',
       })
       .setOrigin(0.5);
     const line2 = this.add
-      .text(0, 13, '从这块礁石出发 · 轻按/长按跳跃 · 空中二段跳', {
+      .text(0, 13, this.touchMode ? '点按 ↑ 跳跃 · 空中再点一次二段跳' : '从这块礁石出发 · 轻按/长按跳跃 · 空中二段跳', {
         fontFamily: 'sans-serif',
         fontSize: '10px',
         color: '#bed4c5',
@@ -1287,10 +1406,12 @@ export default class ForestScene extends Phaser.Scene {
     modal.add(mask);
 
     const cx = vpW / 2;
-    const cy = 270;
+    const cy = HELP_PANEL.y;
+    // 面板整块缩放：520 宽的面板在竖屏（逻辑视口 ≈250）会被裁掉一半。
+    // 只缩面板、不缩遮罩，所以遮罩留在父容器里不动。
     const panel = this.add.container(cx, cy);
     const panelBg = this.add
-      .rectangle(0, 0, 520, 360, 0x142b24, 0.96)
+      .rectangle(0, 0, HELP_PANEL.width, 1, 0x142b24, 0.96)
       .setStrokeStyle(2, 0xe4d19e, 0.85);
 
     const title = this.add
@@ -1301,17 +1422,30 @@ export default class ForestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const content = [
-      '🏃 基础移动：按 [ A / D ] 或 [ ← / → ] 左右平稳移动',
-      '🦘 跳跃身法：按 [ 空格 / W / ↑ ] 轻按小跳，长按大跳；空中再按二段跳',
-      '🕊️ 核心技巧 · 飞鸥摆荡：',
-      '    1. 跨越阶梯礁石，登上巍峨的【起跳高台】；',
-      '    2. 跳向迎面飞来的海鸥，触碰双脚即可【自动抓牢】！',
-      '    3. 抓牢后海鸥载你向右飞，按 [ A / D ] 蓄力前后荡秋千；',
-      '    4. 按 [ 空格 / ↑ ] 即可借力潇洒跳上海心礁石！',
-      '🌊 限时滚浪：跳上浪脊，浪会托着你往前滚；浪滚到尽头会散掉，\n     没在散掉前跳走就会被卷进海里！',
-      '🔑 终极目标：跳上右岸，跳起摘下石门门楣上的金钥匙，\n     落地后走近石门，推开它进入记忆之房！',
-    ].join('\n\n');
+    const content = (this.touchMode
+      ? [
+          '🏃 基础移动：点按屏幕左下角的 ◀ / ▶ 左右平稳移动',
+          '🦘 跳跃身法：点按右下角的 ↑ 轻按小跳，按住大跳；空中再点一次二段跳',
+          '🕊️ 核心技巧 · 飞鸥摆荡：',
+          '    1. 跨越阶梯礁石，登上巍峨的【起跳高台】；',
+          '    2. 跳向迎面飞来的海鸥，触碰双脚即可【自动抓牢】！',
+          '    3. 抓牢后海鸥载你向右飞，点按 ◀ / ▶ 蓄力前后荡秋千；',
+          '    4. 点按 ↑ 即可借力潇洒跳上海心礁石！',
+          '🌊 限时滚浪：跳上浪脊，浪会托着你往前滚；浪滚到尽头会散掉，\n     没在散掉前跳走就会被卷进海里！',
+          '🔑 终极目标：跳上右岸，跳起摘下石门门楣上的金钥匙，\n     落地后走近石门，推开它进入记忆之房！',
+        ]
+      : [
+          '🏃 基础移动：按 [ A / D ] 或 [ ← / → ] 左右平稳移动',
+          '🦘 跳跃身法：按 [ 空格 / W / ↑ ] 轻按小跳，长按大跳；空中再按二段跳',
+          '🕊️ 核心技巧 · 飞鸥摆荡：',
+          '    1. 跨越阶梯礁石，登上巍峨的【起跳高台】；',
+          '    2. 跳向迎面飞来的海鸥，触碰双脚即可【自动抓牢】！',
+          '    3. 抓牢后海鸥载你向右飞，按 [ A / D ] 蓄力前后荡秋千；',
+          '    4. 按 [ 空格 / ↑ ] 即可借力潇洒跳上海心礁石！',
+          '🌊 限时滚浪：跳上浪脊，浪会托着你往前滚；浪滚到尽头会散掉，\n     没在散掉前跳走就会被卷进海里！',
+          '🔑 终极目标：跳上右岸，跳起摘下石门门楣上的金钥匙，\n     落地后走近石门，推开它进入记忆之房！',
+        ]
+    ).join('\n\n');
 
     const desc = this.add
       .text(0, 0, content, {
@@ -1320,10 +1454,10 @@ export default class ForestScene extends Phaser.Scene {
         color: '#dbe8de',
         lineSpacing: 2,
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5, 0);
 
     const closeBtn = this.add
-      .text(0, 142, '【 知道了，开始冒险 】', {
+      .text(0, 0, '【 知道了，开始冒险 】', {
         fontFamily: 'sans-serif',
         fontSize: '14px',
         color: '#fff4d6',
@@ -1336,15 +1470,25 @@ export default class ForestScene extends Phaser.Scene {
     closeBtn.on('pointerout', () => closeBtn.setBackgroundColor('#274b3f'));
     closeBtn.on('pointerdown', () => this.toggleHelpModal());
 
+    // 高度按内容排：标题贴顶、正文紧随、关闭按钮贴底，正文再长也不会压到按钮
+    const panelH = Math.round(
+      HELP_PANEL.padding * 2 + title.height + HELP_PANEL.titleGap + desc.height + HELP_PANEL.closeGap + closeBtn.height,
+    );
+    panelBg.setSize(HELP_PANEL.width, panelH);
+    title.setOrigin(0.5, 0).setY(-panelH / 2 + HELP_PANEL.padding);
+    desc.setY(title.y + title.height + HELP_PANEL.titleGap);
+    closeBtn.setOrigin(0.5, 1).setY(panelH / 2 - HELP_PANEL.padding);
+    panel.setScale(Math.min(1, (vpW - 24) / HELP_PANEL.width, (LOGICAL_VIEWPORT_HEIGHT - 24) / panelH));
+
     panel.add([panelBg, title, desc, closeBtn]);
     modal.add(panel);
   }
 
   private createTouchControls(): void {
-    if (!window.matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints === 0) return;
-    const makeButton = (x: number, label: string, onDown: () => void, onUp: () => void) => {
+    if (!this.touchMode) return;
+    const makeButton = (label: string, onDown: () => void, onUp: () => void) => {
       const button = this.add
-        .text(x, 460, label, {
+        .text(0, TOUCH_LAYOUT.baselineY, label, {
           fontFamily: 'sans-serif',
           fontSize: '26px',
           color: '#dddddd',
@@ -1358,12 +1502,13 @@ export default class ForestScene extends Phaser.Scene {
       button.on('pointerdown', onDown);
       button.on('pointerup', onUp);
       button.on('pointerout', onUp);
-      this.touchControls.push({ button, baseX: x, baseY: 460 });
+      this.touchControls.push({ button, baseX: 0, baseY: TOUCH_LAYOUT.baselineY });
       return button;
     };
-    makeButton(74, '◀', () => this.player.setTouchMove(-1), () => this.player.setTouchMove(0));
-    makeButton(154, '▶', () => this.player.setTouchMove(1), () => this.player.setTouchMove(0));
-    makeButton(Math.min(this.viewportWidth - 75, WORLD_WIDTH - 20), '↑', () => this.player.pressTouchJump(true), () => this.player.pressTouchJump(false));
+    makeButton('◀', () => this.player.setTouchMove(-1), () => this.player.setTouchMove(0));
+    makeButton('▶', () => this.player.setTouchMove(1), () => this.player.setTouchMove(0));
+    makeButton('↑', () => this.player.pressTouchJump(true), () => this.player.pressTouchJump(false));
+    this.layoutTouchControls();
   }
 
   private saveProgress(): void {
@@ -1379,10 +1524,11 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   private setStatus(message: string): void {
-    const text = this.progressStorageUnavailable && !message.includes('关闭页面后可能丢失')
+    // 把最终文案（含“进度仅本次保留”后缀）存下来再排版：折行/缩字号要按全文算。
+    this.statusMessage = this.progressStorageUnavailable && !message.includes('关闭页面后可能丢失')
       ? `${message} · 进度仅在本次游玩中保留`
       : message;
-    this.statusText.setText(text);
+    this.layoutStatus();
   }
 
   private applyProgressEvent(event: ChapterOneRoomEvent): void {
