@@ -106,6 +106,7 @@ npm run build               # tsc --noEmit + vite build
 | `CHAPTER_TWO_MEMORY_ROOM_DESIGN.md` | 第二关房间设计（Selena 维护） |
 | `decisions/2026-10-03-webp-and-load-optimization.md` | WebP 化与加载优化（工具、接入点、实测数据、下一档待办） |
 | `decisions/2026-10-05-island-model-orientation.md` | 记忆之岛资产朝向：作者朝向 +X，统一 -π/2，含罗盘判据与实走判据 |
+| `decisions/2026-10-05-no-clipping-island.md` | **硬约束：岛上不许穿模**（四条判定 + 已知穿模清理清单 + 执行机制） |
 | `decisions/2026-10-05-island-hdr-lighting.md` | 岛屿光照：HDR IBL + Neutral tone mapping + 主光跟随 HDR 太阳，含配方表与阴影视锥修正 |
 | `decisions/` | 架构与设定决策记录 |
 | `archive/` | 全部历史文档，仅作追溯 |
@@ -136,6 +137,17 @@ npm run build               # tsc --noEmit + vite build
   `screenshots/island/lighting-before-after/`。
 - **仍是评审脚手架**（不是成品内容）：`?focusChapter=N`、`?artPreview=color`、`?islandPreview=1`、
   `?ch05Candidate=1`（CH05 候选模型 + 屏上开关）、载入时打的 `console.info` 尺寸日志。
+- **不许穿模（硬约束）**：判定在 `src/island/clipping.ts`，回归测试 `tests/islandClipping.test.mjs`（61 项里 8 组）。
+  散布摆放必须走 `canPlace`（不过就丢点），摆完跑 `auditPlacements` 复核。已知待清的现场穿模清单见
+  `decisions/2026-10-05-no-clipping-island.md`（栈桥断在半空、建筑底座陷沙、树压屋角、崖壁裙边接缝、道具探出岛缘）。
+- **光照（2026-10-05 改）**：`scene.environment` 接 `public/env/sky-sunny.hdr`（439KB，Poly Haven CC0，
+  1k 原图 1.7MB 在软件渲染下让进岛从 18s 拖到 67s，已降到 512×256）。HDR 自带太阳在方位 54.5°/高度 16.5°
+  （贴地平线且在镜头背后，形体和影子都不出来），所以把环境与主光一起转到 `KEY_SUN_AZIMUTH`。
+  半球光 1.45→0.16、主光 2.15→2.8、`NeutralToneMapping` + exposure 1.32；阴影视锥 ±26 → ±38
+  （原来外围地标落在视锥外，根本投不出影子）。
+- **散布道具**：Tripo P1 生成 8 件（岩石×2、珊瑚、花丛、灌木、棕榈、阔叶树、樱树，共 320 积分），
+  `node tools/import-island-props.mjs` 归一化命名并压到 512 贴图 → `public/island-models/props/`（14.3MB → 872KB）。
+  原始产物与 task id 见 `public/island-models/props/README.md` 与 `art/island/props/tripo-out/`（本地）。
 - **未入库美术待 Simon 处置**：`public/island-models-candidates/ch05-tent/`、`art/island/`
   （`.gitignore` 写明「本地交付资料，暂不上传」）、`art/memory-island-*.{png,svg,md}`。
 - **待确认（光照素材授权）**：`public/env/sky-sunny.hdr` 已随光照改动一起入库，但**来源与授权没有记录**
