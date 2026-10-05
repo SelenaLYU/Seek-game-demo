@@ -33,6 +33,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SCENE_PATH = path.join(ROOT, 'src/scenes/ForestScene.ts');
 const REEF_ASSET = path.join(ROOT, 'assets/level1/level1-stepping-reef-v1.png');
 const SOURCE = fs.readFileSync(SCENE_PATH, 'utf8');
+const PLAYER_SOURCE = fs.readFileSync(path.join(ROOT, 'src/gameplay/Player.ts'), 'utf8');
 
 // ---------------------------------------------------------------------------
 // 从 ForestScene.ts 解析真源（测试不能 import 它：场景依赖 Phaser 与 ?url 资源）
@@ -432,13 +433,34 @@ test('第一关只显示实体钥匙：不额外绘制寻钥匙光柱、提示�
   assert.match(SOURCE, /\.image\(LAYOUT\.key\.x, LAYOUT\.key\.y, ART\.key\)/, '实体金钥匙仍应正常显示');
 });
 
-test('浪的几何：只保留一朵长距离滚浪，并在岸侧配置实体落脚礁', () => {
+test('浪开局即以较快速度向门循环，不等待玩家触发', () => {
   const waves = chain.filter(p => p.role === 'wave');
   assert.equal(waves.length, 1, `应当只有 1 朵浪，实测 ${waves.length}`);
   assert.equal(Math.round(waves[0].center), layout.waves[0].center);
+  assert.ok(layout.waves[0].rollSpeed > 56, '滚浪速度应比原版更快');
   assert.ok(layout.waves[0].rollDistance >= 240, '单浪前移距离应足以将角色送入岸侧区域');
+  assert.match(SOURCE, /state:\s*'rolling',[\s\S]*?rollStartedAt:\s*this\.levelClockMs/, '创建浪时必须直接开始滚动');
+  assert.match(SOURCE, /wave\.completedCycles\s*\+=\s*1;\s*this\.resetWave\(wave\)/, '每轮消散后必须立即从起点启动下一轮');
+  assert.doesNotMatch(SOURCE, /private resetWavesLeftBehind/, '循环浪不应依赖玩家回到左侧才复位');
   const landingReef = chain.find(p => p.role === 'wave-landing');
   assert.ok(landingReef, '单浪消散后必须有实体礁石承接角色，不能只依赖背景画面');
+});
+
+test('第一关适度削弱跳高和顶点滞空，其他章节保留默认跳跃手感', () => {
+  assert.match(SOURCE, /jumpVelocity:\s*-580/);
+  assert.match(SOURCE, /apexGravityExtra:\s*-450/);
+  assert.match(SOURCE, /apexVelocityWindow:\s*-150/);
+  assert.match(SOURCE, /airJumpMultiplier:\s*0\.88/);
+  assert.match(PLAYER_SOURCE, /jumpVelocity:\s*-630/);
+  assert.match(PLAYER_SOURCE, /apexGravityExtra:\s*-700/);
+  assert.match(PLAYER_SOURCE, /airJumpMultiplier:\s*0\.92/);
+});
+
+test('钥匙缩小；拾取后无门闪烁/粒子/延迟，仍须持钥落地进门', () => {
+  assert.match(SOURCE, /const KEY = \{ scale: 0\.08/);
+  assert.doesNotMatch(SOURCE, /DOOR_UNLOCK_DELAY_MS|pulseDoor\(/);
+  assert.doesNotMatch(SOURCE, /Effects\.sparkBurst\(this, LAYOUT\.key\.x/, '门楣不再播放会读作门闪烁的拾取粒子');
+  assert.match(SOURCE, /if \(!this\.keyCollected\)[\s\S]*?return;[\s\S]*?pBody\.blocked\.down/);
 });
 
 /** 二段跳最晚触发的水平行程（比"顶点触发"的口径远得多，才是真正要封的上限） */

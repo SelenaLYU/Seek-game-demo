@@ -29,7 +29,7 @@ const MIRRORED_LAYOUT = {
   ],
   gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
   waves: [
-    { id: 'W1', ridgeCenter: 2000, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 56, rollDistance: 360 }
+    { id: 'W1', ridgeCenter: 2000, top: 392, rollSpeed: 72, rollDistance: 360 }
   ],
   key: { x: 2680, y: 196 },
   landing: { left: 2660, right: 2870, top: 440 },
@@ -211,7 +211,7 @@ async function run() {
     startBeach: [l.startBeach.left, l.startBeach.right, l.startBeach.top],
     reefs: l.reefs.map((r) => [r.role, r.standCenter, r.top, r.scale]),
     gull: [l.gull.fromX, l.gull.toX, l.gull.fromY, l.gull.toY, l.gull.speed],
-    waves: l.waves.map((w) => [w.id, w.ridgeCenter, w.top, w.amplitude, w.periodMs, w.rollSpeed, w.rollDistance]),
+    waves: l.waves.map((w) => [w.id, w.ridgeCenter, w.top, w.rollSpeed, w.rollDistance]),
     key: [l.key.x, l.key.y],
     landing: [l.landing.left, l.landing.right, l.landing.top],
     door: [l.door.openingCenterX],
@@ -289,6 +289,24 @@ async function run() {
     };
   })()`, { label: '韩梅梅出生并站在第一块低礁上', timeoutMs: 3000 });
   console.log('开场状态:', JSON.stringify(idleState));
+  const autoWaveStart = await evalJs(`new Promise(resolve => {
+    const s = ${sceneJs};
+    const w = s.waves[0];
+    const x0 = w.body.x;
+    const cycles0 = w.completedCycles;
+    setTimeout(() => resolve({
+      state: w.state,
+      dx: w.body.x - x0,
+      rolled: w.rolled,
+      speed: w.rollSpeed,
+      cycleDelta: w.completedCycles - cycles0,
+    }), 250);
+  })`);
+  console.log('开局无人触发的滚浪:', JSON.stringify(autoWaveStart));
+  if (autoWaveStart.state !== 'rolling' || autoWaveStart.speed !== 72
+    || !((autoWaveStart.dx >= 12 && autoWaveStart.dx <= 25) || autoWaveStart.cycleDelta > 0)) {
+    throw new Error(`浪必须从开局就以约 72px/s 自行向门循环移动：${JSON.stringify(autoWaveStart)}`);
+  }
   const textureInfo = await evalJs(`(() => {
     const g = window.__game;
     const s = g.scene.getScene('forest');
@@ -625,8 +643,8 @@ async function run() {
   }
   await captureScreenshot('test-niannian-wave-climb');
 
-  console.log(`--- 10. 验证滚浪限时平台 (${W1.id}@${W1.ridgeCenter})：踩上被托着前移 → 撤到 ${waveEscapeReef.label} → 浪散不扣命 ---`);
-  // 浪实体契约自检：阶段 3 的浪必须有 state 状态机（idle/rolling/dissolving/gone）
+  console.log(`--- 10. 验证循环滚浪 (${W1.id}@${W1.ridgeCenter})：持续向门前进 → 玩家登浪/撤离 → 自动重启 ---`);
+  // 浪实体契约：开局即滚动，末端短暂消散后自动回起点，运行时不进入 idle/gone。
   const waveContract = await evalJs(`(() => {
     const s = ${sceneJs};
     const list = s.waves || [];
@@ -635,6 +653,9 @@ async function run() {
       hasState: list.every((w) => typeof w.state === 'string'),
       states: list.map((w) => w.state ?? null),
       centers: list.map((w) => Math.round(w.body.x + w.body.width / 2)),
+      baseCenters: list.map((w) => Math.round(w.baseX + w.body.width / 2)),
+      speeds: list.map((w) => w.rollSpeed),
+      completedCycles: list.map((w) => w.completedCycles),
       halfWidths: list.map((w) => w.body.width / 2),
     };
   })()`);
@@ -643,14 +664,16 @@ async function run() {
     throw new Error(`浪实体数量 ${waveContract.count} 与 LAYOUT.waves 长度 ${LAYOUT.waves.length} 不一致`);
   }
   if (!waveContract.hasState) {
-    throw new Error('海浪实体缺少 state 字段（阶段 3 契约: idle/rolling/dissolving/gone）');
+    throw new Error('海浪实体缺少循环状态字段（rolling/dissolving）');
   }
-  if (waveContract.states.some((s) => s !== 'idle')) {
-    throw new Error(`未接触前所有浪应处于 idle，当前: ${JSON.stringify(waveContract.states)}`);
+  if (waveContract.states.some((s) => s !== 'rolling' && s !== 'dissolving')) {
+    throw new Error(`运行中的浪不应回到 idle/gone 等待态，当前: ${JSON.stringify(waveContract.states)}`);
   }
   const [w1Center] = waveContract.centers;
-  if (Math.abs(w1Center - W1.ridgeCenter) > 3) {
-    throw new Error(`浪体中心 ${JSON.stringify(waveContract.centers)} 与 LAYOUT ${W1.ridgeCenter} 不符`);
+  const [w1BaseCenter] = waveContract.baseCenters;
+  if (Math.abs(w1BaseCenter - W1.ridgeCenter) > 3 || w1Center < W1.ridgeCenter - W1.rollDistance * 0.02
+    || w1Center > W1.ridgeCenter + W1.rollDistance + 3 || waveContract.speeds[0] !== W1.rollSpeed || W1.rollSpeed <= 56) {
+    throw new Error(`滚浪起点/速度/循环行程异常：${JSON.stringify(waveContract)}`);
   }
 
   const w1Index = await evalJs(`(() => {
@@ -662,18 +685,20 @@ async function run() {
   })()`);
   if (w1Index < 0) throw new Error(`未能在 s.waves 里定位 ${W1.id}`);
 
-  // 落点用浪体“当前”中心（滚动中会右移）：离浪 >30px 或高于浪面 60px 才重新放一次，
-  // 避免轮询把被托着前移的角色反复传送回起点
+  // 等一轮刚从起点出发后把角色放到浪面，留足 500ms 承载采样窗口。
   const rideState = await waitFor(`(() => {
     const s = ${sceneJs};
     const w = s.waves[${w1Index}];
     const center = w.body.x + w.body.width / 2;
     s.player.setTouchMove(0);
-    if (Math.abs(s.player.view.x - center) > 30 || s.player.view.y < w.body.y - 60) {
+    if (w.state === 'rolling' && w.rolled < w.rollDistance - 80
+      && (Math.abs(s.player.view.x - center) > 30 || s.player.view.y < w.body.y - 60)) {
       s.player.teleportTo(center, w.body.y - 40);
     }
     return {
-      ok: w.state === 'rolling' && s.player.body.onFloor(),
+      ok: w.state === 'rolling' && w.rolled < w.rollDistance - 80 && s.player.body.onFloor()
+        && Math.abs(s.player.view.x - center) < 30
+        && Math.abs(s.player.view.body.bottom - w.body.y) < 8,
       waveState: w.state,
       onFloor: s.player.body.onFloor(),
       playerX: Math.round(s.player.view.x),
@@ -681,9 +706,10 @@ async function run() {
       playerY: Math.round(s.player.view.y),
       expectedY: ${W1.top - 36},
       lives: s.progress.lives,
+      completedCycles: w.completedCycles,
       status: s.statusText.text,
     };
-  })()`, { label: `${W1.id} 进入 rolling 且角色站在浪上`, timeoutMs: 4000 });
+  })()`, { label: `${W1.id} 新一轮起点可登浪`, timeoutMs: 6500 });
   console.log('踩浪状态:', JSON.stringify(rideState, null, 2));
   if (Math.abs(rideState.playerY - rideState.expectedY) > 26) {
     throw new Error(`未站在浪脊上：y=${rideState.playerY} 期望 ≈${rideState.expectedY}`);
@@ -738,19 +764,20 @@ async function run() {
   // 用骑浪前的血量当基准会把「摆位时掉了一次」误报成「撤离失败仍被扣命」
   const livesAfterRide = carryInfo.lives;
 
-  // 在消散前撤离到浪后实体落脚礁：浪继续滚完 → gone，且全程不扣命。
+  // 提前撤离到浪后实体落脚礁；浪在背景中完成消散并自动重启，角色不扣命。
   // 关键：撤离后不要每帧再 teleport 到陆地，否则角色永远不在浪上，浪不会继续滚。
   const escapeInfo = await evalJs(`new Promise(resolve => {
     const s = ${sceneJs};
     const w = s.waves[${w1Index}];
     s.player.setTouchMove(0);
     s.player.teleportTo(${waveEscapeReef.standCenter}, ${waveEscapeReef.top - 40});
-    // W1 完整周期约 6.43s(滚动) + 0.9s(消散)；再留 700ms 缓冲。
-    // 注意：当玩家已回到浪左后方时，gone 会被 resetWavesLeftBehind() 立即复位到 idle。
+    // 72px/s 滚动 360px 约 5s，消散 0.4s 后自动重启；8s 应至少完成一轮循环。
     setTimeout(() => {
       resolve({
-        ok: s.player.body.onFloor() && s.progress.lives === ${livesAfterRide} && (w.state === 'gone' || w.state === 'idle'),
+        ok: s.player.body.onFloor() && s.progress.lives === ${livesAfterRide}
+          && w.completedCycles > ${rideState.completedCycles} && (w.state === 'rolling' || w.state === 'dissolving'),
         waveState: w.state,
+        completedCycles: w.completedCycles,
         onFloor: s.player.body.onFloor(),
         lives: s.progress.lives,
         expectedLives: ${livesAfterRide},
@@ -785,21 +812,23 @@ async function run() {
   const dissolveRide = await waitFor(`(() => {
     const s = ${sceneJs};
     const w = s.waves[${w1Index}];
-    if (w.state === 'gone') s.resetWaves();
     const center = w.body.x + w.body.width / 2;
     s.player.setTouchMove(0);
-    if (w.state === 'idle' && (Math.abs(s.player.view.x - center) > 30 || s.player.view.y < w.body.y - 60)) {
+    if (w.state === 'rolling' && w.rolled < w.rollDistance - 80
+      && (Math.abs(s.player.view.x - center) > 30 || s.player.view.y < w.body.y - 60)) {
       s.player.teleportTo(center, w.body.y - 40);
     }
     return {
-      ok: w.state === 'rolling' && s.player.body.onFloor(),
+      ok: w.state === 'rolling' && w.rolled < w.rollDistance - 80 && s.player.body.onFloor()
+        && Math.abs(s.player.view.x - center) < 30
+        && Math.abs(s.player.view.body.bottom - w.body.y) < 8,
       waveState: w.state,
       onFloor: s.player.body.onFloor(),
       playerX: Math.round(s.player.view.x),
       waveCenter: Math.round(center),
       lives: s.progress.lives,
     };
-  })()`, { label: `${W1.id} 再次进入 rolling 且角色站在浪上`, timeoutMs: 4000 });
+  })()`, { label: `${W1.id} 循环起点重新登浪`, timeoutMs: 6500 });
   console.log('再次踩唯一滚浪状态:', JSON.stringify(dissolveRide, null, 2));
 
   // 浪滚到尽头开始消散 —— 这一刻截图（浪花粒子 + alpha 淡出）
@@ -807,7 +836,7 @@ async function run() {
     const s = ${sceneJs};
     const w = s.waves[${w1Index}];
     return { ok: w.state === 'dissolving', waveState: w.state, playerY: Math.round(s.player.view.y) };
-  })()`, { label: `${W1.id} 进入 dissolving`, timeoutMs: 7500 });
+  })()`, { label: `${W1.id} 进入 dissolving`, timeoutMs: 6000 });
   console.log('浪体消散状态:', JSON.stringify(dissolving, null, 2));
   await captureScreenshot('test-niannian-wave-dissolve');
 
@@ -830,19 +859,19 @@ async function run() {
   if (!dissolved.status.includes('浪散了')) {
     throw new Error(`落水状态栏未提示「浪散了」：${dissolved.status}`);
   }
-  // resetWaves 必须把唯一一朵浪复位成 idle（含 killTweensOf / setScale / enable）
+  // 死亡复位后浪也继续从起点滚动，不回到等待玩家触发的状态。
   const afterReset = await waitFor(`(() => {
     const s = ${sceneJs};
     return {
-      ok: s.waves.every((w) => w.state === 'idle') && s.player.body.onFloor(),
+      ok: s.waves.every((w) => w.state === 'rolling') && s.player.body.onFloor(),
       states: s.waves.map((w) => w.state),
       onFloor: s.player.body.onFloor(),
       lives: s.progress.lives,
     };
-  })()`, { label: '重生后所有浪复位为 idle', timeoutMs: 3000 });
+  })()`, { label: '重生后浪立即继续循环滚动', timeoutMs: 3000 });
   console.log('重生复位状态:', JSON.stringify(afterReset, null, 2));
 
-  console.log(`--- 12. 验证门楣金钥匙 (${LAYOUT.key.x}, ${LAYOUT.key.y})：门常显且锁着，跳起才能摘 ---`);
+  console.log(`--- 12. 验证缩小后的门楣金钥匙 (${LAYOUT.key.x}, ${LAYOUT.key.y})：门常显且锁着，跳起才能摘 ---`);
   const beforeKey = await waitFor(`(() => {
     const s = ${sceneJs};
     s.player.setTouchMove(0);
@@ -856,6 +885,7 @@ async function run() {
       doorExists: Boolean(s.door),
       doorVisible: Boolean(s.door?.visible),
       keyObjectExists: s.children.list.some(o => o.texture?.key === 'level1-golden-jasmine-key'),
+      keyScale: s.children.list.find(o => o.texture?.key === 'level1-golden-jasmine-key')?.scaleX ?? null,
       keyBeaconExists: Boolean(s.keyBeacon),
       doorHintExists: Boolean(s.doorHint),
       lives: s.progress.lives,
@@ -868,8 +898,8 @@ async function run() {
   if (!beforeKey.doorExists || !beforeKey.doorVisible) {
     throw new Error('阶段 3 石门应常显（锁着等待钥匙），当前 door 缺失或不可见');
   }
-  if (!beforeKey.keyObjectExists || beforeKey.keyBeaconExists || beforeKey.doorHintExists) {
-    throw new Error('应只显示可拾取的实体钥匙，不应再生成额外光柱/提示牌/UI');
+  if (!beforeKey.keyObjectExists || beforeKey.keyScale !== 0.08 || beforeKey.keyBeaconExists || beforeKey.doorHintExists) {
+    throw new Error(`应显示缩小后的实体钥匙，不应生成额外光柱/提示牌/UI：${JSON.stringify(beforeKey)}`);
   }
   await captureScreenshot('test-niannian-door-key');
 
@@ -888,53 +918,20 @@ async function run() {
       keyBeaconExists: Boolean(s.keyBeacon),
       doorHintExists: Boolean(s.doorHint),
       status: s.statusText.text,
+      onFloor: s.player.body.onFloor(),
+      enteredRoom: s.enteredRoom,
+      doorAlpha: s.door?.alpha ?? null,
     };
   })()`, { label: '跳起摘到门楣金钥匙', timeoutMs: 4000, intervalMs: 40 });
   console.log('摘取金钥匙状态:', JSON.stringify(keyInfo, null, 2));
-  if (keyInfo.keyBeaconExists || keyInfo.doorHintExists) {
-    throw new Error('取到钥匙后不应重新出现额外钥匙光柱/提示牌/UI');
+  if (keyInfo.keyBeaconExists || keyInfo.doorHintExists || Math.abs(keyInfo.doorAlpha - 1) > 0.001) {
+    throw new Error(`拿到钥匙后门不应闪烁，也不应出现额外钥匙 UI：${JSON.stringify(keyInfo)}`);
+  }
+  if (keyInfo.enteredRoom && !keyInfo.onFloor) {
+    throw new Error('空中拿到钥匙不能直接穿门进入房间');
   }
 
-  console.log(`--- 13. 验证空中不能进门、取钥匙后落地即可从门口进入（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
-  // 拾取点就在门楣上方：先检查解锁延迟，再让延迟提前结束，单独验证空中仍不能进门。
-  await sleep(120);
-  const airborneBeforeUnlock = await evalJs(`(() => {
-    const s = ${sceneJs};
-    return {
-      keyCollected: s.keyCollected,
-      enteredRoom: s.enteredRoom,
-      onFloor: s.player.body.onFloor(),
-      levelClockMs: s.levelClockMs,
-      doorOpenAt: s.doorOpenAt,
-      playerX: Math.round(s.player.view.x),
-      playerY: Math.round(s.player.view.y),
-    };
-  })()`);
-  console.log('钥匙后空中状态:', JSON.stringify(airborneBeforeUnlock, null, 2));
-  if (!airborneBeforeUnlock.keyCollected || airborneBeforeUnlock.enteredRoom || airborneBeforeUnlock.onFloor
-    || airborneBeforeUnlock.doorOpenAt <= airborneBeforeUnlock.levelClockMs) {
-    throw new Error('拾钥匙后应仍在空中、门有解锁延迟且尚未进入');
-  }
-  await evalJs(`(() => {
-    const s = ${sceneJs};
-    s.doorOpenAt = s.levelClockMs;
-    return true;
-  })()`);
-  await sleep(80);
-  const airborneGate = await evalJs(`(() => {
-    const s = ${sceneJs};
-    return {
-      blocked: s.keyCollected && !s.enteredRoom && !s.player.body.onFloor() && s.levelClockMs >= s.doorOpenAt,
-      enteredRoom: s.enteredRoom,
-      onFloor: s.player.body.onFloor(),
-      levelClockMs: s.levelClockMs,
-      doorOpenAt: s.doorOpenAt,
-    };
-  })()`);
-  if (!airborneGate.blocked) {
-    throw new Error(`门解锁后仍应等待落地，空中进入状态异常：${JSON.stringify(airborneGate)}`);
-  }
-
+  console.log(`--- 13. 验证钥匙是唯一解锁条件，落地后从门口进入（开口中心 ${LAYOUT.door.openingCenterX}） ---`);
   const doorInfo = await waitFor(`(() => {
     const s = ${sceneJs};
     return {

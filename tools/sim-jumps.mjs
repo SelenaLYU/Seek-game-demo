@@ -2,8 +2,8 @@
 /**
  * 第一关跳跃可达性仿真器（用来改 LAYOUT 前先算一遍，别靠体感）
  *
- * 模型严格照抄 src/gameplay/Player.ts + ForestScene 的 arcade 配置：
- *   世界重力 1100 / 起跳 -630 / 二段跳 ×0.92 / 顶点半重力 -700（按住跳且 -180<vy<0）/
+ * 模型照抄第一关 ForestScene 覆写的 Player 参数 + Arcade 配置：
+ *   世界重力 1100 / 起跳 -580 / 二段跳 ×0.88 / 顶点减重 -450（按住跳且 -150<vy<0）/
  *   下落加重 +560（vy>120）/ 松键截断 ×0.45 / 上限速 250 / 碰撞体 36×72 /
  *   地面加速 2600、空中 1900、地面减速 3000、空中 1400、急转 ×1.8
  * 物理步长取 Phaser Arcade 默认的 1/60（固定步），另外用 1/120 复核灵敏度。
@@ -20,16 +20,16 @@ import { pathToFileURL } from 'node:url';
 
 const WORLD_GRAVITY = 1100;
 const SPEED = 250;
-const JUMP_V = -630;
+const JUMP_V = -580;
 const ACCEL_GROUND = 2600;
 const ACCEL_AIR = 1900;
 const DECEL_GROUND = 3000;
 const DECEL_AIR = 1400;
 const TURN_BOOST = 1.8;
 const MAX_FALL = 1000;
-const AIR_JUMP_MULT = 0.92;
-const APEX_EXTRA = -700;
-const APEX_WINDOW = -180;
+const AIR_JUMP_MULT = 0.88;
+const APEX_EXTRA = -450;
+const APEX_WINDOW = -150;
 const FALL_EXTRA = 560;
 const FALL_EXTRA_MIN_VY = 120;
 const HOP_RELEASE_MULT = 0.45;

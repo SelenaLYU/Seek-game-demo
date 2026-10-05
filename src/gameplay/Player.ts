@@ -26,6 +26,12 @@ export interface PlayerOptions {
   speed?: number;
   /** 起跳速度（负值向上） */
   jumpVelocity?: number;
+  /** 按住跳跃时顶点区间叠加的重力（负值用于减轻重力）；可按关卡覆写滞空手感 */
+  apexGravityExtra?: number;
+  /** 顶点重力调整的速度窗口（负值阈值至 0） */
+  apexVelocityWindow?: number;
+  /** 二段跳相对起跳速度倍率 */
+  airJumpMultiplier?: number;
   /** 土狼时间：离地后仍可起跳的窗口 ms（Celeste 同款宽容技巧） */
   coyoteMs?: number;
   /** 跳跃缓冲：落地前按跳、落地瞬间补跳的窗口 ms */
@@ -259,6 +265,9 @@ export class Player {
       height: 72,
       speed: 250,
       jumpVelocity: -630,
+      apexGravityExtra: -700,
+      apexVelocityWindow: -180,
+      airJumpMultiplier: 0.92,
       coyoteMs: 130,
       jumpBufferMs: 140,
       maxFallSpeed: 1000,
@@ -436,7 +445,7 @@ export class Player {
       // 实机读作"纸片人转动"（无团身细节），与水彩氛围不搭，只留提气脉冲+光环
       this.airJumpsLeft -= 1;
       this.jumpBufferTimer = 0;
-      this.body.setVelocityY(this.opts.jumpVelocity * 0.92);
+      this.body.setVelocityY(this.opts.jumpVelocity * this.opts.airJumpMultiplier);
       this.airFromJump = true;
       this.opts.sfx?.doubleJump();
       this.squash(0.94, 1.07);
@@ -446,8 +455,8 @@ export class Player {
     // 分段重力：半重力顶点（按住跳跃滞空更可控）+ 下落加重（弧线漂亮、落地更沉）
     let extraGravity = 0;
     if (!onGround) {
-      if (jumpHeld && this.body.velocity.y < 0 && this.body.velocity.y > -180) {
-        extraGravity = -700;
+      if (jumpHeld && this.body.velocity.y < 0 && this.body.velocity.y > this.opts.apexVelocityWindow) {
+        extraGravity = this.opts.apexGravityExtra;
       } else if (this.body.velocity.y > 120) {
         extraGravity = Player.FALL_GRAVITY_EXTRA;
       }

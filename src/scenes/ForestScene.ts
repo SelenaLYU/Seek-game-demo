@@ -64,20 +64,17 @@ const WAVE_IMAGE_OFFSET = {
 };
 
 /**
- * 滚浪判决：浪是「限时移动平台」——踩上浪脊就起滚，滚到尽头开始消散；
- * 消散时浪体不再承重，没跳走的玩家会踩空落水。
+ * 滚浪判决：浪从开局自动前滚并循环；踩在浪上的玩家随平台移动，末端短暂消散，没跳走会踩空落水。
  */
 const WAVE_RIDE = {
-  /** 消散淡出时长 ms */
-  dissolveMs: 900,
+  /** 消散淡出时长 ms；快速消散后立即从起点重新向前循环 */
+  dissolveMs: 400,
   /** 承重判定容差 px（脚底离浪脊顶面多近算站在浪上） */
   standTolerance: 6,
   /** 承重判定窗口 px：滚动浪面锁定高度后，只容忍物理碰撞的一帧误差 */
   rideWindow: 8,
   /** 消散后玩家掉到浪脊以下这么多像素仍没跳走 → 判定被卷走（要大于浪体厚 60，才算真掉出浪体） */
   sinkDepth: 64,
-  /** 剩余滚动时间少于该值（秒）时提示「快散开了」 */
-  warnSeconds: 0.9,
 };
 
 /**
@@ -89,8 +86,6 @@ const RIDGE_BAR = { width: 78, height: 4, alpha: 0 };
 /** 重生重入锁 ms：同一帧可能被多条死亡路径命中，防重复扣命 */
 const RESPAWN_LOCK_MS = 800;
 
-/** 摘到钥匙后石门解锁延迟 ms：先落地、再走回门口，不能在空中直接进门 */
-const DOOR_UNLOCK_DELAY_MS = 700;
 /** 门还锁着时的状态栏提示节流 ms */
 const DOOR_HINT_THROTTLE_MS = 2200;
 
@@ -108,7 +103,7 @@ const DOOR = {
 };
 
 /** 金钥匙（源图 1536×1024） */
-const KEY = { scale: 0.1, contentCenterX: 789, contentCenterY: 520 };
+const KEY = { scale: 0.08, contentCenterX: 789, contentCenterY: 520 };
 
 /** 海鸥抓点摆长 */
 const GULL_SWING_LENGTH = 48;
@@ -159,9 +154,6 @@ export type WaveSpec = {
   ridgeCenter: number;
   /** 浪脊顶面 y */
   top: number;
-  /** 待机上下浮动振幅（像素） */
-  amplitude: number;
-  periodMs: number;
   /** 起滚后每秒前移的像素 */
   rollSpeed: number;
   /** 累计前移多少像素即「滚到尽头」并开始消散 */
@@ -285,7 +277,7 @@ export const reefSpriteOrigin = (reef: ReefSpec): { x: number; y: number } => ({
 
 /** 单朵滚浪：从冲刺礁前方开始，长距离向岸边推送后消散 */
 const WAVES: readonly WaveSpec[] = [
-  { id: 'W1', ridgeCenter: 2000, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 56, rollDistance: 360 },
+  { id: 'W1', ridgeCenter: 2000, top: 392, rollSpeed: 72, rollDistance: 360 },
 ];
 
 /**
@@ -344,8 +336,8 @@ const reefByRole = (role: ReefRole): ReefSpec => {
   return reef;
 };
 
-/** 滚浪四态：待机浮动 → 被踩上起滚 → 滚到尽头消散 → 散尽 */
-type WaveState = 'idle' | 'rolling' | 'dissolving' | 'gone';
+/** 滚浪两态：从开局持续前滚 → 短暂消散并立即从起点重启 */
+type WaveState = 'rolling' | 'dissolving';
 
 interface WaveEntity {
   id: WaveSpec['id'];
@@ -355,13 +347,11 @@ interface WaveEntity {
   body: Phaser.GameObjects.Rectangle;
   /** 浪脊亮条 */
   ridgeBar: Phaser.GameObjects.Rectangle;
-  /** 待机基准位（idle 正弦浮动的中心） */
+  /** 循环起点（baseX, baseY） */
   baseX: number;
   baseY: number;
-  /** 起滚时锁定的浪面高度，避免托举角色时浪体上下浮动导致落地判定抖动 */
+  /** 每次循环开始时锁定的浪面高度，避免托举角色时浪体上下浮动导致落地判定抖动 */
   rollY: number;
-  amplitude: number;
-  periodMs: number;
   rollSpeed: number;
   rollDistance: number;
   state: WaveState;
@@ -373,6 +363,10 @@ interface WaveEntity {
   carryX: number;
   /** 开始消散的时刻（levelClockMs） */
   dissolveStartedAt: number;
+  /** 已完成的自动循环次数（用于验证浪不会停在末端） */
+  completedCycles: number;
+  /** 角色当前是否已触碰本轮滚浪，用于防止碰撞回调每帧重复播放反馈 */
+  riderContact: boolean;
 }
 
 export default class ForestScene extends Phaser.Scene {
@@ -396,8 +390,6 @@ export default class ForestScene extends Phaser.Scene {
   private levelClockMs = 0;
   /** 重生重入锁：此刻之前不再扣命（防同帧多路死亡重复扣） */
   private respawnLockUntil = 0;
-  /** 石门解锁时刻（摘到钥匙时写入 levelClockMs + DOOR_UNLOCK_DELAY_MS） */
-  private doorOpenAt = 0;
   /** 门锁提示的下次可提示时刻（节流） */
   private doorHintAt = 0;
 
@@ -467,7 +459,6 @@ export default class ForestScene extends Phaser.Scene {
     this.checkpoint = { x: START_POINT.x, y: START_POINT.y };
     this.levelClockMs = 0;
     this.respawnLockUntil = 0;
-    this.doorOpenAt = 0;
     this.doorHintAt = 0;
     this.touchControls = [];
     applyHDCamera(this, 'expand-horizontal');
@@ -530,6 +521,11 @@ export default class ForestScene extends Phaser.Scene {
       sfx: this.sfx,
       // 真实海边场景：角色空中不应在背景上投“贴图阴影”
       showGroundShadow: false,
+      // 第一关略压低跳高并加强顶点重力，缩短滞空；其他章节继续使用 Player 默认手感。
+      jumpVelocity: -580,
+      apexGravityExtra: -450,
+      apexVelocityWindow: -150,
+      airJumpMultiplier: 0.88,
     });
     this.physics.add.collider(this.player.view, this.terrain.solids);
 
@@ -690,9 +686,6 @@ export default class ForestScene extends Phaser.Scene {
     );
     this.gameHud.setProgressPercent(prog, `海岸探索 ${Math.round(prog)}%`);
 
-    // 浪滚走了就往左后方复位：否则主路线被永久切断（不能跳过去就卡死）
-    this.resetWavesLeftBehind();
-
     // 落水重生
     if (this.player.view.y > FALL_Y && !this.enteredRoom) {
       this.respawnFromFall('fall');
@@ -810,7 +803,7 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   /**
-   * 滚浪（限时移动平台）：idle 上下浮动 → 被踩上（collider）→ rolling 前移托人 → dissolving 消散 → gone。
+   * 滚浪（循环移动平台）：开局即 rolling → 向门方向前移 → 短暂消散 → 回起点立即再滚。
    * 所有位置都从同一处写（setWavePosition），不再用 setData 存第二份真相。
    */
   private createWaves(): void {
@@ -845,15 +838,15 @@ export default class ForestScene extends Phaser.Scene {
         baseX: bodyLeft,
         baseY: spec.top,
         rollY: spec.top,
-        amplitude: spec.amplitude,
-        periodMs: spec.periodMs,
         rollSpeed: spec.rollSpeed,
         rollDistance: spec.rollDistance,
-        state: 'idle',
-        rollStartedAt: 0,
+        state: 'rolling',
+        rollStartedAt: this.levelClockMs,
         rolled: 0,
         carryX: 0,
         dissolveStartedAt: 0,
+        completedCycles: 0,
+        riderContact: false,
       };
       this.physics.add.collider(this.player.view, body, () => this.onWaveContact(wave));
       return wave;
@@ -868,29 +861,22 @@ export default class ForestScene extends Phaser.Scene {
     wave.ridgeBar.setPosition(x + wave.body.width / 2, y - RIDGE_BAR.height / 2);
   }
 
-  /** 踩上浪脊 → 起滚（从下方/侧面撞到不算） */
+  /** 踩上正在滚动的浪脊时播放一次接触反馈；浪的循环不再由玩家触发 */
   private onWaveContact(wave: WaveEntity): void {
-    if (wave.state !== 'idle') return;
+    if (wave.state !== 'rolling' || wave.riderContact) return;
     const pBody = this.player.view.body as Phaser.Physics.Arcade.Body;
     if (pBody.velocity.y < 0) return;
     if (!pBody.blocked.down && !pBody.touching.down && !this.isPlayerStandingOn(wave)) return;
-    wave.state = 'rolling';
-    // 待机时浪面会上下浮动；一旦承载角色就锁住当前高度，防止物理落地状态和角色动画抖动。
-    wave.rollY = wave.body.y;
-    wave.rollStartedAt = this.levelClockMs;
-    wave.rolled = 0;
+    wave.riderContact = true;
     this.sfx.bounce();
     Effects.dust(this, wave.body.x + wave.body.width / 2, wave.body.y, 6, 22);
-    this.setStatus('踩上滚浪！趁它散开之前跳到浪后落脚礁。');
+    this.setStatus('踩上滚浪！把握时机跳向浪后落脚礁。');
   }
 
   private updateWaves(): void {
     const now = this.levelClockMs;
     for (const wave of this.waves) {
-      if (wave.state === 'idle') {
-        const bob = Math.sin((now / wave.periodMs) * Math.PI * 2) * wave.amplitude;
-        this.setWavePosition(wave, wave.baseX, wave.baseY + bob);
-      } else if (wave.state === 'rolling') {
+      if (wave.state === 'rolling') {
         // 前移量由关卡时钟算（弹窗期间时钟不走）——不再每帧写 scale，免得吞掉消散 tween。
         // y 使用接触时锁定的 rollY，不再带入 idle bob；角色和碰撞面保持同一高度，避免看似浮空/跳帧。
         wave.rolled = Math.min(wave.rollDistance, ((now - wave.rollStartedAt) / 1000) * wave.rollSpeed);
@@ -917,12 +903,11 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   private finishWaveDissolve(wave: WaveEntity): void {
-    wave.state = 'gone';
-    wave.image.setVisible(false);
-    wave.ridgeBar.setVisible(false);
+    wave.completedCycles += 1;
+    this.resetWave(wave);
   }
 
-  /** 复位所有浪（重生/重开关卡共用）：tween、透明度、碰撞体启用、状态一起回 idle */
+  /** 重生/重开或循环结束时从起点立即恢复滚动；运行过程中不再回到等待态 */
   private resetWaves(): void {
     for (const wave of this.waves) this.resetWave(wave);
   }
@@ -930,24 +915,17 @@ export default class ForestScene extends Phaser.Scene {
   private resetWave(wave: WaveEntity): void {
     this.tweens.killTweensOf(wave.image);
     this.tweens.killTweensOf(wave.ridgeBar);
-    wave.state = 'idle';
+    wave.state = 'rolling';
     wave.rolled = 0;
     wave.rollY = wave.baseY;
-    wave.rollStartedAt = 0;
+    wave.rollStartedAt = this.levelClockMs;
+    wave.riderContact = false;
     wave.dissolveStartedAt = 0;
     wave.image.setVisible(true).setAlpha(1).setScale(WAVE.scale);
     wave.ridgeBar.setVisible(true).setAlpha(RIDGE_BAR.alpha);
     (wave.body.body as Phaser.Physics.Arcade.Body).enable = true;
     this.setWavePosition(wave, wave.baseX, wave.baseY);
     wave.carryX = 0;
-  }
-
-  /** 浪散尽且玩家已回到它左后方 → 复位，避免必须过浪的路线被永久切断 */
-  private resetWavesLeftBehind(): void {
-    for (const wave of this.waves) {
-      if (wave.state !== 'gone') continue;
-      if (this.player.view.x < wave.baseX - 20) this.resetWave(wave);
-    }
   }
 
   /** 角色是否站在浪脊上（脚底贴着顶面 + 水平有交集） */
@@ -966,9 +944,12 @@ export default class ForestScene extends Phaser.Scene {
   /** 滚浪托举：浪前移多少，站在浪上的角色就跟着前移多少 */
   private checkWaveRide(): void {
     for (const wave of this.waves) {
-      if (wave.state !== 'rolling' || wave.carryX <= 0) continue;
-      if (!this.isPlayerStandingOn(wave)) continue;
-      this.player.view.x += wave.carryX;
+      if (wave.state !== 'rolling') continue;
+      if (!this.isPlayerStandingOn(wave)) {
+        wave.riderContact = false;
+        continue;
+      }
+      if (wave.carryX > 0) this.player.view.x += wave.carryX;
     }
   }
 
@@ -987,15 +968,6 @@ export default class ForestScene extends Phaser.Scene {
       this.respawnFromFall('wave');
       return;
     }
-  }
-
-  /** 当前活动浪：正在滚/正在散的优先，否则取离角色最近的一朵 */
-  private activeWaveNear(x: number): WaveEntity | undefined {
-    const moving = this.waves.find(w => w.state === 'rolling' || w.state === 'dissolving');
-    if (moving) return moving;
-    return this.waves
-      .filter(w => w.state !== 'gone')
-      .sort((a, b) => Math.abs(a.body.x + a.body.width / 2 - x) - Math.abs(b.body.x + b.body.width / 2 - x))[0];
   }
 
   private createGull(): void {
@@ -1079,12 +1051,9 @@ export default class ForestScene extends Phaser.Scene {
       keyImage.destroy();
       keyZone.destroy();
       this.sfx.key();
-      Effects.sparkBurst(this, LAYOUT.key.x, LAYOUT.key.y);
       this.markKeyCollected(true);
       this.gameHud.setScore(this.progress.score);
-      // 门已经常显，只需解锁：必须等玩家落地后自己走回门口才能进
-      this.doorOpenAt = this.levelClockMs + DOOR_UNLOCK_DELAY_MS;
-      this.pulseDoor();
+      // 门常显；拾取即解锁，不额外闪烁或延迟。
     });
   }
 
@@ -1092,23 +1061,6 @@ export default class ForestScene extends Phaser.Scene {
     // 不额外显示钥匙方向/状态牌：门楣上只保留可拾取的实体钥匙。
     this.gameHud?.setObjective('带着金钥匙落地，走进右侧石门');
     if (announce) this.setStatus('摘到了门楣上的金钥匙！落地后就能从门口进入记忆之房。');
-  }
-
-  /** 摘到钥匙的反馈：门已存在，只闪烁提示解锁（不额外显示钥匙提示牌） */
-  private pulseDoor(): void {
-    if (!this.door) return;
-    Effects.ring(this, this.door.x, this.door.y, 0xffe6a3);
-    this.tweens.killTweensOf(this.door);
-    this.tweens.add({
-      targets: this.door,
-      alpha: { from: 0.45, to: 1 },
-      duration: 220,
-      yoyo: true,
-      repeat: 2,
-      ease: 'Quad.easeOut',
-      // yoyo+repeat 的收尾都在「起始值」上，必须显式把门恢复成不透明
-      onComplete: () => this.door?.setAlpha(1),
-    });
   }
 
   /** 石门：一开始就立在那里、锁着；摘到门楣钥匙 + 落地才推得开 */
@@ -1136,8 +1088,7 @@ export default class ForestScene extends Phaser.Scene {
         }
         return;
       }
-      // 刚摘到钥匙还挂在门楣高度、身体与门区重叠：等落地后才算数（不刷状态，保留拾取提示）
-      if (this.levelClockMs < this.doorOpenAt) return;
+      // 拿到钥匙即可解锁；仍需实际走到门口并落地，避免空中穿门跳过收束。
       const pBody = this.player.view.body as Phaser.Physics.Arcade.Body;
       // 必须落地才能进门；空中摘到钥匙后直接穿门会跳过回到岸上的收束动作。
       if (!pBody.blocked.down && !pBody.touching.down) return;
