@@ -105,5 +105,25 @@ npm run build               # tsc --noEmit + vite build
 | `CHAPTER1_ROOM_PUZZLE_COLLABORATION.md` | 第一关房间交互与依赖（玩法规格，不含人物台词） |
 | `CHAPTER_TWO_MEMORY_ROOM_DESIGN.md` | 第二关房间设计（Selena 维护） |
 | `decisions/2026-10-03-webp-and-load-optimization.md` | WebP 化与加载优化（工具、接入点、实测数据、下一档待办） |
+| `decisions/2026-10-05-island-model-orientation.md` | 记忆之岛资产朝向：作者朝向 +X，统一 -π/2，含罗盘判据与实走判据 |
 | `decisions/` | 架构与设定决策记录 |
 | `archive/` | 全部历史文档，仅作追溯 |
+
+## 9. 记忆之岛 3D 接入（岛屿线，本轮）
+
+六栋 Tripo 建筑、主角模型、章节灰化/点亮都已接入并跑通；此前这条线没写进本文件，事实与判据记在这里，
+选型细节见 `decisions/2026-10-05-island-model-orientation.md`。
+
+- **朝向**（2026-10-05 修）：六栋 `buildingPresentation[].yaw` 与角色 `model.rotation.y` 都改成 `-Math.PI / 2`。
+  此前六栋与角色都用 `π`，症状不同：建筑门面比门前交互点偏 90°；角色按 W 只看到侧脸（**横着走**）。
+  原因是同一套 Tripo 流程的作者朝向是**本地 `+X`**（不是 glTF 常见的 `-Z`）。
+- **量朝向的工具**：`node tools/orient-probe.mjs <glb> [端口]` 八向罗盘，入口正对相机那格的角度就是该模型的 yaw。
+  **蒙皮模型必须每格重新加载 GLB**（`clone()` 的骨骼指向原骨架、复用节点会转双倍角度），且蒙皮罗盘只是旁证——
+  角色罗盘的 90°/270° 两格都像正脸，最终判据是岛内实走：按 W 看背面、按 S 看正脸。
+- **门前可达性**（按载入时实测 `fittedSize` 复算 `allowed()` 的轴对齐盒）：六栋门点到盒边界 0.25（04 树屋，
+  `site.yaw = -π/4` 的斜向门点被轴对齐盒切掉一部分）～1.79（01 贝壳屋）个世界单位，都远小于 2.8 触发半径，
+  不需要改碰撞；树屋的 0.25 是当前最小值，若以后加宽碰撞要重算。
+- **仍是评审脚手架**（不是成品内容）：`?focusChapter=N`、`?artPreview=color`、`?islandPreview=1`、
+  `?ch05Candidate=1`（CH05 候选模型 + 屏上开关）、载入时打的 `console.info` 尺寸日志。
+- **未入库美术待 Simon 处置**：`public/island-models-candidates/ch05-tent/`、`art/island/`
+  （`.gitignore` 写明「本地交付资料，暂不上传」）、`art/memory-island-*.{png,svg,md}`。

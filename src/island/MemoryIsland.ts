@@ -16,6 +16,8 @@ export function mountMemoryIsland(options: Options): () => void {
   root.innerHTML = `<style>
     .memory-island{position:fixed;inset:0;z-index:1100;background:#080d2d;color:#eef2ff;font-family:system-ui,"Microsoft YaHei",sans-serif;overflow:hidden}
     .memory-island canvas{display:block;width:100%;height:100%;touch-action:none}
+    .memory-island.is-art-preview{background:#87b9c5}
+    .memory-island.is-art-preview .hud{display:none}
     .memory-island .hud{position:absolute;inset:0;pointer-events:none;padding:28px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box}
     .memory-island header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
     .memory-island h1{font-family:serif;font-size:30px;font-weight:500;margin:4px 0 8px;letter-spacing:5px}
@@ -31,6 +33,11 @@ export function mountMemoryIsland(options: Options): () => void {
     .memory-island .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .memory-island .chapter-picker{position:absolute;right:28px;top:112px;width:286px;pointer-events:auto}
     .memory-island .asset-status{position:absolute;left:28px;top:157px;color:#c7d6ff;font-size:11px;letter-spacing:.03em;text-shadow:0 1px 10px #081037}
+    .memory-island .chapter-picker strong{color:#31493f}
+    .memory-island .chapter-entry{background:#f7f5eadd;border-color:#c7b998aa;box-shadow:0 4px 14px #163b3d18}
+    .memory-island .chapter-entry:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 7px 18px #163b3d26}
+    .memory-island .chapter-entry:disabled{opacity:.62}
+    .memory-island.is-art-preview .asset-status{display:none}
     .memory-island.is-art-preview .chapter-picker,.memory-island.is-art-preview footer{display:none}
     .memory-island .chapter-picker strong{display:block;margin-bottom:10px;font-size:14px;letter-spacing:.08em}
     .memory-island .chapter-list{display:grid;gap:8px}
@@ -40,7 +47,8 @@ export function mountMemoryIsland(options: Options): () => void {
     .memory-island .chapter-entry small{display:block;margin-top:3px;color:#60766f;font-size:11px}
     .memory-island .chapter-entry:disabled{cursor:default;opacity:.52;background:#dfe4ded8}
     .memory-island .nearby{position:absolute;left:50%;bottom:125px;transform:translateX(-50%);text-align:center;min-width:240px;pointer-events:auto}
-    .memory-island .nearby p{margin:0 0 12px;font-size:14px}
+    .memory-island .nearby p{margin:0 0 8px;font-size:14px;font-weight:650;color:#31493f}
+    .memory-island .nearby small{display:block;margin:0 0 12px;color:#667970;font-size:12px}
     .memory-island [hidden]{display:none!important}
     .memory-island .toast{position:absolute;left:50%;top:120px;transform:translateX(-50%);background:#264d43ed;color:#fff;padding:14px 24px;border-radius:28px;text-align:center;max-width:80%;font-size:14px}
     @media(max-width:650px){.memory-island .hud{padding:15px}.memory-island h1{font-size:24px}.memory-island footer{align-items:stretch;flex-direction:column;gap:10px}.memory-island .panel{padding:12px 16px}.memory-island .nearby{bottom:205px}.memory-island button{padding:10px 14px}.memory-island .subtitle{max-width:210px}.memory-island .chapter-picker{right:15px;top:118px;width:245px}}
@@ -54,7 +62,8 @@ export function mountMemoryIsland(options: Options): () => void {
   const assetStatus = get<HTMLElement>('[data-assets]');
   // Art-review mode reveals the source materials without changing chapter progress.
   const forceColorPreview = new URLSearchParams(window.location.search).get('artPreview') === 'color';
-  root.classList.toggle('is-art-preview', forceColorPreview);
+  const polishedPreview = new URLSearchParams(window.location.search).get('islandPreview') === '1';
+  root.classList.toggle('is-art-preview', forceColorPreview || polishedPreview);
   let assetsSettled = 0;
   let assetsFailed = 0;
   const nearbyPanel = get<HTMLElement>('.nearby');
@@ -88,6 +97,7 @@ export function mountMemoryIsland(options: Options): () => void {
   controls.target.set(0, 0, -8);
   const overviewDirection = camera.position.clone().sub(controls.target).normalize();
   const overviewDistance = camera.position.distanceTo(controls.target);
+  let overviewZoomScale = 1;
   controls.enableDamping = true;
   controls.enablePan = false;
   controls.minDistance = 27;
@@ -408,7 +418,32 @@ export function mountMemoryIsland(options: Options): () => void {
     '/island-models/ch05-beach-tent.glb',
     '/island-models/ch06-album-house.glb',
   ];
-  const updateAssetStatus = () => { assetStatus.textContent = `3D 模型 ${assetsSettled}/${modelPaths.length + 5} 已载入${forceColorPreview ? ' · 彩色美术预览' : ''}${assetsFailed ? ` · ${assetsFailed} 个失败` : ''}`; };
+  const chapterFiveCandidate = new URLSearchParams(window.location.search).get('ch05Candidate') === '1';
+  const modelCount = modelPaths.length + (chapterFiveCandidate ? 1 : 0);
+  if (chapterFiveCandidate) modelPaths.push('/island-models-candidates/ch05-tent/ch05-tent-p2-clean.glb');
+  const chapterNames = ['贝壳屋', '辣条包装屋', '江南画室', '粉紫树屋', '海边帐篷', '相册书屋'];
+  const chapterThemes = ['童年的贝壳记忆', '学生时代的辣条记忆', '成年后的画室记忆', '树屋里的成长记忆', '海边露营的记忆', '写进相册的人生记忆'];
+  // Per-asset fitting is intentionally explicit: generated objects have very
+  // different authored proportions, but must not dominate or spill from the
+  // reviewed landmark footprints.
+  //
+  // yaw: all six Tripo GLBs were generated from the same three-view sheet layout
+  // and came out with their entrance facing the model's local +X. The group's
+  // local +Z is the reviewed door/interaction direction, so every model needs
+  // -π/2 to turn +X onto +Z (R_y(-π/2) maps +X to +Z). Measured, not guessed:
+  // `node tools/orient-probe.mjs public/island-models/ch0N-*.glb` renders the
+  // eight 45° compass cells, and all six buildings show their entrance dead-on
+  // in the 270° cell. The earlier Math.PI value left the door on the -X side,
+  // i.e. perpendicular to the interaction point.
+  const buildingPresentation = [
+    { scale: 0.92, width: 7.8, depth: 6.2, height: 5.5, yaw: -Math.PI / 2 },
+    { scale: 0.96, width: 7, depth: 5.6, height: 6.8, yaw: -Math.PI / 2 },
+    { scale: 0.94, width: 7.2, depth: 6.1, height: 6, yaw: -Math.PI / 2 },
+    { scale: 0.92, width: 6.8, depth: 6.1, height: 8, yaw: -Math.PI / 2 },
+    { scale: 0.94, width: 7.6, depth: 6.4, height: 5.2, yaw: -Math.PI / 2 },
+    { scale: 0.92, width: 8.8, depth: 7, height: 8.8, yaw: -Math.PI / 2 },
+  ];
+  const updateAssetStatus = () => { assetStatus.textContent = `3D 模型 ${assetsSettled}/${modelCount + 5} 已载入${forceColorPreview ? ' · 彩色美术预览' : ''}${assetsFailed ? ` · ${assetsFailed} 个失败` : ''}`; };
   const districtMaterials: { id: number; material: THREE.MeshStandardMaterial; color: THREE.Color; gray: THREE.Color }[] = [];
   function districtMaterial(id: number, color: string, gray = '#a4adaa') {
     const material = mat(chapterState(id) === 'completed' && options.justCompleted !== id ? color : gray);
@@ -576,9 +611,11 @@ export function mountMemoryIsland(options: Options): () => void {
   }
   const palette = ['#dcb995', '#91afb0', '#acb999', '#d4afa4', '#b5aac6', '#c5be96'];
   const labels: THREE.Sprite[] = [];
-  for (let i = 0; i < 6; i++) {
-    const id = i + 1;
-    const site = sites[i];
+  for (let i = 0; i < modelPaths.length; i++) {
+    const isCandidate = i >= 6;
+    const buildingIndex = isCandidate ? 4 : i;
+    const id = buildingIndex + 1;
+    const site = sites[buildingIndex];
     const center = new THREE.Vector3(site.x, terrainHeight(site.x, site.z), site.z);
     const group = new THREE.Group(); group.position.copy(center); islandRoot.add(group);
     const height = site.height;
@@ -608,8 +645,9 @@ export function mountMemoryIsland(options: Options): () => void {
       const model = gltf.scene;
       const rawBounds = new THREE.Box3().setFromObject(model);
       const rawSize = rawBounds.getSize(new THREE.Vector3());
-      const targetHeight = height * ([1, 2, 5].includes(id) ? 1.16 : id === 4 || id === 6 ? 1.12 : 1.1);
-      const scale = targetHeight / Math.max(rawSize.y, rawSize.x * 0.55, 0.001);
+      const presentation = buildingPresentation[buildingIndex];
+      const targetHeight = presentation.height * 1.1 * presentation.scale;
+      const scale = targetHeight / Math.max(rawSize.y, 0.001);
       model.scale.setScalar(scale);
       model.updateMatrixWorld(true);
       const bounds = new THREE.Box3().setFromObject(model);
@@ -617,7 +655,15 @@ export function mountMemoryIsland(options: Options): () => void {
       model.position.x -= (bounds.min.x + bounds.max.x) / 2;
       model.position.y -= bounds.min.y;
       model.position.z -= (bounds.min.z + bounds.max.z) / 2;
-      model.rotation.y = Math.PI;
+      model.rotation.y = presentation.yaw;
+      model.updateMatrixWorld(true);
+      const centeredBounds = new THREE.Box3().setFromObject(model);
+      const actualSize = centeredBounds.getSize(new THREE.Vector3());
+      const fitXZ = Math.min(presentation.width / Math.max(actualSize.x, 0.001), presentation.depth / Math.max(actualSize.z, 0.001), 1);
+      const fittedHeight = targetHeight * fitXZ;
+      model.scale.multiplyScalar(fitXZ);
+      model.updateMatrixWorld(true);
+      const fittedSize = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
       model.traverse(object => {
         if (!(object instanceof THREE.Mesh)) return;
         object.castShadow = true;
@@ -656,17 +702,89 @@ export function mountMemoryIsland(options: Options): () => void {
         });
         object.material = Array.isArray(object.material) ? cloned : cloned[0];
       });
-      // The art is already authored facing forward. The half-turn makes the
-      // entrance face the local +Z door interaction point.
+      // presentation.yaw turns the authored entrance (+X) onto the group-local
+      // +Z where the door blockout and its interaction point live.
+      if (isCandidate) {
+        model.traverse(object => { object.userData.ch05Candidate = true; });
+        const tint = new THREE.Color('#e4d3b5');
+        model.traverse(object => {
+          if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) {
+            object.material.color.copy(tint);
+            object.material.roughness = 0.96;
+            object.material.metalness = 0;
+          }
+        });
+      }
       group.add(model);
+      if (isCandidate) {
+        const currentBounds = new THREE.Box3().setFromObject(model);
+        const currentCenter = currentBounds.getCenter(new THREE.Vector3());
+        const targetCenter = group.position.clone().add(new THREE.Vector3(0, 0, -4.2));
+        model.position.x += targetCenter.x - currentCenter.x;
+        model.position.z += targetCenter.z - currentCenter.z;
+        model.position.y += targetCenter.y - currentBounds.min.y;
+        model.updateMatrixWorld(true);
+      }
       walls.visible = roof.visible = door.visible = false;
       group.children.filter(child => child.userData.isBlockout).forEach(child => { child.visible = false; });
-      collisionMeshes.push(model);
+      if (!isCandidate) collisionMeshes.push(model);
       scene.updateMatrixWorld(true);
-      obstacles[obstacles.indexOf(box)].copy(new THREE.Box3().setFromObject(model).expandByScalar(0.42));
-      console.info(`[MemoryIsland] Loaded chapter ${id} Tripo model`, { size: size.toArray(), scale });
+      // A Tripo export keeps its own origin and the reset above drops the base
+      // alignment, so seat the finished model on the real terrain. Measure once
+      // the model is parented, and use the highest terrain sample under the
+      // footprint so a building on a slope never sinks into the hill.
+      const seatedBounds = new THREE.Box3().setFromObject(model);
+      const halfSampleX = fittedSize.x / 2 * 0.9, halfSampleZ = fittedSize.z / 2 * 0.9;
+      const footprintGround: number[] = [];
+      for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) {
+        footprintGround.push(terrainHeight(site.x + sx * halfSampleX / mapScaleX, site.z + sz * halfSampleZ));
+      }
+      const baseGround = Math.max(...footprintGround);
+      model.position.y += baseGround - seatedBounds.min.y;
+      model.updateMatrixWorld(true);
+      // Movement collision is a conservative ground footprint, not the full
+      // canopy/roof/overhang bounds: keep the approach point and walk-around clear.
+      if (!isCandidate) {
+        const footprint = obstacles[obstacles.indexOf(box)];
+        const halfW = Math.min(site.width * mapScaleX, fittedSize.x * mapScaleX) / 2 + 0.42;
+        const halfD = Math.min(site.depth, fittedSize.z) / 2 + 0.42;
+        footprint.min.set(center.x * mapScaleX - halfW, -Infinity, center.z - halfD);
+        footprint.max.set(center.x * mapScaleX + halfW, Infinity, center.z + halfD);
+      }
+      const worldBounds = new THREE.Box3().setFromObject(model);
+      const materialSummary: string[] = [];
+      model.traverse(object => {
+        const mesh = object as unknown as { isMesh?: boolean; material?: THREE.Material | THREE.Material[] };
+        if (!mesh.isMesh) return;
+        const list = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+        for (const entry of list) materialSummary.push(`${entry.type}${(entry as THREE.MeshStandardMaterial).map ? '+map' : ''}`);
+      });
+      console.info(`[MemoryIsland] Loaded chapter ${id}${isCandidate ? ' candidate' : ''} Tripo model`, {
+        rawSize: size.toArray(), fittedSize: fittedSize.toArray(), targetHeight: fittedHeight, scale, fitXZ,
+        siteGround: Number(center.y.toFixed(3)),
+        baseGround: Number(baseGround.toFixed(3)),
+        worldMinY: Number(worldBounds.min.y.toFixed(3)),
+        worldMaxY: Number(worldBounds.max.y.toFixed(3)),
+        materialSummary,
+        footprintGround: footprintGround.map(value => Number(value.toFixed(2))),
+      });
       assetsSettled++; updateAssetStatus();
     }, undefined, error => { assetsSettled++; assetsFailed++; updateAssetStatus(); console.error(`[MemoryIsland] Could not load chapter ${id} model`, error); });
+    if (isCandidate) {
+      group.visible = false;
+      const candidateToggle = document.createElement('button');
+      candidateToggle.type = 'button';
+      candidateToggle.textContent = 'CH05 候选';
+      candidateToggle.style.cssText = 'position:fixed;left:28px;top:205px;z-index:2;pointer-events:auto;display:none';
+      if (chapterFiveCandidate) {
+        get('.hud').append(candidateToggle);
+        candidateToggle.addEventListener('click', () => { group.visible = !group.visible; candidateToggle.textContent = group.visible ? '隐藏候选' : '显示候选'; }, { signal });
+        const previewCandidate = new URLSearchParams(window.location.search).get('ch05Show') === '1';
+        group.visible = previewCandidate;
+        candidateToggle.textContent = previewCandidate ? '隐藏候选' : '显示候选';
+        candidateToggle.style.display = 'block';
+      }
+    }
     const doorLocal = center.clone().addScaledVector(toCenter, site.depth / 2 + 1.5);
     const doorPosition = new THREE.Vector3(doorLocal.x * mapScaleX, doorLocal.y, doorLocal.z);
     scene.updateMatrixWorld(true);
@@ -678,12 +796,14 @@ export function mountMemoryIsland(options: Options): () => void {
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#f4f6edde'; ctx.beginPath(); ctx.roundRect(0, 0, 640, 160, 35); ctx.fill();
     ctx.textAlign = 'center'; ctx.fillStyle = '#2f4b43'; ctx.font = 'bold 40px sans-serif';
-    ctx.fillText(`${String(id).padStart(2, '0')}  ${['童年', '学生时代', '人生阶段三', '人生阶段四', '人生阶段五', '人生阶段六'][i]}`, 320, 65);
+    ctx.fillText(`${String(id).padStart(2, '0')}  ${chapterNames[i]}`, 320, 65);
     ctx.font = '29px sans-serif';
-    ctx.fillText(completed ? '记忆已点亮' : chapterState(id) === 'available' ? '下一段旅程' : '记忆尚未解锁', 320, 118);
+    ctx.fillText(completed ? '记忆已点亮' : chapterState(id) === 'available' ? chapterThemes[i] : '等待前一段记忆', 320, 118);
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
     const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
-    label.position.copy(center).add(new THREE.Vector3(0, height + 2.8, 0)); label.scale.set(6.4 / mapScaleX, 1.6, 1); islandRoot.add(label); labels.push(label);
+    if (!isCandidate) {
+      label.position.copy(center).add(new THREE.Vector3(0, height + 2.8, 0)); label.scale.set(6.4 / mapScaleX, 1.6, 1); islandRoot.add(label); labels.push(label);
+    }
   }
   // Six concept buildings are the focal points; keep the gray blockout homes
   // out of this review scene so they do not mask the generated assets.
@@ -796,12 +916,29 @@ export function mountMemoryIsland(options: Options): () => void {
     const model = gltf.scene;
     const bounds = new THREE.Box3().setFromObject(model);
     const size = bounds.getSize(new THREE.Vector3());
+    // Scale by authored height only: using width/depth as competing denominators
+    // shrinks unusually slender poses and made the feet look detached from terrain.
     model.scale.setScalar(2.05 / Math.max(size.y, size.x * 0.9, size.z * 0.9, 0.001));
     model.updateMatrixWorld(true);
     const scaledBounds = new THREE.Box3().setFromObject(model);
+    // Align the model's actual lowest vertex to the player's ground anchor. The
+    // source GLB may have a non-zero origin and the animated rig can bob above it.
     model.position.set(-(scaledBounds.min.x + scaledBounds.max.x) / 2, -scaledBounds.min.y, -(scaledBounds.min.z + scaledBounds.max.z) / 2);
-    model.rotation.y = Math.PI;
+    model.rotation.y = -Math.PI / 2;
+    // 作者朝向是 +X（与六栋建筑同一套 Tripo 流程）：`player.rotation.y` 已把
+    // 「移动方向」写成组本地 +Z，所以模型只需再转 -π/2 把 +X 摆到 +Z。
+    // 原来的 π 让角色始终侧身横走：探针罗盘在 270° 格看得到正脸，
+    // 岛内按 W/S 实走时却只看到左右侧脸，两者结合才能定下来。
+    // Preserve this bind-pose offset. Animation clips may animate root nodes, so
+    // per-frame corrections must be measured against the original ground anchor.
+    model.updateMatrixWorld(true);
+    const groundedBounds = new THREE.Box3().setFromObject(model);
+    const modelGroundOffset = -groundedBounds.min.y;
+    model.position.y += modelGroundOffset;
+    model.userData.groundOffset = modelGroundOffset;
+    model.updateMatrixWorld(true);
     model.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } });
+    model.userData.isHanMeimeiModel = true;
     player.add(model);
     characterMixer = new THREE.AnimationMixer(model);
     pendingCharacterClips.forEach((clip, name) => registerCharacterClip(name, clip));
@@ -821,7 +958,11 @@ export function mountMemoryIsland(options: Options): () => void {
     }, undefined, error => { assetsSettled++; assetsFailed++; updateAssetStatus(); console.error(`[MemoryIsland] Could not load ${name} animation`, error); });
   }
   let mode: 'overview' | 'explore' = 'overview';
+  // Temporary review hook: ?focusChapter=N frames one landmark so each Tripo
+  // asset can be inspected up close instead of judged from the whole-island view.
+  const focusChapter = Number(new URLSearchParams(window.location.search).get('focusChapter'));
   let yaw = 0, pitch = 0.24;
+  let cameraDistance = 5.6;
   let nearby: Building | undefined;
   let toastUntil = 0;
   let elapsed = 0;
@@ -864,8 +1005,7 @@ export function mountMemoryIsland(options: Options): () => void {
     }, { signal });
     chapterList.append(button);
   }
-  function setMode(next: typeof mode) {
-    keys.clear();
+  function setMode(next: typeof mode) {    keys.clear();
     (document.activeElement as HTMLElement | null)?.blur();
     if (next === 'explore') {
       overviewPosition.copy(camera.position); overviewTarget.copy(controls.target);
@@ -923,28 +1063,45 @@ export function mountMemoryIsland(options: Options): () => void {
   }, { signal });
   renderer.domElement.addEventListener('pointermove', event => {
     if (mode !== 'explore' || dragging !== event.pointerId) return;
-    yaw -= (event.clientX - lastX) * 0.005;
-    pitch = THREE.MathUtils.clamp(pitch + (event.clientY - lastY) * 0.004, -0.08, 0.8);
+    const deltaX = event.clientX - lastX, deltaY = event.clientY - lastY;
+    yaw -= deltaX * 0.005;
+    pitch = THREE.MathUtils.clamp(pitch + deltaY * 0.004, -0.08, 0.8);
     lastX = event.clientX; lastY = event.clientY;
   }, { signal });
   renderer.domElement.addEventListener('lostpointercapture', () => { dragging = undefined; }, { signal });
   renderer.domElement.addEventListener('pointerup', () => { dragging = undefined; }, { signal });
   const allowed = (worldX: number, z: number) => {
     const x = worldX / mapScaleX;
-    return Math.hypot(x, z) < coastlineRadius(Math.atan2(x, z)) - 0.8
-      && !obstacles.some(box => worldX > box.min.x && worldX < box.max.x && z > box.min.z && z < box.max.z);
+    const insideIsland = Math.hypot(x, z) < coastlineRadius(Math.atan2(x, z)) - 0.8;
+    if (!insideIsland) return false;
+    const insideBridge = bridgeLevels.some(bridge => {
+      const dx = x - bridge.x, dz = z - bridge.z;
+      const localX = dx * Math.cos(bridge.yaw) - dz * Math.sin(bridge.yaw);
+      const localZ = dx * Math.sin(bridge.yaw) + dz * Math.cos(bridge.yaw);
+      return Math.abs(localX) <= 1.1 && Math.abs(localZ) <= 2.55;
+    });
+    return insideBridge || !obstacles.some(box => worldX > box.min.x && worldX < box.max.x && z > box.min.z && z < box.max.z);
   };
   function updateCamera(blend: number) {
     focus.copy(player.position).add(new THREE.Vector3(0, 1.55, 0));
-    desired.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(5.6).add(focus);
-    direction.copy(desired).sub(focus).normalize(); ray.set(focus, direction); ray.far = 5.6;
+    desired.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(cameraDistance).add(focus);
+    direction.copy(desired).sub(focus).normalize(); ray.set(focus, direction); ray.far = cameraDistance;
     const hit = ray.intersectObjects(collisionMeshes, true)[0];
-    if (hit) desired.copy(focus).addScaledVector(direction, Math.max(0.45, hit.distance - 0.3));
+    if (hit) desired.copy(focus).addScaledVector(direction, Math.max(0.45, hit.distance - 0.55));
     desired.y = Math.max(desired.y, 0.35);
     camera.position.lerp(desired, blend);
     followFocus.lerp(focus, blend);
     camera.lookAt(followFocus);
   }
+  renderer.domElement.addEventListener('wheel', event => {
+    if (mode !== 'overview') return;
+    event.preventDefault();
+    overviewZoomScale = THREE.MathUtils.clamp(overviewZoomScale * Math.exp(event.deltaY * 0.001), 0.65, 2.4);
+    const portraitScale = camera.aspect < 1.15 ? 1 + 1.36 * (1 - camera.aspect) : 1;
+    camera.position.copy(controls.target).addScaledVector(overviewDirection, overviewDistance * portraitScale * overviewZoomScale);
+    controls.update();
+    overviewPosition.copy(camera.position); overviewTarget.copy(controls.target);
+  }, { signal, passive: false });
   get('[data-progress]').textContent = `${completedChapters().length} / 6 段记忆已点亮 · 灰色建筑等待找回`;
   setMode('overview');
   if (options.justCompleted) {
@@ -963,7 +1120,13 @@ export function mountMemoryIsland(options: Options): () => void {
     if (!overviewFramed) {
       const portraitScale = camera.aspect < 1.15 ? 1 + 1.36 * (1 - camera.aspect) : 1;
       controls.target.set(0, 0, -8);
-      camera.position.copy(controls.target).addScaledVector(overviewDirection, overviewDistance * portraitScale);
+      camera.position.copy(controls.target).addScaledVector(overviewDirection, overviewDistance * portraitScale * overviewZoomScale);
+      if (Number.isInteger(focusChapter) && focusChapter >= 1 && focusChapter <= 6) {
+        const site = sites[focusChapter - 1];
+        controls.target.set(site.x * mapScaleX, site.height * 0.45, site.z);
+        camera.position.copy(controls.target).add(new THREE.Vector3(9, 7.5, 11));
+        controls.update();
+      }
       controls.update();
       overviewPosition.copy(camera.position); overviewTarget.copy(controls.target);
       overviewFramed = true;
@@ -975,6 +1138,25 @@ export function mountMemoryIsland(options: Options): () => void {
     if (disposed) return;
     const dt = Math.min((now - last) / 1000, 0.05); last = now; elapsed += dt;
     characterMixer?.update(dt);
+    if (characterMixer) {
+      // Imported clips can animate the rig root vertically. Restore its bind-pose
+      // ground offset after each mixer tick so feet remain planted on the terrain.
+      const model = player.children.find(child => child.userData.isHanMeimeiModel);
+      if (model) {
+        player.updateMatrixWorld(true);
+        model.position.y = Number(model.userData.groundOffset ?? 0);
+        model.updateMatrixWorld(true);
+        const bounds = new THREE.Box3().setFromObject(model);
+        const feetY = bounds.min.y;
+        const terrainY = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight);
+        const feetError = terrainY - feetY;
+        // Apply one absolute correction to the stored bind-pose offset. Do not
+        // integrate corrections frame-to-frame; that would accumulate drift.
+        const correction = THREE.MathUtils.clamp(feetError, -0.08, 0.08);
+        model.position.y = Number(model.userData.groundOffset ?? 0) + correction;
+        if (Math.abs(feetError) > 0.08) player.position.y += feetError - correction;
+      }
+    }
     if (jumpPlaying && elapsed >= jumpUntil) {
       jumpPlaying = false;
       setCharacterMotion(characterMotion);
@@ -999,12 +1181,19 @@ export function mountMemoryIsland(options: Options): () => void {
       }
       legs.forEach((leg, index) => { leg.rotation.x = length ? Math.sin(elapsed * 11 + index * Math.PI) * 0.5 : 0; });
       // Dampen both camera position and aim so the third-person view trails the player smoothly.
-      updateCamera(1 - Math.exp(-8 * dt));
+      cameraDistance = Math.min(9.5, cameraDistance + dt * 0.65);
+      updateCamera(1 - Math.exp(-5 * dt));
       nearby = buildings.find(b => b.door.distanceTo(player.position) < 2.8);
       nearbyPanel.hidden = !nearby;
       if (nearby) {
         const state = chapterState(nearby.id);
-        nearbyPanel.querySelector('p')!.textContent = `第 ${nearby.id} 段记忆 · ${state === 'completed' ? '已点亮' : state === 'available' ? '等待探索' : '尚未解锁'}`;
+        const name = chapterNames[nearby.id - 1];
+        nearbyPanel.querySelector('p')!.textContent = `${name} · ${state === 'completed' ? '记忆已点亮' : state === 'available' ? '新的记忆在等你' : '尚未解锁'}`;
+        const oldDetail = nearbyPanel.querySelector('small');
+        if (oldDetail) oldDetail.remove();
+        const detail = document.createElement('small');
+        detail.textContent = chapterThemes[nearby.id - 1];
+        nearbyPanel.querySelector('p')!.after(detail);
         interactButton.textContent = state === 'locked'
           ? '查看解锁条件'
           : nearby.id === 1
