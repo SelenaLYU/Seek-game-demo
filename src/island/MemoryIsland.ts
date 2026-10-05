@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { chapterState, completedChapters } from './Progress';
 import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
 
@@ -395,6 +396,9 @@ export function mountMemoryIsland(options: Options): () => void {
   const obstacles: THREE.Box3[] = [];
   const modelGrayUniforms: { id: number; uniform: { value: number } }[] = [];
   const gltfLoader = new GLTFLoader();
+  // 岛上的 glb 经 tools/optimize-island-models.mjs 用 meshopt 压过（46.7MB → 4.0MB）。
+  // 不挂这个解码器，所有模型都会静默加载失败，岛上只剩灰盒方块。
+  gltfLoader.setMeshoptDecoder(MeshoptDecoder);
   const modelPaths = [
     '/island-models/ch01-shell-house.glb',
     '/island-models/ch02-snack-shop.glb',
