@@ -38,13 +38,6 @@ const SWINGS: SwingHazard[] = [
   { x: 930, y: 492, length: 112, phase: 1.7, label: '甩动竹竿' },
 ];
 
-/**
- * 世界空间路线提示的 depth。
- * 遮挡素材在 depth 16，会把提示文字整个吃掉（2026-10-05 实测：`↓ 落下后向左走` 被 c04 二层柱影盖住
- * 26px、`↓ 到底层后向右走` 被 c07 底层柱廊盖住 90px）。提示必须在遮挡之上、老师（18）与 HUD（200+）之下。
- */
-const ROUTE_HINT_DEPTH = 17;
-
 /** 光束 depth：高于所有世界层（含摆动 19、钞票 20–22），低于 HUD（200+）。 */
 const LIGHT_DEPTH = 30;
 
@@ -173,7 +166,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       this.addHurdle(1540, 865, 62, '摊位架'),
       this.addHurdle(2350, 910, 66, '修路栏'),
       this.addHurdle(3180, 950, 60, '街口木架'),
-      this.addWall(1682, 448, 38, 286, '此路封住 · 向左'),
+      this.addWall(1682, 0, 38, 734, '此路封住 · 向左'),
     ];
     this.drawCovers();
 
@@ -191,6 +184,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       .setOrigin(.5, 0).setDisplaySize(a.width, a.height).setDepth(19));
     this.createTeacher();
     this.hudGraphics = this.add.graphics().setDepth(200);
+    // 起点标题是世界物件，像老师一样随相机移出，不跟随 HUD。
     this.title = this.add.text(145, 24, '第二关 · 骑楼街逃课', {
       fontFamily: 'sans-serif', fontSize: '19px', color: '#253631',
       backgroundColor: 'rgba(247,241,220,.9)', padding: { x: 12, y: 8 },
@@ -198,11 +192,11 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.status = this.add.text(18, 474, '先向右逃。灯光从身后扫来时，马上松开方向键站定。', {
       fontFamily: 'sans-serif', fontSize: '14px', color: '#f4edda',
       backgroundColor: 'rgba(20,31,29,.9)', padding: { x: 11, y: 8 },
-    }).setOrigin(0).setDepth(201);
+    }).setOrigin(0).setDepth(201).setVisible(false);
     this.checkpointText = this.add.text(18, 514, '路线 · 第一层向右 →', {
       fontFamily: 'sans-serif', fontSize: '11px', color: '#40524c',
       backgroundColor: 'rgba(235,235,218,.82)', padding: { x: 8, y: 5 },
-    }).setOrigin(0, 1).setDepth(201);
+    }).setOrigin(0, 1).setDepth(201).setVisible(false);
     this.alertLabel = this.add.text(0, 0, '警觉 0%', {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#f4ead0',
     }).setOrigin(0, .5).setDepth(201);
@@ -228,8 +222,6 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
 
   private drawQilouStreet(): void {
     this.add.image(0, 0, 'night-background').setOrigin(0, 0).setDepth(-30);
-    this.add.text(1370, 515, '↓ 落下后向左走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(ROUTE_HINT_DEPTH);
-    this.add.text(455, 730, '↓ 到底层后向右走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(ROUTE_HINT_DEPTH);
   }
 
   private addStreetPlatform(x: number, y: number, width: number, height: number): void {
@@ -251,7 +243,9 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private addWall(x: number, y: number, width: number, height: number, _label: string): Phaser.GameObjects.Rectangle {
     const wall = this.add.rectangle(x, y, width, height, 0xffffff, 0).setOrigin(.5, 0);
     this.physics.add.existing(wall, true);
-    this.add.image(x, y, 'night-w01').setOrigin(.5, 0).setDepth(11);
+    // 视觉仍按 night-w01 原始几何绘制；不可绕过的全高碰撞墙与贴图尺寸分离。
+    this.add.image(NIGHT.wall.x, NIGHT.wall.y, 'night-w01')
+      .setOrigin(.5, 0).setDisplaySize(NIGHT.wall.width, NIGHT.wall.height).setDepth(11);
     return wall;
   }
 
@@ -287,7 +281,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     debug.lineStyle(1,0x65f4c2,.95);
     for (const p of NIGHT.platforms) debug.strokeRect(p.x,p.y,p.width,p.height);
     for (const h of NIGHT.hurdles) debug.strokeRect(h.body.x,h.body.y,h.body.width,h.body.height);
-    debug.strokeRect(1663,448,38,286);
+    debug.strokeRect(1663,0,38,734);
     debug.lineStyle(1,0xe0b75d,.8);
     for(const c of NIGHT.covers) debug.strokeRect(c.zone.from,c.zone.minY,c.zone.to-c.zone.from,c.zone.maxY-c.zone.minY);
     const btn=document.createElement('button');btn.textContent='显示碰撞框';btn.onclick=()=>{debug.setVisible(!debug.visible);btn.textContent=debug.visible?'隐藏碰撞框':'显示碰撞框';};panel.append(btn);
@@ -499,7 +493,6 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     // worldView 随窗口比例变化（applyHDCamera 用 cover 模式，宽度 = 540 × 宽高比），
     // 所以 HUD 必须贴 view 的四条边定位，不能写死 960×540 的绝对坐标。
     const view = this.cameras.main.worldView;
-    this.title.setPosition(view.x + 145, view.y + 24);
     this.status.setPosition(view.x + 18, view.y + view.height - 66);
     this.checkpointText.setPosition(view.x + 18, view.y + view.height - 8);
     const x = view.x + view.width - 36 - 278;

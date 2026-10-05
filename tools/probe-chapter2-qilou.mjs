@@ -12,7 +12,7 @@
  * 覆盖五段（每段给出阈值，超阈值即 FAIL 并以退出码 1 结束）：
  *   A. 美术真源对齐 —— 35 张纹理的坐标/原点/显示尺寸与 geometry.json 逐项比对
  *   B. 遮挡可用性   —— 十处遮挡区内躲灯必须不涨警觉（并跑一处空地对照片）
- *   C. 可读性       —— 世界空间提示不得被遮挡素材压住；重要文字 depth 顺序正确
+ *   C. 可读性       —— 不额外叠箭头文字/底部状态条，标题固定在起点；剩余文字无 depth 遮挡
  *   D. 关卡可玩性   —— 跳跃净高能过最高障碍、每个障碍站在平台上、下落口宽度达标
  *   E. 检查点       —— 四个检查点传送后能站稳，并按顺序激活
  *
@@ -294,7 +294,7 @@ raw.controls = controlProblems;
 record('B2. 空地对照组确实会被灯抓到（证明 B1 不是假绿）', controlProblems.length === 0,
   controlProblems.length ? controlProblems.join(' | ') : `八层对照点在满帧窗口内都涨过 ${THRESHOLD.controlExposureMs}ms`);
 
-/** C 段：可读性 —— 世界空间文字不得被遮挡素材压住 */
+/** C 段：可读性 —— 路线靠场景构图，不叠箭头与底栏；起点标题固定在世界坐标 */
 const readability = await page.evaluate(() => {
   const scene = window.__game.scene.getScene('chapter2');
   const texts = scene.children.list.filter(o => o.type === 'Text' && o.depth < 200)
@@ -308,10 +308,21 @@ const readability = await page.evaluate(() => {
       if (hit && c.depth > t.depth) occluded.push({ text: t.text, depth: t.depth, cover: c.key, coverDepth: c.depth });
     }
   }
-  return { texts: texts.length, occluded, hintDepth: Math.max(...texts.filter(t => t.text.startsWith('↓')).map(t => t.depth), 0) };
+  return {
+    texts: texts.length,
+    occluded,
+    routeHints: texts.filter(t => t.text.startsWith('↓')).map(t => t.text),
+    statusVisible: scene.status.visible,
+    checkpointVisible: scene.checkpointText.visible,
+    title: { x: scene.title.x, y: scene.title.y, visible: scene.title.visible },
+  };
 });
 raw.readability = readability;
-record('C1. 世界空间提示不被遮挡素材压住', readability.occluded.length === 0,
+const guidanceOk = readability.routeHints.length === 0 && !readability.statusVisible && !readability.checkpointVisible;
+const titleOk = readability.title.visible && readability.title.x === 145 && readability.title.y === 24;
+record('C1. 关卡无箭头/底栏提示，标题只留在起点', guidanceOk && titleOk,
+  `箭头 ${readability.routeHints.length} 条 · status ${readability.statusVisible} · checkpoint ${readability.checkpointVisible} · title (${readability.title.x},${readability.title.y})`);
+record('C2. 起点标题不被遮挡素材盖住', readability.occluded.length === 0,
   readability.occluded.length
     ? readability.occluded.map(o => `「${o.text}」depth ${o.depth} < ${o.cover} ${o.coverDepth}`).join(' | ')
     : `${readability.texts} 条世界空间文字无 depth 冲突`);
@@ -348,8 +359,8 @@ const unsettled = checkpointResults.filter(r => !r.landed);
 record('E1. 四个检查点传送后都能站稳', unsettled.length <= THRESHOLD.checkpointFailures,
   unsettled.length ? unsettled.map(r => `${r.label} 没站稳 y=${r.y}`).join(' | ') : '4/4 落在该层走道面上');
 
-/** 截图：夹住 B 段修过的那两处提示 */
-for (const [name, x, y] of [['hint-upper', 1450, 515], ['hint-lower', 520, 745], ['cover-c09', 2110, 900]]) {
+/** 截图：记录两处路线转折构图与第三层遮挡 */
+for (const [name, x, y] of [['upper-route', 1450, 515], ['lower-route', 520, 745], ['cover-c09', 2110, 900]]) {
   await page.evaluate(([x, y]) => {
     const scene = window.__game.scene.getScene('chapter2');
     scene.restarting = false; scene.leaving = false;

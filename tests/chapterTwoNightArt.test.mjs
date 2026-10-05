@@ -153,16 +153,19 @@ test('白昼骑楼不得回流（已裁定的作废素材不能被重新接线�
   assert.equal(existsSync(p('src/gameplay/chapterTwoArt.ts')), false, 'src/gameplay/chapterTwoArt.ts 应该已经删除');
 });
 
-test('世界空间路线提示画在遮挡素材之上（否则会被柱子/雨棚吃掉）', () => {
+test('路线靠关卡引导：无箭头文字、底部提示隐藏、标题留在起点', () => {
   const scene = readFileSync(at('src/scenes/ChapterTwoChallengeScene.ts'), 'utf8');
-  const hintDepth = Number(scene.match(/const ROUTE_HINT_DEPTH = (\d+)/)?.[1]);
-  assert.ok(Number.isFinite(hintDepth), '场景里找不到 ROUTE_HINT_DEPTH');
-  const coverDepth = Number(scene.match(/for \(const a of NIGHT\.covers\)[\s\S]{0,200}?setDepth\((\d+)\)/)?.[1]);
-  const teacherDepth = Number(scene.match(/'night-teacher'\)[\s\S]{0,200}?setDepth\((\d+)\)/)?.[1]);
-  assert.ok(Number.isFinite(coverDepth) && Number.isFinite(teacherDepth), '解析遮挡/老师 depth 失败');
+  assert.doesNotMatch(scene, /落下后向左走|到底层后向右走|this\.title\.setPosition/);
+  assert.match(scene, /this\.status = [\s\S]*?setVisible\(false\)/);
+  assert.match(scene, /this\.checkpointText = [\s\S]*?setVisible\(false\)/);
+});
 
-  assert.ok(hintDepth > coverDepth, `路线提示 depth ${hintDepth} 必须高于遮挡素材 ${coverDepth}，否则被压住`);
-  assert.ok(hintDepth < teacherDepth, `路线提示 depth ${hintDepth} 应低于老师 ${teacherDepth}`);
-  const hintsInDraw = (scene.match(/ROUTE_HINT_DEPTH/g) ?? []).length;
-  assert.equal(hintsInDraw, 3, `ROUTE_HINT_DEPTH 应出现 3 次（1 处定义 + 2 条提示），实际 ${hintsInDraw}`);
+test('二层封墙碰撞直达世界顶边，贴图仍按原始几何显示，不能向右跳过', () => {
+  const scene = readFileSync(at('src/scenes/ChapterTwoChallengeScene.ts'), 'utf8');
+  assert.equal(geo.wall.y, 448);
+  assert.equal(geo.wall.height, 286);
+  assert.match(scene, /this\.addWall\(1682, 0, 38, 734,/);
+  assert.match(scene, /'night-w01'[\s\S]*?setDisplaySize\(NIGHT\.wall\.width, NIGHT\.wall\.height\)/);
+  // 第一层地面440，跳跃峰高630²/(2*1100)≈180；墙的碰撞顶部0低于可达范围。
+  assert.ok(440 - 630 ** 2 / (2 * 1100) > 0);
 });

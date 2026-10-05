@@ -9,8 +9,8 @@
 ## 1. 仓库与分支
 
 - repo：`https://github.com/SelenaLYU/Seek-game-demo`（private）；我的身份 `gxinxing`，权限 push + triage（无 admin）。
-- `origin/main` = `0f3c916`（PR #11：第二关记忆之房后半段灰盒 + 后续灰盒至此版结尾）。
-- 我的工作分支：`codex/level1-progress-music`（第一关 + UI/工程）。当前本地领先 `origin/codex/level1-progress-music` 1 个提交（`a5849e8` 四条体验遗留修复），**未推送**；PR 仍是 [#18](https://github.com/SelenaLYU/Seek-game-demo/pull/18)（open）。推送前先 `git fetch` 再看 `git status -sb`。
+- `origin/main` = `f3c90b4`（截至 2026-10-05 fetch；含第二关记忆之房后半段灰盒、岛屿等整合更新）。
+- 当前骑楼工作分支：`codex/level1-progress-music`（第一关 + UI/工程），本批提交基于 `139596f`；推送后该分支相对 `origin/main` 落后 7、领先 11 个提交。PR #18 已合并，本批变更是新的提交，不属于 PR #18；推送后需另开 PR / review。先 `git fetch` 再看 `git status -sb`，不要 force push。
 - 同日并行会话在做第二关美术 / 第三关灰盒与**李雷童年 3D 建模**（`assets/characters/lilei/tripo-out/`、`tools/*chapter2*` 等未跟踪文件归它）；改动前先看 `git status`，别把对方的在改文件带进提交。
 - 只读参考分支：`origin/ART`（**白昼**骑楼美术，2026-10-05 已废弃，见 `decisions/2026-10-05-qilou-art-night-only.md`）、`origin/island-prototype`、`origin/story-design`。**不要直接 merge `ART`**：它基于很旧的代码，会删掉近万行；只能挑文件。
 
@@ -50,7 +50,7 @@
 
 ## 4. 第二关（Selena 那一侧）现状
 
-验收记录（2026-10-05，骑楼美术定源后的可回归防线 + 一处可读性缺陷）：新增 `tools/probe-chapter2-qilou.mjs`，**10/10 通过**（A1 35 张贴图逐项对齐 `geometry.json`；B1 十处遮挡区内躲灯 maxExposure ≤1ms；B2 空地对照组被灯抓到——防 B1 假绿；C1 世界空间提示无 depth 冲突；D1/D2 跳跃净高 180 vs 66、滞空横移 258 vs 26；D3 九障碍都在平台上；D4 下落口 103px；E1 四检查点都落在该层走道面；F1 0 console error）。有牙验证：把场景 `inCover` 改成 `false` 后 B1 十处全 FAIL（433–950ms），还原后 10/10。同时修掉一个实测缺陷：两条世界空间路线提示 depth 10 < 遮挡素材 16，`↓ 到底层后向右走` 被 c07 底层柱廊盖住 90px、`↓ 落下后向左走` 被 c04 二层柱影盖住 26px，已提到 `ROUTE_HINT_DEPTH = 17`（低于老师 18 与 HUD 200），并加测试守住。`npm test` 61/61、`npm run build` 通过。
+验收记录（2026-10-05，骑楼修正）：路线现在靠场景构图，不叠箭头文字；底部 status/checkpoint 文案隐藏，章节标题固定在起点世界坐标。封墙碰撞从世界顶边延伸至 y=734，避免跳过二层折返；墙贴图仍按 `geometry.json` / `ChapterTwoNightArt.ts` 原始 38×286 几何绘制，视觉与全高碰撞体分离。修复长街 p09 与背景亮檐之间的暗缝：`tools/fix-chapter2-p09-coping.py` 将 p09 顶部两行从同坐标背景亮檐取样重建，PNG 保留、WebP 同步；`--check` 通过。此前 ROUTE_HINT_DEPTH=17 的文字提示已由本次无箭头方案取代。当前探针 `tools/probe-chapter2-qilou.mjs` **11/11 通过**（A1 35 张贴图对齐 geometry；B1/B2 遮挡与空地对照；C1 无箭头/底栏、起点标题固定；C2 无文字遮挡；D1–D4 可玩性；E1 四检查点；F1 0 console error）；`npm test` 71/71，`npm run build` 通过。
 
 PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、瓶盖一盘一笔画、六幕可点击分镜、回岛点亮第二段、岛屿章节列表 1–3、第三关入口提示「未完待续」+ 选项查看**第三关站位预告**（3 秒灰盒，可跳过，自动回岛）。
 
@@ -90,13 +90,13 @@ PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、
 
 ```bash
 bash dev.sh                 # 本地起（绕开 WorkBuddy 的 HMR shim；直接 npm run dev 可能 500）
-npm test                    # = node --test tests/*.test.mjs（当前 47 项）
+npm test                    # = node --test tests/*.test.mjs（当前 71 项）
 npm run build               # tsc --noEmit + vite build
 ```
 
 - 调试入口：`?scene=forest` / `?scene=room` / `?scene=island` / `?scene=chapter2` / `?scene=chapter2-room` / `?scene=chapter2-memory` / `?scene=chapter3-preview`。
 - 美术改动后跑一次 `/usr/bin/python3 tools/optimize-images.py`（PNG 保留，生成同名 WebP）；只体检用 `--check`（缺 WebP 或 WebP 比 PNG 旧就退出码 1）。
-- 第二关骑楼（贴图对齐／遮挡可用／提示可读性／可玩性／检查点）用 `node tools/probe-chapter2-qilou.mjs` 量（`ORIGIN=http://localhost:5179` 指定端口；`--json` 出原始数据；截图写 `screenshots/chapter2-qilou/`；任一条不达标退出码 1）。**当前 10 条全过**。它记了三个坑：采样不能放在自写的 rAF 循环里 await（headless 下 180ms 只有 1–3 帧游戏帧，会读到「角色还没起步」→ 十处遮挡全假绿），要按游戏帧数而非墙钟等待；落地判定要轮询（掉帧时 500ms 重力只推进一两帧）；位移别靠键盘投递，用 `preupdate` 里的小幅摆动制造 `moved` 判定。改探针前先看文件头。
+- 第二关骑楼（贴图对齐／遮挡可用／提示克制／可玩性／检查点）用 `node tools/probe-chapter2-qilou.mjs` 量（`ORIGIN=http://localhost:5179` 指定端口；`--json` 出原始数据；截图写 `screenshots/chapter2-qilou/`；任一条不达标退出码 1）。**当前 11 条全过**。它记了三个坑：采样不能放在自写的 rAF 循环里 await（headless 下 180ms 只有 1–3 帧游戏帧，会读到「角色还没起步」→ 十处遮挡全假绿），要按游戏帧数而非墙钟等待；落地判定要轮询（掉帧时 500ms 重力只推进一两帧）；位移别靠键盘投递，用 `preupdate` 里的小幅摆动制造 `moved` 判定。改探针前先看文件头。
 - 加载改动用 `node tools/probe-load-perf.mjs` 验收（`ORIGIN=http://localhost:4173` 量生产包）。
 - 第一关体验（石门裁切／礁石隐形墙／抓放海鸥突跳／触屏适配）用 `node tools/probe-level1-experience.mjs` 量，改前改后各跑一次看数字（`--json` 出原始数据；截图写 `screenshots/level1-experience/`；任一阈值超标退出码 1）。**当前 12 项全过**（A 门裁剪 · B 礁柱 · C1 抓取突跳 / C2 收身补间 / C3 收身整体 / D1–D7 触屏）。当年基线是 8 项，后来拆成 C1/C2/C3 并补了 D5–D7，所以「基线 1/8」与「现在 12/12」不是同一张表，数字对照要按同一版脚本跑。它的探针里记了两个坑：手动步进不推进 tween（量松手补间必须走真实 rAF），以及 sf0 层位置被 `screenSpaceOrigin` 补偿但**尺寸仍被 zoom 放大**（触屏判定要在放大后的缓冲像素里比边界）。测「角色在哪」不能用 `sprite.getBounds()`（含透明边的帧矩形，换帧会被读成位移），要按当前帧 alpha>128 内容中心算（脚本里 `installOpaqueCenter`）。
 - 测试里 `import` 相对模块需要带 `.ts` 后缀（node 直跑 ESM），`tsconfig` 已开 `allowImportingTsExtensions`。
