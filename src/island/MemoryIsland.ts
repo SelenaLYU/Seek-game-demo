@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { chapterState, completedChapters } from './Progress';
 import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
+import { characterGroundHeight } from './grounding';
 
 type Options = { justCompleted?: number; completionSaved?: boolean; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
@@ -96,6 +97,7 @@ export function mountMemoryIsland(options: Options): () => void {
     + 1.7 * Math.sin(3 * angle + 0.55)
     + 0.85 * Math.cos(2 * angle - 0.8)
     + 0.55 * Math.sin(5 * angle + 1.4);
+  const walkableHeight = (x: number, z: number) => Math.hypot(x, z) < 27 ? 0 : -0.25;
   function islandGeometry(top: number, bottom: number, height: number) {
     const geometry = new THREE.CylinderGeometry(top, bottom, height, 128);
     const positions = geometry.getAttribute('position');
@@ -228,7 +230,7 @@ export function mountMemoryIsland(options: Options): () => void {
     const crown = mesh(new THREE.IcosahedronGeometry(0.9 + (i % 3) * 0.2, 1), mat(i % 2 ? '#8dA68c' : '#79998c'));
     crown.position.copy(trunk.position).add(new THREE.Vector3(0, 1.2, 0));
   }
-  const player = new THREE.Group(); scene.add(player); player.position.set(0, 0, 3);
+  const player = new THREE.Group(); scene.add(player); player.position.set(0, characterGroundHeight(0, 3, walkableHeight), 3);
   const body = mesh(new THREE.CapsuleGeometry(0.29, 0.6, 5, 10), mat('#385b60'), player); body.position.y = 1;
   const head = mesh(new THREE.SphereGeometry(0.23, 16, 12), mat('#e6ceb0'), player); head.position.y = 1.73;
   const hair = mesh(new THREE.SphereGeometry(0.235, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.53), mat('#434c48'), player); hair.position.y = 1.79;
@@ -373,6 +375,7 @@ export function mountMemoryIsland(options: Options): () => void {
         const step = dt * (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 5.5 : 3.2);
         if (allowed(player.position.x + dx * step, player.position.z)) player.position.x += dx * step;
         if (allowed(player.position.x, player.position.z + dz * step)) player.position.z += dz * step;
+        player.position.y = characterGroundHeight(player.position.x, player.position.z, walkableHeight);
         player.rotation.y = Math.atan2(dx, dz);
       }
       legs.forEach((leg, index) => { leg.rotation.x = length ? Math.sin(elapsed * 11 + index * Math.PI) * 0.5 : 0; });

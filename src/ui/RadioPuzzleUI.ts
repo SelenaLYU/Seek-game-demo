@@ -51,7 +51,8 @@ function installStyle(): void {
     }
     .recall-radio__image { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
     .recall-radio__knob {
-      position: absolute; left: 308px; top: 118px; width: 66px; height: 66px;
+      /* Match the upper-right dial of the actual illustration. */
+      position: absolute; left: 377px; top: 57px; width: 48px; height: 48px;
       border: 1px solid rgba(245, 207, 131, .42); border-radius: 50%;
       background: transparent;
       box-shadow: inset 0 0 0 2px rgba(76, 40, 18, .20);

@@ -384,7 +384,9 @@ export default class RoomScene extends Phaser.Scene {
     // Invisible inspect targets follow the already-painted objects in the room art.
     // This avoids drawing a second clock/radio/photo/calendar over the same illustration.
     const inspectTargets: Array<{ kind: ObjectKind; x: number; y: number; w: number; h: number }> = [
-      { kind: 'radio', x: 695, y: 231, w: 66, h: 46 },
+      // Camera zoom transforms pointer coordinates back to world space; this
+      // hotspot follows the bedside radio's actual visible position.
+      { kind: 'radio', x: 310, y: 281, w: 132, h: 92 },
       // 相框热区贴合可见画框；与下方木盒热区留出间隔。
       { kind: 'photo', x: 782, y: 198, w: 44, h: 34 },
       { kind: 'fish', x: 872, y: 314, w: 64, h: 58 },
