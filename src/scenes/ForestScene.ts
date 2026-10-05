@@ -161,6 +161,13 @@ export type WaveSpec = {
 };
 
 type LayoutSpec = {
+  /**
+   * 出生平礁：背景水彩里那块大平礁（world 212..402）。它只是画出来的岩面，碰撞要自己补。
+   * 切成三段是因为画出来的顶边本来就分段（212..332 顶面 365..375，332..342 有一道 381 的坑，
+   * 342..402 顶面 366..378）——单段会给到 ±9px，手感上就是「人物浮空 / 陷进岩面」。
+   * 实测口径见 tests/levelOneLayout.test.mjs 的 backgroundLandTops（逐列取水/陆分界）。
+   */
+  startLedges: readonly { left: number; right: number; top: number }[];
   startBeach: { left: number; right: number; top: number };
   /** 礁石阵（standCenter 升序：复活点派生依赖该顺序） */
   reefs: readonly ReefSpec[];
@@ -176,7 +183,8 @@ type LayoutSpec = {
 /** 礁石阵：起步阶梯 → 海鸥起跳台 → 海心落脚礁 → 浪前准备段 → 浪后实体落脚面。
  *  浪后落脚礁刻意放到冲刺礁二段跳极限之外，让玩家先借滚浪向前，再跳上安全落点。 */
 const REEFS: readonly ReefPlacement[] = [
-  // 第一块下沉并左移：作为韩梅梅的直接出生平台。
+  // 出生平台从前景第一块低礁改成背景水彩那块大平礁：她应该从这块礁石出发，
+  // 碰撞由 startLedges 补上（背景是画，没有碰撞）。
   { standCenter: 420, top: 430, scale: 0.14, label: '初级低礁', role: 'warmup-low' },
   { standCenter: 620, top: 320, scale: 0.165, label: '耸立高礁', role: 'warmup-tall' },
   // 按反馈略抬高第三、第四块，让上升节奏更连贯。
@@ -277,17 +285,25 @@ export const reefSpriteOrigin = (reef: ReefSpec): { x: number; y: number } => ({
 
 /** 单朵滚浪：从冲刺礁前方开始，长距离向岸边推送后消散 */
 const WAVES: readonly WaveSpec[] = [
-  { id: 'W1', ridgeCenter: 2000, top: 392, rollSpeed: 72, rollDistance: 360 },
+  // 浪面抬到礁石线以上的开阔海面（原来 top 392 压在浪区那块水彩礁石上，读成「浪放在石头上」）：
+  // 顶面 300 = 与浪前爬升礁同高，浪体底面 ≈456 落在这段岸线的水线上，整朵浪都在后面的海里。
+  { id: 'W1', ridgeCenter: 2090, top: 300, rollSpeed: 72, rollDistance: 360 },
 ];
 
 /**
  * 完整高低起伏跑酷关卡路线（世界 2870×540）：
+ * 阶段 0：出生在背景水彩那块大平礁（212..402）上 → 走下前景第一块低礁（420）
  * 阶段 1：从第一块低礁（420）起步 → 错落礁石阶梯（低 430 → 高崖 320 → 平礁 375 → 起跳台 235）
  * 阶段 2：自高台跳起抓唯一一只飞鸥（1100~1460）→ 翱翔掠过深洋 → 甩向海心落脚礁（1620）
- * 阶段 3：浪前爬升礁（1750）→ 浪前冲刺礁（1850）→ 单朵滚浪（2000）→ 浪后落脚礁（2590）→ 右岸大陆（2660）
+ * 阶段 3：浪前爬升礁（1750）→ 浪前冲刺礁（1850）→ 单朵滚浪（2090，海面开阔处）→ 浪后落脚礁（2590）→ 右岸大陆（2660）
  * 阶段 4：右岸大陆（2660..2870）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 落地走回石门进入记忆之房！
  */
 export const LAYOUT: LayoutSpec = {
+  startLedges: [
+    { left: 212, right: 332, top: 370 },
+    { left: 332, right: 342, top: 382 },
+    { left: 342, right: 402, top: 372 },
+  ],
   startBeach: { left: 0, right: 280, top: 440 },
   reefs: REEFS.map(placement => ({ ...placement, stand: reefStand(placement.role) })),
   gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
@@ -297,10 +313,17 @@ export const LAYOUT: LayoutSpec = {
   door: { openingCenterX: 2680 },
 };
 
-/** 第一块低礁是实际出生平台：韩梅梅从图中这块礁石上开始，而不是左侧沙滩。 */
+/** 第一块低礁（前景礁 sprites）退成第二级台阶：出生平台改到背景水彩的大平礁上。 */
 const START_REEF = LAYOUT.reefs.find(reef => reef.role === 'warmup-low');
 if (!START_REEF) throw new Error('LAYOUT 缺少起始低礁 warmup-low');
-const START_POINT = { x: START_REEF.standCenter, y: START_REEF.top - 45 };
+/** 出生平礁的主平顶（第一段）：出生点从它派生 */
+const START_LEDGE = LAYOUT.startLedges[0];
+if (!START_LEDGE) throw new Error('LAYOUT 缺少出生平礁 startLedges');
+/** 出生点：背景画里那块大平礁的主平顶中心，顶面上方 45px 供物理落地（她应该从这块礁石出发，而不是前景的第一块低礁）。 */
+const START_POINT = {
+  x: (START_LEDGE.left + START_LEDGE.right) / 2,
+  y: START_LEDGE.top - 45,
+};
 
 /** 复活点：standCenter 为触发用的站立中心 x（角色 x + 40 内即命中） */
 type RespawnPoint = { standCenter: number; x: number; y: number };
@@ -499,7 +522,7 @@ export default class ForestScene extends Phaser.Scene {
 
     // 地面碰撞与错落高低起伏的礁石群
     this.terrain = new Terrain(this, false);
-    for (const span of [LAYOUT.startBeach, LAYOUT.landing]) {
+    for (const span of [...LAYOUT.startLedges, LAYOUT.startBeach, LAYOUT.landing]) {
       this.terrain.addPlatform({
         x: span.left,
         y: span.top,

@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { readLayout, simulateJump, travelFor } from '../tools/sim-jumps.mjs';
+import { readLayout, simulateJump, travelFor, REEF_SPAN } from '../tools/sim-jumps.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SCENE_PATH = path.join(ROOT, 'src/scenes/ForestScene.ts');
@@ -80,6 +80,7 @@ const WAVE = Object.fromEntries(
     .matchAll(/(\w+):\s*([\d.]+)/g)].map(([, k, v]) => [k, Number(v)]),
 );
 const WAVE_HALF_WIDTH = ((WAVE.ridgeRight - WAVE.ridgeLeft) * WAVE.scale) / 2;
+/** 地形平台冒充 sprite 跨度时的换算基准：simulateJump 的 spanOf = scale × REEF_SPAN / 2 */
 
 // ---------------------------------------------------------------------------
 // 与 ForestScene.ts 的派生函数同式的纯几何（reefStandBoxes / reefSpriteOrigin）
@@ -121,10 +122,12 @@ function reefPlatform(reef) {
 }
 
 // ---------------------------------------------------------------------------
-// 读 PNG 真实像素：逐列 alpha>128 的顶面 y（Node 自带 zlib，零依赖）
+// 读 PNG 真实像素（Node 自带 zlib，零依赖）；两个消费者：礁石贴图（按 alpha 取顶面）
+// 与背景水彩（按颜色分水/陆取岩面顶边）。
 // ---------------------------------------------------------------------------
 
-function topProfileByColumn(pngPath, alphaThreshold = 128) {
+/** 解出 8bit 非隔行 PNG 的原始像素与声道数 */
+function decodePng(pngPath) {
   const buf = fs.readFileSync(pngPath);
   assert.equal(buf.readUInt32BE(0), 0x89504e47, `${pngPath} 不是 PNG`);
   let off = 8;
@@ -176,6 +179,12 @@ function topProfileByColumn(pngPath, alphaThreshold = 128) {
     }
   }
 
+  return { width, height, channels, colorType, pixels };
+}
+
+function topProfileByColumn(pngPath, alphaThreshold = 128) {
+  const { width, height, channels, colorType, pixels } = decodePng(pngPath);
+
   const alphaAt = (x, y) => {
     const i = (y * width + x) * channels;
     if (colorType === 6) return pixels[i + 3];
@@ -198,7 +207,40 @@ function topProfileByColumn(pngPath, alphaThreshold = 128) {
   return { width, height, tops, bottoms, content: { left: minX, right: maxX, top: minY, bottom: maxY } };
 }
 
+/**
+ * 背景水彩（1900×540，世界 x < 1900 时与背景同一坐标）逐列取「水/陆分界」的 y：
+ * 自上而下第一个连续 8 行属于岩/沙像素的 y。泡沫（高亮度）与海水（蓝主导）都不算陆地。
+ * 出生平礁就是靠这份实测数据钉在画出来的岩面上的，不靠手盯截图。
+ */
+function backgroundLandTops(pngPath, y0 = 300, y1 = 480) {
+  const { width, height, channels, pixels } = decodePng(pngPath);
+  const at = (x, y) => {
+    const i = (y * width + x) * channels;
+    return [pixels[i], pixels[i + 1], pixels[i + 2]];
+  };
+  const isLand = ([r, g, b]) => {
+    const v = (r + g + b) / 3;
+    if (b > r + 14 && v < 236) return false; // 海水
+    return v <= 236; // 泡沫（高亮度）不算陆地
+  };
+  const tops = new Array(width).fill(null);
+  for (let x = 0; x < width; x++) {
+    for (let y = y0; y < Math.min(y1, height - 8); y++) {
+      if (isLand(at(x, y)) && isLand(at(x, y + 1)) && isLand(at(x, y + 2)) && isLand(at(x, y + 3))
+        && isLand(at(x, y + 4)) && isLand(at(x, y + 5)) && isLand(at(x, y + 6)) && isLand(at(x, y + 7))) {
+        tops[x] = y;
+        break;
+      }
+    }
+  }
+  return tops;
+}
+
 const art = topProfileByColumn(REEF_ASSET);
+const BACKGROUND_ASSET = path.join(ROOT, 'scene/level1-watercolor-game-background-v1-1900x540.png');
+/** 背景水彩的岩面顶边（只在需要时算一次：整图 1900 列的逐行扫描，每个 test 都跑太贵） */
+let backgroundTopsCache = null;
+const vertsOfBackgroundLandscape = () => (backgroundTopsCache ??= backgroundLandTops(BACKGROUND_ASSET));
 const layout = readLayout();
 const REASONABLE = ['hop:5', 'hop:12', 'hop:20', 'full'];
 
@@ -212,6 +254,16 @@ const GULL_CROSSING = ['full-double:20', 'full-double:45'];
 function buildChain(L) {
   const wavePlatform = p => ({ ...p, label: `浪 ${p.id}`, left: p.center - WAVE_HALF_WIDTH, right: p.center + WAVE_HALF_WIDTH, role: 'wave', waveId: p.id });
   return [
+    ...L.startLedges.map((seg, i) => ({
+      center: (seg.left + seg.right) / 2,
+      top: seg.top,
+      // 地形平台不是 sprite：用 scale 把左/右沿改写成同式的跨度（simulateJump 只认 center+spanOf）
+      scale: (seg.right - seg.left) / (REEF_SPAN / 2),
+      label: i === 0 ? '出生平礁' : `出生平礁·右段${i}`,
+      left: seg.left,
+      right: seg.right,
+      role: 'start-ledge',
+    })),
     { center: (L.startBeach.left + L.startBeach.right) / 2, top: L.startBeach.top, scale: 0, label: '沙滩起点', left: L.startBeach.left, right: L.startBeach.right, role: 'start-beach' },
     ...L.reefs.map(reefPlatform),
     ...L.waves.map(wavePlatform),
@@ -388,13 +440,29 @@ const jump = (i, strategy) => {
   );
 };
 
-test('出生点直接在第一块低礁上，韩梅梅不从沙滩起步', () => {
-  const firstReef = layout.reefs.find(r => r.role === 'warmup-low');
-  assert.ok(firstReef, '布局缺少第一块低礁');
-  assert.match(SOURCE, /const START_REEF = LAYOUT\.reefs\.find\(reef => reef\.role === 'warmup-low'\)/,
-    '出生点必须由第一块低礁真源派生，避免坐标漂移');
-  assert.match(SOURCE, /const START_POINT = \{ x: START_REEF\.standCenter, y: START_REEF\.top - 45 \}/,
-    '出生点应对齐礁石站立中心，并悬在顶面上方供物理落地');
+test('出生点在背景水彩那块大平礁上，不再站在前景低礁或沙滩上', () => {
+  assert.ok(layout.startLedges.length > 0, '布局缺少 startLedges（出生平礁）');
+  assert.match(SOURCE, /x: \(START_LEDGE\.left \+ START_LEDGE\.right\) \/ 2/,
+    '出生点必须由 startLedges[0] 真源派生，避免坐标漂移');
+  assert.match(SOURCE, /y: START_LEDGE\.top - 45/,
+    '出生点应悬在平礁顶面上方 45px，供物理落地');
+
+  // 出生平台必须真的坐在背景画的岩面上：逐列取水/陆分界（纯背景像素，不含任何 sprite），
+  // 每段顶面与实测岩面顶边的偏差必须 ≤ 8px —— 「人物浮空 / 离石头总差一截」就是这么复发出来的。
+  // 注意：平台是碰撞盒、岩面是画出来的，两者对不上时玩家看到的就是悬空或半个身子陷进去。
+  const bgTops = vertsOfBackgroundLandscape();
+  for (const [i, seg] of layout.startLedges.entries()) {
+    assert.ok(seg.right > seg.left, `出生平礁第 ${i} 段宽度必须 > 0`);
+    if (i > 0) assert.ok(seg.left >= layout.startLedges[i - 1].right, `出生平礁各段必须升序且不重叠（第 ${i} 段 left=${seg.left} < 上段 right=${layout.startLedges[i - 1].right}）`);
+    let maxDev = 0, devAt = -1;
+    for (let x = seg.left; x < seg.right; x++) {
+      const top = bgTops[x];
+      assert.ok(top !== null, `出生平礁第 ${i} 段覆盖的列 x=${x} 落在背景水彩的水面上（那里没有岩面）`);
+      const dev = Math.abs(top - seg.top);
+      if (dev > maxDev) { maxDev = dev; devAt = x; }
+    }
+    assert.ok(maxDev <= 8, `出生平礁第 ${i} 段 top=${seg.top} 与背景画岩面偏差 ${maxDev}px（x=${devAt}，要求 ≤8px）：人物会浮空或陷进岩面`);
+  }
   assert.match(SOURCE, /从这块礁石出发/, '起点提示要与“出生在礁石上”一致');
 });
 

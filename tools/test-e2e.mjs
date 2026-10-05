@@ -16,6 +16,11 @@ const FOREST_MODULE_HINT = 'ForestScene.ts';
  *（标签文案等非坐标字段变动不算漂移）。
  */
 const MIRRORED_LAYOUT = {
+  startLedges: [
+    { left: 212, right: 332, top: 370 },
+    { left: 332, right: 342, top: 382 },
+    { left: 342, right: 402, top: 372 },
+  ],
   startBeach: { left: 0, right: 280, top: 440 },
   reefs: [
     { standCenter: 420, top: 430, scale: 0.14, label: '初级低礁', role: 'warmup-low' },
@@ -29,7 +34,7 @@ const MIRRORED_LAYOUT = {
   ],
   gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
   waves: [
-    { id: 'W1', ridgeCenter: 2000, top: 392, rollSpeed: 72, rollDistance: 360 }
+    { id: 'W1', ridgeCenter: 2090, top: 300, rollSpeed: 72, rollDistance: 360 }
   ],
   key: { x: 2680, y: 196 },
   landing: { left: 2660, right: 2870, top: 440 },
@@ -208,6 +213,7 @@ async function run() {
 
   /** 只比对本脚本真正依赖的坐标/数值（标签等文案变动不算漂移） */
   const layoutProjection = (l) => JSON.stringify({
+    startLedges: l.startLedges.map((s) => [s.left, s.right, s.top]),
     startBeach: [l.startBeach.left, l.startBeach.right, l.startBeach.top],
     reefs: l.reefs.map((r) => [r.role, r.standCenter, r.top, r.scale]),
     gull: [l.gull.fromX, l.gull.toX, l.gull.fromY, l.gull.toY, l.gull.speed],
@@ -269,13 +275,14 @@ async function run() {
   console.log(` 布局: 世界右缘 ${LAYOUT.landing.right} · 礁石 ${LAYOUT.reefs.length} 块 · 滚浪 ${LAYOUT.waves.map(w => `${w.id}@${w.ridgeCenter}(top ${w.top}, roll ${w.rollDistance}px)`) .join(' / ')}`);
   console.log(` 门楣金钥匙: (${LAYOUT.key.x}, ${LAYOUT.key.y}) · 石门开口中心 ${LAYOUT.door.openingCenterX}`);
 
-  console.log('--- 2. 验证年年角色出生在第一块低礁并进入待机 ---');
-  // 起始点直接在第一块礁石上方 45px，等物理落地后验证站立面和横坐标。
-  const startReef = reef('warmup-low');
+  console.log('--- 2. 验证年年出生在背景水彩那块大平礁上并进入待机 ---');
+  // 出生平礁是背景画的岩面 + 补上的碰撞盒（startLedges[0]），等物理落地后验证站立面与横坐标。
+  const startLedge = LAYOUT.startLedges[0];
+  const startLedgeX = (startLedge.left + startLedge.right) / 2;
   const idleState = await waitFor(`(() => {
     const s = ${sceneJs};
-    const expectedX = ${startReef.standCenter};
-    const expectedY = ${startReef.top - 36};
+    const expectedX = ${startLedgeX};
+    const expectedY = ${startLedge.top - 36};
     return {
       ok: s.player.state === 'idle' && s.player.body.onFloor()
         && Math.abs(s.player.view.x - expectedX) < 8
@@ -287,7 +294,7 @@ async function run() {
       expectedY,
       onFloor: s.player.body.onFloor(),
     };
-  })()`, { label: '韩梅梅出生并站在第一块低礁上', timeoutMs: 3000 });
+  })()`, { label: '韩梅梅出生并站在背景大平礁上', timeoutMs: 3000 });
   console.log('开场状态:', JSON.stringify(idleState));
   const autoWaveStart = await evalJs(`new Promise(resolve => {
     const s = ${sceneJs};

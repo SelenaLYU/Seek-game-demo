@@ -35,7 +35,7 @@ const FALL_EXTRA_MIN_VY = 120;
 const HOP_RELEASE_MULT = 0.45;
 const BODY_W = 36;
 const BODY_H = 72;
-const REEF_SPAN = 471; // 站立面宽（源图 px），乘 scale 得实际跨度
+export const REEF_SPAN = 471; // 站立面宽（源图 px），乘 scale 得实际跨度
 
 const DT = 1 / 60;
 const SLOTS_PER_SIDE = BODY_W / 2;
@@ -58,11 +58,15 @@ export function readLayout(root = process.cwd()) {
   )].map(m => ({ id: m[1], center: Number(m[2]), top: Number(m[3]), rollSpeed: Number(m[4]), rollDistance: Number(m[5]), scale: 0.18 }));
   const landing = src.match(/landing:\s*\{\s*left:\s*([\d.]+),\s*right:\s*([\d.]+),\s*top:\s*([\d.]+)\s*\}/);
   const beach = src.match(/startBeach:\s*\{\s*left:\s*([\d.]+),\s*right:\s*([\d.]+),\s*top:\s*([\d.]+)\s*\}/);
+  const ledge = src.match(/startLedges:\s*\[([\s\S]*?)\]/);
+  const startLedges = ledge ? [...ledge[1].matchAll(/\{\s*left:\s*([\d.]+),\s*right:\s*([\d.]+),\s*top:\s*([\d.]+)\s*\}/g)]
+    .map(m => ({ left: +m[1], right: +m[2], top: +m[3] })) : [];
   const key = src.match(/key:\s*\{\s*x:\s*([\d.]+),\s*y:\s*([\d.]+)\s*\}/);
   const door = num(/door:\s*\{\s*openingCenterX:\s*([\d.]+)/);
   const worldWidth = num(/const WORLD_WIDTH = ([\d.]+)/);
   return {
     reefs, waves,
+    startLedges,
     startBeach: beach ? { left: +beach[1], right: +beach[2], top: +beach[3] } : { left: 0, right: 280, top: 440 },
     landing: landing ? { left: +landing[1], right: +landing[2], top: +landing[3] } : null,
     key: key ? { x: +key[1], y: +key[2] } : null,
