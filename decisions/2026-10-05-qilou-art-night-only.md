@@ -14,7 +14,7 @@
 | 检查项 | 结果 |
 | --- | --- |
 | `assets/level2/night-v1/` vs `648cadd` | 逐字节相同（`main` 上唯一差异是 `Player.preload(this)` 替换了重复的 spritesheet 加载，与骑楼无关） |
-| `ChapterTwoNightArt.ts` vs `geometry.json` | 一致：9 平台 + 9 障碍 + 10 遮挡 + 2 摆动 + 封路墙 + 老师 + 旧钞票 + 门 = 35 张全部接入 |
+| `ChapterTwoNightArt.ts` vs `geometry.json` | 一致：9 平台 + 9 障碍 + 10 遮挡 + 2 摆动 + 封路墙 + 老师 + 旧钞票 + 门 = 34 件素材，加 1 张背景共 35 张全部接入 |
 | PNG 尺寸 vs 逻辑尺寸×倍率 | 全部吻合（背景 3680×1100、平台/封路墙 1×，其余 2× 导出） |
 | `?scene=chapter2` 实跑 | 起点/二层/落口/中段/底层/长街/终点 7 处取景，0 console error |
 | 与 `CHAPTER_TWO_GAMEPLAY_DESIGN.md` | 四检查点、十遮挡、九障碍、两摆动一致 |

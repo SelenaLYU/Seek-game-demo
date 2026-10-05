@@ -46,7 +46,7 @@
 
 验收记录（2026-10-05，第二关素材审查面板 WebP）：AssetReviewOverlay 与房间调试背景接入 `resolveImageUrl()`；审查清单 12 张图新增 WebP，总清单 **109.22MB → 10.81MB（节省 90.1%）**。面板浏览器逐个检查 **21/21** 加载成功，0 console error / 失败请求；宽幅底图目视无色损。`npm test` 55/55、`npm run build`、`tools/probe-level1-experience.mjs` 12/12、`tools/optimize-images.py --check` 通过。`tools/test-e2e.mjs` 与 `tools/probe-load-perf.mjs` 因 Chrome CDP `127.0.0.1:9333` 未启动而未运行；待补验。详见 `decisions/2026-10-03-webp-and-load-optimization.md` 第 7 节。
 
-验收记录（2026-10-05，骑楼美术定源 + 白昼骑楼清除）：骑楼美术以**夜骑楼** `assets/level2/night-v1/`（ruchengloria `648cadd`，10-03 17:57）为**唯一真源**；复核过 PNG 与该提交逐字节相同、35 张素材全部接入、尺寸与 `geometry.json` 逐项吻合、`?scene=chapter2` 七处取景 0 console error。白昼骑楼图集 4 组 + 宽幅底图连同接线 WIP 全部移除，**共删 32.81MiB**（PNG 29.55 + WebP 3.26）。素材审查面板 21 → 16 条（PNG 52.38 → 22.83MiB、WebP 5.23 → 1.97MiB）；`tools/optimize-images.py` 清单 83 → 78 条（PNG 109.22 → 79.66MiB、WebP 10.81 → 7.54MiB）。裁定见 `decisions/2026-10-05-qilou-art-night-only.md`。
+验收记录（2026-10-05，骑楼美术定源 + 白昼骑楼清除）：骑楼美术以**夜骑楼** `assets/level2/night-v1/`（ruchengloria `648cadd`，10-03 17:57）为**唯一真源**；复核过 PNG 与该提交逐字节相同、35 张图（34 件场景素材 + 1 张背景）全部接入、尺寸与 `geometry.json` 逐项吻合、`?scene=chapter2` 七处取景 0 console error。白昼骑楼图集 4 组 + 宽幅底图连同接线 WIP 全部移除，**共删 32.81MiB**（PNG 29.55 + WebP 3.26）。素材审查面板 21 → 16 条（PNG 52.38 → 22.83MiB、WebP 5.23 → 1.97MiB）；`tools/optimize-images.py` 清单 83 → 78 条（PNG 109.22 → 79.66MiB、WebP 10.81 → 7.54MiB）。裁定见 `decisions/2026-10-05-qilou-art-night-only.md`。
 
 ## 4. 第二关（Selena 那一侧）现状
 
