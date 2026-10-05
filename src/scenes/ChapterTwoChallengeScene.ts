@@ -6,6 +6,7 @@ import { resolveImageUrl } from '../assets';
 import { TEACHER, LIGHT_ORIGIN, LIGHT_LENGTH, LIGHT_HALF_ANGLE, DETECTION_MS, initialSearchlight, updateLight, isInBeam, belowStreet } from '../gameplay/chapterTwoRules';
 
 import { NIGHT } from '../gameplay/ChapterTwoNightArt';
+import { Flashlight } from '../gameplay/chapterTwoFlashlight';
 
 type Checkpoint = { x: number; y: number; label: string };
 type Cover = { from: number; to: number; baseY: number; label: string };
@@ -43,6 +44,9 @@ const SWINGS: SwingHazard[] = [
  */
 const ROUTE_HINT_DEPTH = 17;
 
+/** 光束 depth：高于所有世界层（含摆动 19、钞票 20–22），低于 HUD（200+）。 */
+const LIGHT_DEPTH = 30;
+
 /** 第二关灰盒：学校后墙 → 骑楼折返 → 长街逃离。 */
 export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private player!: Player;
@@ -51,7 +55,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private status!: Phaser.GameObjects.Text;
   private checkpointText!: Phaser.GameObjects.Text;
   private alertLabel!: Phaser.GameObjects.Text;
-  private lightGraphics!: Phaser.GameObjects.Graphics;
+  private flashlight!: Flashlight;
   private hudGraphics!: Phaser.GameObjects.Graphics;
   private swingImages: Phaser.GameObjects.Image[] = [];
   private platformArtIndex = 0;
@@ -176,7 +180,10 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.previousPlayer.set(this.player.view.x, this.player.view.y);
 
     this.createGoal();
-    this.lightGraphics = this.add.graphics().setDepth(14);
+    // 光束放在世界层最上面（玩家 0、平台 4、障碍 12、门牌 13、提示 17、老师 18、摆动 19、钞票 20–22）：
+    // 灯是空气里的散射光，物理上在观察者与物体之间，所以不该被柱子/雨篷/人物挡断
+    // （2026-10-05 实机截图：光锥被「骑楼柱影」整根切断）。HUD（200/201）仍在它上面。
+    this.flashlight = new Flashlight(this, LIGHT_DEPTH);
     this.swingImages = NIGHT.swings.map(a => this.add.image(a.x, a.y, `night-${a.id}`)
       .setOrigin(.5, 0).setDisplaySize(a.width, a.height).setDepth(19));
     this.add.image(NIGHT.teacher.x, NIGHT.teacher.y, 'night-teacher').setOrigin(.5, 1)
@@ -345,7 +352,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.tweens.add({ targets: this.checkpointText, alpha: { from: .35, to: 1 }, duration: 280, yoyo: true });
   }
 
-  private updateSearchlight(_time: number, delta: number): void {
+  private updateSearchlight(time: number, delta: number): void {
     const x = this.player.view.x, y = this.player.view.y;
     const inCover = COVERS.some(cover => x >= cover.from && x <= cover.to
       && y >= cover.baseY - 115 && y <= cover.baseY + 24);
@@ -360,16 +367,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     if (this.searchlight.tracking && !this.wasLit) this.cameras.main.shake(90, .0025);
 
     // 人物和灯源使用固定世界坐标，相机移开后老师自然离开画面。
-    const end = { x: LIGHT_ORIGIN.x + Math.cos(angle) * LIGHT_LENGTH, y: LIGHT_ORIGIN.y + Math.sin(angle) * LIGHT_LENGTH };
-    const halfWidth = LIGHT_LENGTH * Math.tan(LIGHT_HALF_ANGLE);
-    const perpendicular = { x: -Math.sin(angle) * halfWidth, y: Math.cos(angle) * halfWidth };
-    this.lightGraphics.clear();
-    this.lightGraphics.fillStyle(this.searchlight.tracking ? 0xffbf72 : 0xf2db8e, .27).fillTriangle(
-      LIGHT_ORIGIN.x, LIGHT_ORIGIN.y,
-      end.x + perpendicular.x, end.y + perpendicular.y,
-      end.x - perpendicular.x, end.y - perpendicular.y,
-    );
-    this.lightGraphics.lineStyle(2, 0xffe9a5, .6).lineBetween(LIGHT_ORIGIN.x, LIGHT_ORIGIN.y, end.x, end.y);
+    this.flashlight.render(LIGHT_ORIGIN, angle, this.searchlight.tracking, time);
     const progress = this.detectionMs / DETECTION_MS;
     // 前 0.35 秒就到 60%，余下约 0.6 秒快速拉满。
     this.alert = progress <= .37
@@ -388,6 +386,11 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     }
     this.wasLit = lit && moved && canCatch;
     if (this.detectionMs >= DETECTION_MS) this.restartFromCheckpoint('被老师看见了');
+  }
+
+  /** 仅探针/截图使用：暂时关掉光束，避免加色层干扰对位测量 */
+  hideSearchlightArt(): void {
+    this.flashlight.setVisible(false);
   }
 
   private updateDynamicHazards(time: number): void {
