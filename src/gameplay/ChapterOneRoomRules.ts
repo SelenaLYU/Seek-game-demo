@@ -12,8 +12,11 @@ export type ChapterOneRoomEvent =
   | { type: 'photo-solved' }
   | { type: 'radio-message-heard' }
   | { type: 'battery-collected' }
+  | { type: 'flashlight-collected' }
   | { type: 'flashlight-powered' }
+  | { type: 'flashlight-placed' }
   | { type: 'paint-brush-collected' }
+  | { type: 'paint-brush-used' }
   | { type: 'shadow-boat-aligned'; pieces: Record<PieceId, PieceState>; lightX: number }
   | { type: 'shadow-boat-state-changed'; pieces: Record<PieceId, PieceState>; lightX: number }
   | { type: 'wind-stroke-completed'; index: 1 | 2 | 3 }
@@ -81,10 +84,18 @@ export function reduceChapterOneRoomProgress(
       };
     case 'battery-collected':
       return canCollectFlashlightBattery(progress) ? { ...progress, batteryCollected: true } : progress;
+    case 'flashlight-collected':
+      return { ...progress, flashlightCollected: true };
     case 'flashlight-powered':
       return canPowerFlashlight(progress) ? { ...progress, flashlightPowered: true } : progress;
+    case 'flashlight-placed':
+      return canOpenShadowBoatPuzzle(progress) ? { ...progress, flashlightPlaced: true } : progress;
     case 'paint-brush-collected':
       return { ...progress, paintBrushCollected: true };
+    case 'paint-brush-used':
+      return progress.shadowBoatAligned && progress.windStrokeCount === 3
+        ? { ...progress, paintBrushUsed: true }
+        : progress;
     case 'shadow-boat-aligned':
       return canOpenShadowBoatPuzzle(progress)
         ? { ...progress, shadowBoatAligned: true, shadowBoatPieces: event.pieces, shadowBoatLightX: event.lightX }
@@ -138,7 +149,7 @@ export function canCollectFlashlightBattery(progress: ChapterOneRoomProgress): b
 }
 
 export function canPowerFlashlight(progress: ChapterOneRoomProgress): boolean {
-  return progress.batteryCollected && !progress.flashlightPowered;
+  return progress.batteryCollected && progress.flashlightCollected && !progress.flashlightPowered;
 }
 
 export function canOpenShadowBoatPuzzle(progress: ChapterOneRoomProgress): boolean {
