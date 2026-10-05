@@ -72,8 +72,22 @@ export function createFlashlightTextures(scene: Phaser.Scene): void {
   }
 }
 
+/**
+ * 一维值噪声：无固定周期的手持抖动。
+ * 两个不同频率的正弦叠加仍然是**周期性**的（会听出/看出规律的节拍，实机反馈
+ * 「光摆动的频率是一样的」）。真实的手持光源是慢漂移 + 高频微抖，频谱连续、不重复。
+ */
+function valueNoise(x: number): number {
+  const i = Math.floor(x);
+  const f = x - i;
+  const hash = (n: number) => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
+  const a = hash(i), b = hash(i + 1);
+  const smooth = f * f * (3 - 2 * f);
+  return a + (b - a) * smooth;
+}
+
 /** 空气里的尘埃：沿光束缓慢漂移的小亮点，是"光在空气里"最直接的线索 */
-type Mote = { along: number; across: number; speed: number; size: number; phase: number };
+type Mote = { along: number; across: number; speed: number; size: number; phase: number; twinkle: number };
 const MOTE_COUNT = 18;
 
 export class Flashlight {
@@ -97,7 +111,9 @@ export class Flashlight {
       const r1 = ((i * 2654435761) % 1000) / 1000;
       const r2 = ((i * 40503) % 997) / 997;
       const r3 = ((i * 69069 + 7) % 991) / 991;
-      this.specs.push({ along: r1, across: r2 * 2 - 1, speed: 0.4 + r3 * 0.9, size: 0.8 + r3 * 1.6, phase: r1 * 6.283 });
+      const r4 = ((i * 22695477 + 17) % 983) / 983;
+      // twinkle：颗粒各自的闪烁频率（0.0015–0.009），避免所有尘埃同一个节拍
+      this.specs.push({ along: r1, across: r2 * 2 - 1, speed: 0.4 + r3 * 0.9, size: 0.8 + r3 * 1.6, phase: r1 * 6.283, twinkle: 0.0015 + r4 * 0.0075 });
     }
   }
 
@@ -114,11 +130,13 @@ export class Flashlight {
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const tint = tracking ? 0xffb768 : 0xf6e2a8;
-    // 手持抖动：两个不同频率的正弦叠加，避免规律的呼吸感
-    const flicker = 1 + 0.05 * Math.sin(timeMs * 0.013) + 0.032 * Math.sin(timeMs * 0.0077 + 1.3);
+    // 手持抖动：慢漂移（0.0016）+ 高频微抖（0.0071）两段值噪声，频谱连续、不重复
+    const flicker = 1 + 0.10 * (valueNoise(timeMs * 0.0016) - 0.5) + 0.06 * (valueNoise(timeMs * 0.0071 + 11.7) - 0.5);
+    // 手腕的微摆：只作用于画面（判定仍用 searchlight.angle），幅度 ±0.005 rad ≈ ±0.29°
+    const sway = 0.01 * (valueNoise(timeMs * 0.0011 + 5.3) - 0.5);
     this.beam
       .setPosition(origin.x, origin.y)
-      .setRotation(angle)
+      .setRotation(angle + sway)
       .setTint(tint)
       .setAlpha((tracking ? 0.62 : 0.46) * flicker);
     this.glow
@@ -137,7 +155,7 @@ export class Flashlight {
       const y = origin.y + sin * distance + cos * lateral;
       // 两端淡、中段亮；越靠近灯口颗粒越大（近大远小）
       const fade = Math.sin(Math.PI * Math.min(1, Math.max(0, along))) * (1 - along * 0.55);
-      const shimmer = 0.6 + 0.4 * Math.sin(timeMs * 0.004 + mote.phase);
+      const shimmer = 0.55 + 0.45 * valueNoise(timeMs * mote.twinkle + mote.phase);
       this.motes.fillStyle(0xfff5df, 0.13 * fade * shimmer * flicker);
       this.motes.fillCircle(x, y, mote.size * (1 - along * 0.5) * 1.15);
     }

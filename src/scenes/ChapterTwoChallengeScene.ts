@@ -7,6 +7,7 @@ import { TEACHER, LIGHT_ORIGIN, LIGHT_LENGTH, LIGHT_HALF_ANGLE, DETECTION_MS, in
 
 import { NIGHT } from '../gameplay/ChapterTwoNightArt';
 import { Flashlight } from '../gameplay/chapterTwoFlashlight';
+import { ARM_CROP, ARM_PIVOT, TEACHER_ART, armHoleRect, armRotationFor } from '../gameplay/chapterTwoTeacherArm';
 
 type Checkpoint = { x: number; y: number; label: string };
 type Cover = { from: number; to: number; baseY: number; label: string };
@@ -56,6 +57,8 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private checkpointText!: Phaser.GameObjects.Text;
   private alertLabel!: Phaser.GameObjects.Text;
   private flashlight!: Flashlight;
+  /** 老师的前臂 + 手电（绕肘旋转，跟随光锥；见 `chapterTwoTeacherArm.ts`） */
+  private teacherArm!: Phaser.GameObjects.Container;
   private hudGraphics!: Phaser.GameObjects.Graphics;
   private swingImages: Phaser.GameObjects.Image[] = [];
   private platformArtIndex = 0;
@@ -186,8 +189,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.flashlight = new Flashlight(this, LIGHT_DEPTH);
     this.swingImages = NIGHT.swings.map(a => this.add.image(a.x, a.y, `night-${a.id}`)
       .setOrigin(.5, 0).setDisplaySize(a.width, a.height).setDepth(19));
-    this.add.image(NIGHT.teacher.x, NIGHT.teacher.y, 'night-teacher').setOrigin(.5, 1)
-      .setDisplaySize(NIGHT.teacher.width, NIGHT.teacher.height).setDepth(18);
+    this.createTeacher();
     this.hudGraphics = this.add.graphics().setDepth(200);
     this.title = this.add.text(145, 24, '第二关 · 骑楼街逃课', {
       fontFamily: 'sans-serif', fontSize: '19px', color: '#253631',
@@ -295,6 +297,42 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.events.once('shutdown',()=>{this.events.off('postupdate',update);panel.remove();});
   }
 
+  /**
+   * 老师立绘拆两层：身体（挖掉前臂）与「前臂 + 手电」（绕肘旋转、跟随光锥）。
+   * 立绘是静态的——手电水平握着；不拆层时扫到陡角（光锥可到 +73°）光柱会从灯下面
+   * 垂直垂下来，读成「灯下挂着一团雾」（2026-10-05 实机反馈）。
+   */
+  private createTeacher(): void {
+    const { x, y, width, height } = NIGHT.teacher;
+    // depth 18：在平台/障碍/门牌/路线提示（17）之上，在摆动障碍（19）、光束（30）与 HUD（200+）之下。
+    // 写成字面量而不是常量：`tests/chapterTwoNightArt.test.mjs` 直接从源码里读这个数字来守层级顺序。
+    const body = this.add.image(x, y, 'night-teacher').setOrigin(.5, 1)
+      .setDisplaySize(width, height).setDepth(18);
+    // 反向几何遮罩：身体这一层挖掉前臂那块，改由会转的图层画（不然会有两条手臂）
+    const hole = armHoleRect(x, y, width, height);
+    const holeSource = this.make.graphics({}, false).fillRect(hole.x, hole.y, hole.width, hole.height);
+    const mask = holeSource.createGeometryMask();
+    mask.invertAlpha = true;
+    body.setMask(mask);
+    // make.graphics(add:false) 不在场景显示列表里，需要显式释放，避免重试时泄漏。
+    this.events.once('shutdown', () => {
+      body.clearMask();
+      mask.destroy();
+      holeSource.destroy();
+    });
+
+    // `setCrop` 只裁剪、不重排：裁出来的那块仍按贴图原坐标绘制
+    // （`MultiPipeline.batchSprite` 里 `x = -displayOriginX + crop.x`），
+    // 所以把「轴心在贴图里的位置」挪到容器原点即可让肘成为旋转中心。
+    const scale = width / TEACHER_ART.width;
+    const arm = this.add.image(0, 0, 'night-teacher').setOrigin(0, 0).setScale(scale);
+    arm.setCrop(ARM_CROP.x, ARM_CROP.y, ARM_CROP.width, ARM_CROP.height);
+    arm.setPosition(-ARM_PIVOT.x * scale, -ARM_PIVOT.y * scale);
+    this.teacherArm = this.add.container(x - width / 2 + ARM_PIVOT.x * scale, y - height + ARM_PIVOT.y * scale, [arm])
+      .setDepth(18);
+    this.teacherArm.rotation = armRotationFor(this.searchlight.angle);
+  }
+
   private createGoal(): void {
     const tokenGlow = this.add.circle(3420, 898, 28, 0xe4bd5e, .25).setDepth(20);
     const token = this.add.image(3420, 898, 'night-ticket').setDisplaySize(NIGHT.ticket.width, NIGHT.ticket.height).setDepth(21);
@@ -363,6 +401,8 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.searchlight = updateLight(this.searchlight, { x, y, moving: moved, covered: inCover, enabled: canCatch, delta });
     this.detectionMs = this.searchlight.exposure;
     const angle = this.searchlight.angle;
+    // 手电跟着光锥转：判定用的仍是固定灯口，但立绘必须指出光柱的方向
+    this.teacherArm.rotation = armRotationFor(angle);
     const lit = !inCover && isInBeam(angle, x, y);
     if (this.searchlight.tracking && !this.wasLit) this.cameras.main.shake(90, .0025);
 
