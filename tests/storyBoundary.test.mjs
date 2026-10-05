@@ -34,9 +34,22 @@ test('new-story placeholders are explicit and follow the documented childhood me
   assert.match(CHAPTER_ONE_MEMORY_TEXT, /贝壳/);
   assert.match(CHAPTER_ONE_MEMORY_TEXT, /妈妈/);
   assert.match(CHAPTER_ONE_MEMORY_TEXT, /爸爸/);
-  assert.match(read('assets/story/seek-childhood-photo-placeholder.svg'), /正式照片待制作/);
-  assert.match(read('src/scenes/EndingScene.ts'), /ending\.mp4\?url/);
-  assert.match(read('src/scenes/EndingScene.ts'), /跳过动画/);
+});
+
+test('chapter-one ending lands on the family photo instead of the predecessor video', () => {
+  const ending = read('src/scenes/EndingScene.ts');
+  // 旧 Demo 的「鱼鱼 + 公公」动画已核验为冲突内容（STORY_MIGRATION.md）：
+  // 结尾场景不得再引用那个文件，分镜文案必须取自故事真源。
+  assert.doesNotMatch(ending, /ending\.mp4/);
+  assert.match(ending, /chapter1-family-photo-seaside\.png\?url/);
+  assert.match(ending, /CHAPTER_ONE_MEMORY_TEXT/);
+  assert.match(ending, /跳过/);
+  // 相册第一格与结尾定格的是同一张照片。
+  assert.match(read('src/ui/AlbumUI.ts'), /chapter1-family-photo-seaside\.png\?url/);
+  // 旧占位图已由正式照片取代，不得再被任何运行时源码引用。
+  for (const path of sources(resolve(root, 'src'))) {
+    assert.doesNotMatch(readFileSync(path, 'utf8'), /seek-childhood-photo-placeholder/, path);
+  }
 });
 
 // These are source boundary guards, not substitutes for browser interaction tests.

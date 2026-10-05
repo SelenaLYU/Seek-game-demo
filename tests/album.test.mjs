@@ -55,6 +55,6 @@ test('album photos go through Vite so production builds include them', () => {
   const ui = read('src/ui/AlbumUI.ts');
   assert.match(ui, /CHAPTER_PHOTOS/);
   // 字面路径不会被打包：必须 `?url` 引入，否则生产环境相册显示不出照片。
-  assert.match(ui, /assets\/story\/[^']+\.svg\?url/);
+  assert.match(ui, /assets\/story\/[^']+\.png\?url/);
   assert.match(ui, /seek-album__photo-img/);
 });

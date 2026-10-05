@@ -1,14 +1,16 @@
 import { albumEntries, albumPhotoCount, ALBUM_SIZE } from '../story/Album';
-import childhoodPhotoPlaceholder from '../../assets/story/seek-childhood-photo-placeholder.svg?url';
+import { resolveImageUrl } from '../assets';
+import chapter1PhotoUrl from '../../assets/story/chapter1-family-photo-seaside.png?url';
 
 /**
  * 每章回忆照片：回忆动画定格的那张图，就是相册里这一格的照片。
- * 第一章暂复用现有素材，图内自带「正式照片待制作」标注，不算正式美术。
+ * 第一章已接入正式照片（与结尾分镜里定格的是同一张，`assets/story/` 只有一份真源）。
  * 其余章节美术到货后只需在此登记路径；相册数据与 UI 都不用改。
  * 必须经 Vite `?url` 引入，否则生产包不会包含该图（字面路径不会被打包）。
+ * 走 `resolveImageUrl` 取同目录 WebP，PNG 仍是美术真源。
  */
 const CHAPTER_PHOTOS: Readonly<Record<number, string>> = {
-  1: childhoodPhotoPlaceholder,
+  1: resolveImageUrl(chapter1PhotoUrl),
 };
 
 export interface AlbumHandle {
