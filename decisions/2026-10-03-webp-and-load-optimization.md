@@ -78,3 +78,49 @@ Phaser 里资源有两条互不相通的加载方式，WebP 必须同时接住�
 
 - [ ] `ending-voice.wav` 4.8MB / `ending.mp4` 27.8MB：旧故事遗留，运行时代码不可达；文件删除是破坏性操作，待用户确认后再清理。
 - [ ] `index` chunk 1.43MB（gzip 395KB）：Phaser 本体占大头，收益有限；真要再压只能按场景做 dynamic import，属于结构性改动，建议等第二关美术定稿再做。
+
+## 7. 补漏一轮（2026-10-05）：管线漏了两批图，两个关卡各多传 10MB+
+
+起因：从头量了一遍三个入口的传输量，发现第一关两个场景正常，但
+
+| 入口 | 修复前 | 修复后 | 说明 |
+| --- | --- | --- | --- |
+| 记忆之房 | **16710KB**（png 8 张） | **2611KB**（png 0 张） | 7 张 2026-10-02 之后补的房间美术没登记 |
+| 第二关 · 夜骑楼 | **11903KB**（39 张几乎全 png） | **1487KB** | 35 条 literal `load.image` 压根没过 `resolveImageUrl` |
+
+根因是两条不同的路：
+
+1. **清单漏登记**：`RUNTIME_IMAGES` 是**手工维护**的。房间后来补的 7 张
+   （`interactive-family-zoo-photo-frame-384x256`、`room-lockbox-closed-v1`、
+   `interactive-vintage-radio-384x256`、`room-lockbox-open-battery-v1`、
+   `room-fairytale-book-v1`、`room-flashlight-battery-v1`、`room-memory-pearl-shell-v1`）
+   加上碎片 HUD 的 168px 贝壳图标都没进清单，`resolveImageUrl()` 找不到同名 `.webp`
+   就**安静回落 PNG**：不报错、不影响功能、测试也不会红。
+2. **绕过了 resolver**：`ChapterTwoChallengeScene` 用字面路径直接 `this.load.image()`
+   （`assets/level2/night-v1/*.png`，35 张）。字面路径由 `vite.config.mjs` 的
+   `runtimeAssetPaths()` 拷进 dist 供回落用，但**不会**经过 `resolveImageUrl`，
+   所以 WebP 管线对第二关完全失效。现已全部包上 `resolveImageUrl(...)`。
+   注意路径必须写完整的字面量：写成模板串（`assets/level2/night-v1/${file}`）会让
+   `runtimeAssetPaths()` 抛 `Suspicious Phaser asset path` 直接构建失败——这是它的设计，
+   不要为了少写几行去绕。
+
+体积（`/usr/bin/python3 tools/optimize-images.py`）：全量清单 PNG 64.51M → WebP 5.82M（91.0%）。
+
+### 防线（防止再安静漏一批）
+
+- `tools/optimize-images.py --check`：只体检不写文件；缺 WebP 或 **WebP 比 PNG 旧**就退出码 1。
+  新增「WebP 比 PNG 旧」是因为 PNG 改了不重跑脚本时，resolver 会继续发旧 WebP——**静默错图**，
+  比回落 PNG 更隐蔽。正常运行时也会把 stale 清单打出来。
+- `tests/imagePipeline.test.mjs` 三条：清单内每条都有 WebP；**所有场景**（`src/scenes/*` + `src/ui/*`）
+  真的会加载的图（`?url` 导入 + `this.load.*` 调用）都有 WebP；没有 WebP 比 PNG 旧。
+  只认这两种加载写法，不扫全文 `'assets/…'` 字面量——否则 ChapterTwoRoomScene 里
+  「素材审查面板」那张未接入清单（含 22.2MB 宽幅底图）会被误判成运行时加载。
+  角色序列帧按规则 2 走豁免（`assets/character/`）。
+
+### 还没做
+
+- [ ] 只被**素材审查面板**（`ChapterTwoRoomScene` 的 AssetReviewOverlay 清单，标注「未接入」）
+     引用的图还没 WebP：`chapter2-qilou-water-town-background-hd-7360x2200.png`（22.2MB）、
+     骑楼图集 4 张、便利店 masters 6 张。它们不在玩家进场路径上，等第二关定稿、真正接入时
+     一起登记更稳妥（现在登记等于给未定稿的图加一份可能过期的 WebP）。
+- [ ] 上一轮的两条仍然有效（旧故事遗留音视频待确认删除；`index` chunk 拆分等第二关定稿）。

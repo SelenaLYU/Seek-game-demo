@@ -42,6 +42,8 @@
 
 验收记录（2026-10-05，贝壳 HUD 接正式美术）：`?scene=room` 逐片触发 0/3 → 1/3 → 2/3 → 3/3，四张卡片截图对照（残影 → 逐带点亮 → 满片辉光），0 console error；竖屏 390×844 下卡片只有 43×19.5 CSS px，贝壳仍分辨得出“灰影 vs 彩贝”；`npm test` 51/51；`npm run build` 后 `dist/assets/room-memory-pearl-shell-hud-v1-*.png` 存在（37.6KB）。
 
+验收记录（2026-10-05，WebP 补漏）：记忆之房传输 **16710KB → 2611KB**（png 8 张 → 0 张）、第二关夜骑楼 **11903KB → 1487KB**；`ORIGIN=http://localhost:4173 node tools/probe-load-perf.mjs --runs=3` 海边 212ms / 房间 381ms、0 长任务 0 失败；`?scene=chapter2` 逐个 texture 检查 10/10 存在且尺寸正确、0 console error；两个场景截图眼检无色损；`npm test` 54/54；`tools/probe-level1-experience.mjs` 12/12；`tools/test-e2e.mjs` 14/14。根因与防线见 `decisions/2026-10-03-webp-and-load-optimization.md` 第 7 节。
+
 ## 4. 第二关（Selena 那一侧）现状
 
 PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、瓶盖一盘一笔画、六幕可点击分镜、回岛点亮第二段、岛屿章节列表 1–3、第三关入口提示「未完待续」+ 选项查看**第三关站位预告**（3 秒灰盒，可跳过，自动回岛）。
@@ -87,7 +89,7 @@ npm run build               # tsc --noEmit + vite build
 ```
 
 - 调试入口：`?scene=forest` / `?scene=room` / `?scene=island` / `?scene=chapter2` / `?scene=chapter2-room` / `?scene=chapter2-memory` / `?scene=chapter3-preview`。
-- 美术改动后跑一次 `/usr/bin/python3 tools/optimize-images.py`（PNG 保留，生成同名 WebP）。
+- 美术改动后跑一次 `/usr/bin/python3 tools/optimize-images.py`（PNG 保留，生成同名 WebP）；只体检用 `--check`（缺 WebP 或 WebP 比 PNG 旧就退出码 1）。
 - 加载改动用 `node tools/probe-load-perf.mjs` 验收（`ORIGIN=http://localhost:4173` 量生产包）。
 - 第一关体验（石门裁切／礁石隐形墙／抓放海鸥突跳／触屏适配）用 `node tools/probe-level1-experience.mjs` 量，改前改后各跑一次看数字（`--json` 出原始数据；截图写 `screenshots/level1-experience/`；任一阈值超标退出码 1）。**当前 12 项全过**（A 门裁剪 · B 礁柱 · C1 抓取突跳 / C2 收身补间 / C3 收身整体 / D1–D7 触屏）。当年基线是 8 项，后来拆成 C1/C2/C3 并补了 D5–D7，所以「基线 1/8」与「现在 12/12」不是同一张表，数字对照要按同一版脚本跑。它的探针里记了两个坑：手动步进不推进 tween（量松手补间必须走真实 rAF），以及 sf0 层位置被 `screenSpaceOrigin` 补偿但**尺寸仍被 zoom 放大**（触屏判定要在放大后的缓冲像素里比边界）。测「角色在哪」不能用 `sprite.getBounds()`（含透明边的帧矩形，换帧会被读成位移），要按当前帧 alpha>128 内容中心算（脚本里 `installOpaqueCenter`）。
 - 测试里 `import` 相对模块需要带 `.ts` 后缀（node 直跑 ESM），`tsconfig` 已开 `allowImportingTsExtensions`。
@@ -104,6 +106,6 @@ npm run build               # tsc --noEmit + vite build
 | `STORY_MIGRATION.md` | 新旧故事边界、清理结果、核验证据 |
 | `CHAPTER1_ROOM_PUZZLE_COLLABORATION.md` | 第一关房间交互与依赖（玩法规格，不含人物台词） |
 | `CHAPTER_TWO_MEMORY_ROOM_DESIGN.md` | 第二关房间设计（Selena 维护） |
-| `decisions/2026-10-03-webp-and-load-optimization.md` | WebP 化与加载优化（工具、接入点、实测数据、下一档待办） |
+| `decisions/2026-10-03-webp-and-load-optimization.md` | WebP 化与加载优化（工具、接入点、实测数据、下一档待办；第 7 节是 2026-10-05 的补漏） |
 | `decisions/` | 架构与设定决策记录 |
 | `archive/` | 全部历史文档，仅作追溯 |
