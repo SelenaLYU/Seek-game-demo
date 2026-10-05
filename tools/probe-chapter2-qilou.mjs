@@ -9,12 +9,14 @@
  *  · 世界空间导航文字曾经被遮挡素材整块压住（2026-10-05 修），这类 depth 冲突
  *    只能靠逐对象比对发现。
  *
- * 覆盖五段（每段给出阈值，超阈值即 FAIL 并以退出码 1 结束）：
+ * 覆盖六段（每段给出阈值，超阈值即 FAIL 并以退出码 1 结束）：
  *   A. 美术真源对齐 —— 35 张纹理的坐标/原点/显示尺寸与 geometry.json 逐项比对
  *   B. 遮挡可用性   —— 十处遮挡区内躲灯必须不涨警觉（并跑一处空地对照片）
  *   C. 可读性       —— 不额外叠箭头文字/底部状态条，标题固定在起点；剩余文字无 depth 遮挡
  *   D. 关卡可玩性   —— 跳跃净高能过最高障碍、每个障碍站在平台上、下落口宽度达标
  *   E. 检查点       —— 四个检查点传送后能站稳，并按顺序激活
+ *   G. 封路墙       —— 底层向右连跳必须翻不过封路墙；把碰撞盒改回加高前的高度则必须能翻过去
+ *                     （G2 是对照：没有它，G1 在「墙被改矮」时会假装通过）
  *
  * 用法：
  *   bash dev.sh                                     # 先起 dev server（或任意 vite --port）
@@ -29,6 +31,12 @@
  *    不能只改 `moved` 的入参。
  *  · 灯每帧从 `this.searchlight.angle` 重新推扫，只设一次角度会被扫走；
  *    用 8ms 定时器持续把角度钉在角色身上，才能稳定造出「灯照着你」的条件。
+ *  · 「跳不过去」不能只看墙的碰撞盒数字（那只是把源码抄了一遍）。G 段真的在浏览器里
+ *    按住右+落地就跳去撞，量最远 x；并用 G2 把碰撞盒改回 1682,448,38×286 重跑一遍，
+ *    翻过去了才说明 G1 量的是物理而不是常量。
+ *  · 对照点不能落在摆动障碍的扫掠范围里：610 层原的 900 正好在「甩动竹竿」（930,y=492,
+ *    len=112）下面，角色一放下去就被打回检查点，然后被报成「没落到平台上」——一个
+ *    看起来像落地问题的假 FAIL。已挪到 1250（避开 c05/c06 两处遮挡与竹竿扫掠）。
  */
 import { mkdirSync, readFileSync } from 'node:fs';
 import { chromium } from '/Users/simon/node_modules/playwright/index.mjs';
@@ -139,8 +147,8 @@ record('A1. 35 张骑楼贴图的坐标/原点/显示尺寸', layoutProblems.len
 
 /** B 段：遮挡是否真的能躲灯 */
 const floorTop = { 320: 'p02', 380: 'p03', 440: 'p04', 610: 'p05', 820: 'p06', 865: 'p07', 910: 'p08', 950: 'p09' };
-/** 同层对照点：必须不落在任何遮挡区内（下面对照组会断言） */
-const controlByFloor = { 320: 620, 380: 1150, 440: 1480, 610: 900, 820: 900, 865: 1600, 910: 2400, 950: 3200 };
+/** 同层对照点：必须不落在任何遮挡区内，也不在摆动障碍的扫掠范围里 */
+const controlByFloor = { 320: 620, 380: 1150, 440: 1480, 610: 1250, 820: 900, 865: 1600, 910: 2400, 950: 3200 };
 
 /**
  * 把角色放到某层走道上并等它真正落地。
@@ -371,6 +379,85 @@ for (const [name, x, y] of [['upper-route', 1450, 515], ['lower-route', 520, 745
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${SHOT_DIR}/${name}.png` });
 }
+
+/** G 段：封路墙 —— 底层（y=610，就是「该往左折返」的那一层）向右连跳必须过不去 */
+const WALL_LEFT = geo.wall.x - geo.wall.width / 2;   // 1663
+const WALL_RIGHT = geo.wall.x + geo.wall.width / 2;  // 1701
+/** Player 碰撞体 36×72（`Player` 默认 opts.width），所以身体半宽 18 */
+const BODY_HALF = 18;
+
+/**
+ * 从某层的某点开始「按住右、落地就跳」，返回这段时间里到过的最大 x。
+ *
+ * 不用 Playwright 的 keyboard.down：它偶尔赶不上测量窗口（B 段已经踩过这个坑）。
+ * 这里在 `preupdate` 里直接置键盘 Key 的 `isDown` / `_justDown`——`player.update` 读的就是它们，
+ * 且场景在 update 之前触发 preupdate，所以每帧重新置位即可做到「落地瞬间起跳」。
+ * 崩在 x 上而不是「是否被 blocked」上：静态体碰撞有分离帧，blocked 只闪一帧；位置是累计量。
+ *
+ * @param startX  起点（该层走道上，且要离墙有足够助跑距离）
+ * @param floorTop 走道面 y
+ * @param ms 冲刺时长（墙前助跑 ~460px，6s 足够跑完还能起跳多次）
+ */
+async function jumpSprint(startX, floorTop, ms) {
+  await place(startX, floorTop);
+  await page.evaluate(() => {
+    const scene = window.__game.scene.getScene('chapter2');
+    const keys = scene.player.keys;
+    window.__sprint = { maxX: scene.player.view.x, jumps: 0 };
+    window.__sprintDrive = () => {
+      const player = scene.player;
+      keys.RIGHT.isDown = true;
+      const grounded = player.body.onFloor();
+      keys.SPACE.isDown = grounded;
+      if (grounded) { keys.SPACE._justDown = true; window.__sprint.jumps += 1; }
+      window.__sprint.maxX = Math.max(window.__sprint.maxX, player.view.x);
+    };
+    scene.events.on('preupdate', window.__sprintDrive);
+  });
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) await page.waitForTimeout(200);
+  return page.evaluate(() => {
+    const scene = window.__game.scene.getScene('chapter2');
+    scene.events.off('preupdate', window.__sprintDrive);
+    scene.player.keys.RIGHT.isDown = false;
+    scene.player.keys.SPACE.isDown = false;
+    return { maxX: Math.round(window.__sprint.maxX), jumps: window.__sprint.jumps };
+  });
+}
+
+/** 把封路墙的碰撞盒改回加高之前的几何（1682, 448, 38×286），用于 G2 的对照 */
+async function setWallBody(y, height) {
+  return page.evaluate(({ y, height }) => {
+    const scene = window.__game.scene.getScene('chapter2');
+    /** 碰撞盒的 y/高会变（G2 会把它改矮再改回来），所以只能按宽度与左沿认它 */
+    const rects = scene.children.list.filter(o => o.type === 'Rectangle' && o.body);
+    const wall = rects.find(o => Math.round(o.body.width) === 38 && Math.round(o.body.x) === 1663);
+    if (!wall) {
+      return { ok: false, bodies: rects.map(o => `${Math.round(o.body.x)},${Math.round(o.body.y)} ${Math.round(o.body.width)}×${Math.round(o.body.height)}`).join(' | ') };
+    }
+    wall.setPosition(1682, y).setSize(38, height);
+    wall.body.updateFromGameObject();
+    const b = wall.body;
+    return { ok: true, body: `${Math.round(b.x)},${Math.round(b.y)} ${Math.round(b.width)}×${Math.round(b.height)}` };
+  }, { y, height });
+}
+
+const blockedRun = await jumpSprint(1200, 610, 6000);
+raw.wall = { blockedRun, wallLeft: WALL_LEFT };
+record('G1. 底层向右连跳翻不过封路墙',
+  blockedRun.jumps > 0 && blockedRun.maxX <= WALL_LEFT - BODY_HALF + 2,
+  `最远 x=${blockedRun.maxX}（墙左沿 ${WALL_LEFT}，身体半宽 ${BODY_HALF} → 上限 ${WALL_LEFT - BODY_HALF + 2}），` +
+  `起跳 ${blockedRun.jumps} 次`);
+
+const oldWallBody = await setWallBody(448, 286);
+const hopRun = await jumpSprint(1200, 610, 6000);
+const restoredWallBody = await setWallBody(0, 734);
+raw.wall = { ...raw.wall, oldWallBody, hopRun, restoredWallBody };
+record('G2. 对照组：碰撞盒改回加高前（1682,448,38×286）后同样的冲刺能翻过去',
+  oldWallBody.ok && restoredWallBody.ok && hopRun.maxX > WALL_RIGHT,
+  !oldWallBody.ok ? `没找到封路墙碰撞盒；场上静态矩形：${oldWallBody.bodies}`
+    : !restoredWallBody.ok ? `对照跑完后没能还原碰撞盒：${restoredWallBody.bodies}`
+      : `碰撞盒 ${oldWallBody.body} → 最远 x=${hopRun.maxX}（旧墙右沿 ${WALL_RIGHT}）；已还原为 ${restoredWallBody.body}`);
 
 record('F1. 全程 0 console error', errors.length === 0, errors.length ? errors.slice(0, 4).join(' | ') : '无');
 

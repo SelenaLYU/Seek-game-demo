@@ -50,7 +50,7 @@
 
 ## 4. 第二关（Selena 那一侧）现状
 
-验收记录（2026-10-05，骑楼修正）：路线现在靠场景构图，不叠箭头文字；底部 status/checkpoint 文案隐藏，章节标题固定在起点世界坐标。封墙碰撞从世界顶边延伸至 y=734，避免跳过二层折返；墙贴图仍按 `geometry.json` / `ChapterTwoNightArt.ts` 原始 38×286 几何绘制，视觉与全高碰撞体分离。修复长街 p09 与背景亮檐之间的暗缝：`tools/fix-chapter2-p09-coping.py` 将 p09 顶部两行从同坐标背景亮檐取样重建，PNG 保留、WebP 同步；`--check` 通过。此前 ROUTE_HINT_DEPTH=17 的文字提示已由本次无箭头方案取代。当前探针 `tools/probe-chapter2-qilou.mjs` **11/11 通过**（A1 35 张贴图对齐 geometry；B1/B2 遮挡与空地对照；C1 无箭头/底栏、起点标题固定；C2 无文字遮挡；D1–D4 可玩性；E1 四检查点；F1 0 console error）；`npm test` 71/71，`npm run build` 通过。
+验收记录（2026-10-05，骑楼修正）：路线现在靠场景构图，不叠箭头文字；底部 status/checkpoint 文案隐藏，章节标题固定在起点世界坐标。封墙碰撞从世界顶边延伸至 y=734，避免跳过二层折返；墙贴图仍按 `geometry.json` / `ChapterTwoNightArt.ts` 原始 38×286 几何绘制，视觉与全高碰撞体分离。修复长街 p09 与背景亮檐之间的暗缝：`tools/fix-chapter2-p09-coping.py` 将 p09 顶部两行从同坐标背景亮檐取样重建，PNG 保留、WebP 同步；`--check` 通过。此前 ROUTE_HINT_DEPTH=17 的文字提示已由本次无箭头方案取代。**2026-10-06 复验**：「底层向右连跳翻不过封路墙」这件事现已入库为探针 G1，并用 G2 把碰撞盒改回 `1682,448,38×286` 重跑作对照——旧碰撞盒下同一次冲刺能跑到 x=2434（旧墙右沿 1701），证明加高之前玩家确实能翻过墙跳过「向左折返」；还原后最远停在 x=1646（墙左沿 1663）。当前探针 `tools/probe-chapter2-qilou.mjs` **13/13 通过**（A1 35 张贴图对齐 geometry；B1/B2 遮挡与空地对照；C1 无箭头/底栏、起点标题固定；C2 无文字遮挡；D1–D4 可玩性；E1 四检查点；G1/G2 封路墙；F1 0 console error）；`npm test` 71/71，`npm run build` 通过。
 
 PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、瓶盖一盘一笔画、六幕可点击分镜、回岛点亮第二段、岛屿章节列表 1–3、第三关入口提示「未完待续」+ 选项查看**第三关站位预告**（3 秒灰盒，可跳过，自动回岛）。
 
@@ -96,7 +96,7 @@ npm run build               # tsc --noEmit + vite build
 
 - 调试入口：`?scene=forest` / `?scene=room` / `?scene=island` / `?scene=chapter2` / `?scene=chapter2-room` / `?scene=chapter2-memory` / `?scene=chapter3-preview`。
 - 美术改动后跑一次 `/usr/bin/python3 tools/optimize-images.py`（PNG 保留，生成同名 WebP）；只体检用 `--check`（缺 WebP 或 WebP 比 PNG 旧就退出码 1）。
-- 第二关骑楼（贴图对齐／遮挡可用／提示克制／可玩性／检查点）用 `node tools/probe-chapter2-qilou.mjs` 量（`ORIGIN=http://localhost:5179` 指定端口；`--json` 出原始数据；截图写 `screenshots/chapter2-qilou/`；任一条不达标退出码 1）。**当前 11 条全过**。它记了三个坑：采样不能放在自写的 rAF 循环里 await（headless 下 180ms 只有 1–3 帧游戏帧，会读到「角色还没起步」→ 十处遮挡全假绿），要按游戏帧数而非墙钟等待；落地判定要轮询（掉帧时 500ms 重力只推进一两帧）；位移别靠键盘投递，用 `preupdate` 里的小幅摆动制造 `moved` 判定。改探针前先看文件头。
+- 第二关骑楼（贴图对齐／遮挡可用／提示克制／可玩性／检查点）用 `node tools/probe-chapter2-qilou.mjs` 量（`ORIGIN=http://localhost:5179` 指定端口；`--json` 出原始数据；截图写 `screenshots/chapter2-qilou/`；任一条不达标退出码 1）。**当前 13 条全过**。它记了四个坑：采样不能放在自写的 rAF 循环里 await（headless 下 180ms 只有 1–3 帧游戏帧，会读到「角色还没起步」→ 十处遮挡全假绿），要按游戏帧数而非墙钟等待；落地判定要轮询（掉帧时 500ms 重力只推进一两帧）；位移别靠键盘投递，用 `preupdate` 里的小幅摆动制造 `moved` 判定；同层对照点不能落在摆动障碍扫掠范围内（610 层的 900 正好在「甩动竹竿」下面，角色一放下去就被打回检查点，会被报成「没落到平台上」的假 FAIL，已挪到 1250）。改探针前先看文件头。
 - 加载改动用 `node tools/probe-load-perf.mjs` 验收（`ORIGIN=http://localhost:4173` 量生产包）。
 - 第一关体验（石门裁切／礁石隐形墙／抓放海鸥突跳／触屏适配）用 `node tools/probe-level1-experience.mjs` 量，改前改后各跑一次看数字（`--json` 出原始数据；截图写 `screenshots/level1-experience/`；任一阈值超标退出码 1）。**当前 12 项全过**（A 门裁剪 · B 礁柱 · C1 抓取突跳 / C2 收身补间 / C3 收身整体 / D1–D7 触屏）。当年基线是 8 项，后来拆成 C1/C2/C3 并补了 D5–D7，所以「基线 1/8」与「现在 12/12」不是同一张表，数字对照要按同一版脚本跑。它的探针里记了两个坑：手动步进不推进 tween（量松手补间必须走真实 rAF），以及 sf0 层位置被 `screenSpaceOrigin` 补偿但**尺寸仍被 zoom 放大**（触屏判定要在放大后的缓冲像素里比边界）。测「角色在哪」不能用 `sprite.getBounds()`（含透明边的帧矩形，换帧会被读成位移），要按当前帧 alpha>128 内容中心算（脚本里 `installOpaqueCenter`）。
 - 测试里 `import` 相对模块需要带 `.ts` 后缀（node 直跑 ESM），`tsconfig` 已开 `allowImportingTsExtensions`。
