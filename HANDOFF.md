@@ -106,13 +106,15 @@ npm run build               # tsc --noEmit + vite build
 | `CHAPTER_TWO_MEMORY_ROOM_DESIGN.md` | 第二关房间设计（Selena 维护） |
 | `decisions/2026-10-03-webp-and-load-optimization.md` | WebP 化与加载优化（工具、接入点、实测数据、下一档待办） |
 | `decisions/2026-10-05-island-model-orientation.md` | 记忆之岛资产朝向：作者朝向 +X，统一 -π/2，含罗盘判据与实走判据 |
+| `decisions/2026-10-05-island-hdr-lighting.md` | 岛屿光照：HDR IBL + Neutral tone mapping + 主光跟随 HDR 太阳，含配方表与阴影视锥修正 |
 | `decisions/` | 架构与设定决策记录 |
 | `archive/` | 全部历史文档，仅作追溯 |
 
 ## 9. 记忆之岛 3D 接入（岛屿线，本轮）
 
 六栋 Tripo 建筑、主角模型、章节灰化/点亮都已接入并跑通；此前这条线没写进本文件，事实与判据记在这里，
-选型细节见 `decisions/2026-10-05-island-model-orientation.md`。
+选型细节见 `decisions/2026-10-05-island-model-orientation.md`（朝向）与
+`decisions/2026-10-05-island-hdr-lighting.md`（光照）。
 
 - **朝向**（2026-10-05 修）：六栋 `buildingPresentation[].yaw` 与角色 `model.rotation.y` 都改成 `-Math.PI / 2`。
   此前六栋与角色都用 `π`，症状不同：建筑门面比门前交互点偏 90°；角色按 W 只看到侧脸（**横着走**）。
@@ -123,7 +125,19 @@ npm run build               # tsc --noEmit + vite build
 - **门前可达性**（按载入时实测 `fittedSize` 复算 `allowed()` 的轴对齐盒）：六栋门点到盒边界 0.25（04 树屋，
   `site.yaw = -π/4` 的斜向门点被轴对齐盒切掉一部分）～1.79（01 贝壳屋）个世界单位，都远小于 2.8 触发半径，
   不需要改碰撞；树屋的 0.25 是当前最小值，若以后加宽碰撞要重算。
+- **光照**（2026-10-05 改）：原来「半球光 1.45 + 一盏定向光 2.15」且不做 tone mapping，症状是**没有形**
+  （每个朝上的面都同一亮度，像平涂）。现在环境光走 HDR（`public/env/sky-sunny.hdr` → PMREM →
+  `scene.environmentIntensity = 0.45`），渲染器改 `NeutralToneMapping` / exposure `1.32`，解析光只剩
+  一盏主光（`2.8` + 投影）和一盏弱补光（`0.24`），半球光降到 `0.16` 只当防纯黑地板。**主光方向跟随
+  HDR 里烤进像素的太阳**：CPU 扫 half-float 纹素取最亮方向，再把整个 environment 与主光一起转到
+  `KEY_SUN_AZIMUTH`，避免两盏光源方向各说各话。顺带修掉旧阴影视锥 `±26 / far 80` 罩不住跨度 `±34`
+  的岛屿——外圈建筑此前**投不出影子**。配方表、备选方案、验证数据见
+  `decisions/2026-10-05-island-hdr-lighting.md`；改动前后对照图（本地，不入库）在
+  `screenshots/island/lighting-before-after/`。
 - **仍是评审脚手架**（不是成品内容）：`?focusChapter=N`、`?artPreview=color`、`?islandPreview=1`、
   `?ch05Candidate=1`（CH05 候选模型 + 屏上开关）、载入时打的 `console.info` 尺寸日志。
 - **未入库美术待 Simon 处置**：`public/island-models-candidates/ch05-tent/`、`art/island/`
   （`.gitignore` 写明「本地交付资料，暂不上传」）、`art/memory-island-*.{png,svg,md}`。
+- **待确认（光照素材授权）**：`public/env/sky-sunny.hdr` 已随光照改动一起入库，但**来源与授权没有记录**
+  （文件内只剩 `#?RADIANCE` 头，无作者/软件注释；同目录 `/tmp/keep-1k.hdr` 是它的 1024×512 上游版本，
+  也无线索）。观感像 Poly Haven 一类 CC0 户外 HDR，但无证据——需要 Simon 确认来源，或换成有明确出处的素材。

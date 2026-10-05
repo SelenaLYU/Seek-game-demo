@@ -15,7 +15,7 @@ page.on('console', message => { if (message.type() === 'error') errors.push(mess
 page.on('pageerror', error => errors.push(String(error)));
 for (const [suffix, shot] of [['', 'overview-off.png'], ['&ch05Show=1', 'overview-on.png']]) {
   await page.goto(`http://localhost:5173/?scene=island&islandPreview=1&ch05Candidate=1${suffix}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(SETTLED, { timeout: 90000 });
+  await page.waitForFunction(SETTLED, undefined, { timeout: 90000 });
   await page.screenshot({ path: `screenshots/island/ch05-candidate/${shot}` });
 }
 console.log(JSON.stringify({ status: (await page.locator('.asset-status').textContent()).trim(), errors }));

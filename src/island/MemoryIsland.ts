@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { chapterState, completedChapters } from './Progress';
 import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
@@ -90,6 +91,10 @@ export function mountMemoryIsland(options: Options): () => void {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Neutral (Khronos PBR neutral) keeps the pastel palette while rolling off
+  // highlights; ACES desaturated the greens and went muddy at this exposure.
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.32;
   root.prepend(renderer.domElement);
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 1000);
   camera.position.set(0, 55, 70);
@@ -106,14 +111,60 @@ export function mountMemoryIsland(options: Options): () => void {
   controls.maxPolarAngle = Math.PI / 2.45;
   controls.update();
   scene.add(camera);
-  scene.add(new THREE.HemisphereLight('#dce6ff', '#35445f', 1.45));
-  const sun = new THREE.DirectionalLight('#ffe4bd', 2.15);
-  sun.position.set(-18, 30, 15);
+  // The HDR environment now carries the ambient sky/ground bounce, so the analytic
+  // lights are down to a key sun (form + cast shadows) plus a very weak fill. The
+  // hemisphere is only a floor against pitch-black shadow interiors.
+  // Horizontal direction the key light should come from. The island's cameras look from
+  // +Z, so a sun on the -X side throws its shadows to the right of frame where a player
+  // actually sees them; only the azimuth is chosen here, the elevation comes from the HDR.
+  const KEY_SUN_AZIMUTH = new THREE.Vector3(-0.94, 0, -0.34).normalize();
+  const UP_AXIS = new THREE.Vector3(0, 1, 0);
+  scene.add(new THREE.HemisphereLight('#cfe0ff', '#41563f', 0.16));
+  const sun = new THREE.DirectionalLight('#ffe6c2', 2.8);
+  sun.position.set(-30, 42, 24);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, far: 80 });
-  sun.shadow.bias = -0.0006;
+  // The island spans roughly ±34 world units around the origin. The old ±26 map cut
+  // the outer landmarks out of the shadow frustum entirely, so half of them could not
+  // cast anything; ±38 with a 120 far plane covers the whole terrain from this angle.
+  Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38, far: 120 });
+  sun.shadow.bias = -0.0009;
+  sun.shadow.normalBias = 0.04;
+  sun.shadow.radius = 2.4;
   scene.add(sun);
+  // Weak cool fill from the opposite side so shaded faces keep their form instead of
+  // going muddy now that the hemisphere no longer carries most of the light.
+  const fill = new THREE.DirectionalLight('#bcd9ff', 0.24);
+  fill.position.set(22, 14, -20);
+  scene.add(fill);
+  // Image-based lighting. The scene used to run on a hemisphere + one directional
+  // light, which is why every surface read as the same flat brightness. The HDR drives
+  // ambient sky/ground bounce and the specular response; the key light sits on the
+  // HDR's own sun, so the shading and the sky stay one consistent light source.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  let environmentTarget: THREE.WebGLRenderTarget | undefined;
+  new HDRLoader().load('/env/sky-sunny.hdr', texture => {
+    if (signal.aborted) { texture.dispose(); pmrem.dispose(); return; }
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    environmentTarget = pmrem.fromEquirectangular(texture);
+    scene.environment = environmentTarget.texture;
+    // A sunny HDR carries enormous dynamic range, so at full strength its irradiance
+    // dwarfs the DirectionalLight and flattens the scene back out. Keep it as the
+    // ambient/specular source and let the sun do the directional work.
+    scene.environmentIntensity = 0.45;
+    // This HDR's own sun sits at azimuth 54.5° / elevation 16.5°, i.e. near the horizon
+    // and roughly behind the island's cameras, so form and cast shadows did not read.
+    // Swing the whole environment - baked sun included - to KEY_SUN_AZIMUTH and put the
+    // key light on the same direction: one sun, placed where the cameras can see it.
+    const bakedSun = brightestDirection(texture);
+    if (bakedSun) {
+      const delta = Math.atan2(KEY_SUN_AZIMUTH.x, KEY_SUN_AZIMUTH.z) - Math.atan2(bakedSun.x, bakedSun.z);
+      scene.environmentRotation = new THREE.Euler(0, delta, 0);
+      sun.position.copy(bakedSun).applyAxisAngle(UP_AXIS, delta).multiplyScalar(64);
+    }
+    texture.dispose();
+    pmrem.dispose();
+  }, undefined, error => { pmrem.dispose(); console.error('[MemoryIsland] Could not load the HDR environment', error); });
   const mat = (color: string) => new THREE.MeshStandardMaterial({ color, roughness: 0.92 });
   function mesh(geometry: THREE.BufferGeometry, material: THREE.Material | THREE.Material[], parent: THREE.Object3D = islandRoot): THREE.Mesh {
     const item = new THREE.Mesh(geometry, material);
@@ -961,6 +1012,11 @@ export function mountMemoryIsland(options: Options): () => void {
   // Temporary review hook: ?focusChapter=N frames one landmark so each Tripo
   // asset can be inspected up close instead of judged from the whole-island view.
   const focusChapter = Number(new URLSearchParams(window.location.search).get('focusChapter'));
+  // ?focusFrom=door makes the landmark review shot look like a player walking up to the
+  // door: camera sits on the site's outward door direction, at eye height above the
+  // terrain there, looking back at the facade. ?focusDist=N sets that distance.
+  const focusFromDoor = new URLSearchParams(window.location.search).get('focusFrom') === 'door';
+  const focusDistance = Number(new URLSearchParams(window.location.search).get('focusDist')) || 6.5;
   let yaw = 0, pitch = 0.24;
   let cameraDistance = 5.6;
   let nearby: Building | undefined;
@@ -1124,7 +1180,18 @@ export function mountMemoryIsland(options: Options): () => void {
       if (Number.isInteger(focusChapter) && focusChapter >= 1 && focusChapter <= 6) {
         const site = sites[focusChapter - 1];
         controls.target.set(site.x * mapScaleX, site.height * 0.45, site.z);
-        camera.position.copy(controls.target).add(new THREE.Vector3(9, 7.5, 11));
+        if (focusFromDoor) {
+          const outwardX = Math.sin(site.yaw), outwardZ = Math.cos(site.yaw);
+          const away = site.depth / 2 + 1.5 + focusDistance;
+          const doorX = site.x + outwardX * away, doorZ = site.z + outwardZ * away;
+          camera.position.set(
+            doorX * mapScaleX,
+            terrainHeight(doorX, doorZ) + site.height * 0.42,
+            doorZ,
+          );
+        } else {
+          camera.position.copy(controls.target).add(new THREE.Vector3(9, 7.5, 11));
+        }
         controls.update();
       }
       controls.update();
@@ -1214,6 +1281,7 @@ export function mountMemoryIsland(options: Options): () => void {
   frame = requestAnimationFrame(tick);
   return () => {
     disposed = true; cancelAnimationFrame(frame); abort.abort(); controls.dispose(); keys.clear(); characterMixer?.stopAllAction();
+    environmentTarget?.dispose();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     scene.traverse(object => {
       if (object instanceof THREE.Mesh) { geometries.add(object.geometry); (Array.isArray(object.material) ? object.material : [object.material]).forEach(m => materials.add(m)); }
@@ -1223,6 +1291,46 @@ export function mountMemoryIsland(options: Options): () => void {
     materials.forEach(m => { if ('map' in m && m.map instanceof THREE.Texture) m.map.dispose(); m.dispose(); });
     renderer.dispose(); renderer.forceContextLoss(); root.remove();
   };
+}
+
+/** Half-float (IEEE 754 binary16) -> number, for reading an HDR's texel data on the CPU. */
+function halfToFloat(value: number): number {
+  const sign = value & 0x8000 ? -1 : 1;
+  const exponent = (value >> 10) & 0x1f;
+  const mantissa = value & 0x3ff;
+  if (exponent === 0) return sign * 2 ** -14 * (mantissa / 1024);
+  if (exponent === 31) return mantissa ? NaN : sign * Infinity;
+  return sign * 2 ** (exponent - 15) * (1 + mantissa / 1024);
+}
+
+/**
+ * Direction of the brightest texel of an equirectangular HDR, i.e. where its sun is.
+ *
+ * three samples an equirect environment as u = atan2(z, x) / 2π + 0.5 and
+ * v = asin(y) / π + 0.5. The loader stores the image flipped, so which sign of v is
+ * "up" cannot be read off the file: build both candidates and keep the one that
+ * lands above the horizon (a daylight HDR always has its sun in the sky).
+ */
+function brightestDirection(texture: THREE.DataTexture): THREE.Vector3 | null {
+  const image = texture.image as { data?: Uint16Array; width?: number; height?: number } | undefined;
+  const data = image?.data, width = image?.width, height = image?.height;
+  if (!data || !width || !height) return null;
+  let best = -1, bestX = 0, bestY = 0;
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const index = (y * width + x) * 4;
+      const luminance = 0.2126 * halfToFloat(data[index]) + 0.7152 * halfToFloat(data[index + 1]) + 0.0722 * halfToFloat(data[index + 2]);
+      if (luminance > best) { best = luminance; bestX = x; bestY = y; }
+    }
+  }
+  const toDirection = (v: number) => {
+    const phi = ((bestX + 0.5) / width - 0.5) * Math.PI * 2;
+    const theta = (v - 0.5) * Math.PI;
+    return new THREE.Vector3(Math.cos(theta) * Math.cos(phi), Math.sin(theta), Math.cos(theta) * Math.sin(phi));
+  };
+  const direct = toDirection((bestY + 0.5) / height);
+  const flipped = toDirection(1 - (bestY + 0.5) / height);
+  return direct.y >= flipped.y ? direct : flipped;
 }
 
 function disposeGltf(root: THREE.Object3D): void {
