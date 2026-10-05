@@ -4,13 +4,13 @@
 
 ## 0. 一句话状态
 
-`main` 已包含第一关、第二关灰盒和岛屿章节入口。第一关的**新故事清理已完成**，玩法闭环可玩；回忆结尾已换成同风格分镜并定格到**正式家庭照片**（2026-10-05 提交），录音与贝壳 HUD 仍是显式占位。工程与剧情文档已收敛：当前状态看本文件，剧情看 `GAME_STORY_AND_LEVEL_DESIGN.md`，新旧故事边界看 `STORY_MIGRATION.md`。
+`main` 已包含第一关、第二关灰盒和岛屿章节入口。第一关的**新故事清理已完成**，玩法闭环可玩；回忆结尾已换成同风格分镜并定格到**正式家庭照片**（2026-10-05 提交），录音与贝壳 HUD 仍是显式占位。第一关**四条体验遗留已全部修完**（石门裁切／礁石隐形墙／抓放海鸥突跳／触屏适配，探针 12/12，见第 5 节）。工程与剧情文档已收敛：当前状态看本文件，剧情看 `GAME_STORY_AND_LEVEL_DESIGN.md`，新旧故事边界看 `STORY_MIGRATION.md`。
 
 ## 1. 仓库与分支
 
 - repo：`https://github.com/SelenaLYU/Seek-game-demo`（private）；我的身份 `gxinxing`，权限 push + triage（无 admin）。
 - `origin/main` = `0f3c916`（PR #11：第二关记忆之房后半段灰盒 + 后续灰盒至此版结尾）。
-- 我的工作分支：`codex/level1-progress-music`（第一关 + UI/工程）。**本地领先远端若干提交，未推送**；推送前先 `git fetch` 再看 `git status -sb`。
+- 我的工作分支：`codex/level1-progress-music`（第一关 + UI/工程）。当前本地领先 `origin/codex/level1-progress-music` 1 个提交（`a5849e8` 四条体验遗留修复），**未推送**；PR 仍是 [#18](https://github.com/SelenaLYU/Seek-game-demo/pull/18)（open）。推送前先 `git fetch` 再看 `git status -sb`。
 - 同日并行会话在做第二关美术 / 第三关灰盒与**李雷童年 3D 建模**（`assets/characters/lilei/tripo-out/`、`tools/*chapter2*` 等未跟踪文件归它）；改动前先看 `git status`，别把对方的在改文件带进提交。
 - 只读参考分支：`origin/ART`（骑楼美术）、`origin/island-prototype`、`origin/story-design`。**不要直接 merge `ART`**：它基于很旧的代码，会删掉近万行；只能挑文件。
 
@@ -38,6 +38,8 @@
 
 验收记录（2026-10-05，浏览器实跑）：新结尾分镜四条字幕 → 照片显影 → 相册收录 → 回岛，0 console error，点击回岛进入岛屿（3D 模型 11/11 已载入）；`menu / room / forest / ending / island / chapter2 / chapter2-room / chapter2-memory / chapter3-preview` 九个入口逐个冷启动，均 0 console error、0 失败请求。
 
+验收记录（2026-10-05，四条体验遗留修复）：`tools/probe-level1-experience.mjs` 在 dev（5173）与生产包（4173，`npm run build` 后）各跑一次，**均 12/12**；`npm test` 49/49；`tools/test-e2e.mjs` 14/14、0 console error；竖屏 390×844 与横屏 844×390 截图各看一遍（门右侧完整、按钮不叠、状态栏折行、帮助面板正文不压按钮）。
+
 ## 4. 第二关（Selena 那一侧）现状
 
 PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、瓶盖一盘一笔画、六幕可点击分镜、回岛点亮第二段、岛屿章节列表 1–3、第三关入口提示「未完待续」+ 选项查看**第三关站位预告**（3 秒灰盒，可跳过，自动回岛）。
@@ -52,13 +54,14 @@ PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、
 2. ~~相册接入正式照片，并把入口扩展到序章/主菜单。~~（2026-10-05 完成：第一章照片已接正式美术，入口见 `AlbumUI`）
 3. 贝壳正式美术：只剩 HUD 合成进度里那段代码绘制的贝壳轮廓待换成美术。
 4. ~~第一章结尾改用同风格分镜占位~~（2026-10-05 完成）；正式动画到位后替换 `EndingScene` 即可。
-5. 第一关体验遗留：**已实测复现**（2026-10-05，工具 `tools/probe-level1-experience.mjs`，基线 **1/8 通过**）：
+5. ~~第一关体验遗留~~（2026-10-05 全部修完，工具 `tools/probe-level1-experience.mjs` 从基线 **1/8 到 12/12**，dev 与生产包各跑一次都是 12/12）：
    - **已不存在**：礁石下方隐形碰撞墙（碰撞柱已改为停在岩体贴图内容底边 327/374/402/444/449/499/524，全部 < 水面 540；只有起点沙滩与右岸两块厚地面按设计到 540）。
-   - **待修 · 石门右侧裁切**：门美术不透明内容右缘 2913.2 vs 世界右界 2870 → **出界 43.2px**（含透明边 51.3px）。互动区在界内，只是美术被切。
-   - **待修 · 抓海鸥瞬间突跳**：真实自动抓取半径是 `tryGrabVine` 默认的 **78px**（场景里 95px 那个只是握点光环的 near 判定）。入口 76px 时单帧位移：渲染框中心 25.4px / 脚底 17.7px / 顶点 33.2px / 碰撞体中心 35.7px。放在 90ms 收回补间里的松手段已有改善（旧账的「瞬间 39px」已被 tween 替代），现在最大 21.8px/帧。
-   - **待修 · 触屏（仅竖屏）**：390×844 dpr2 → 缓冲 960×2078、zoom 3.847、逻辑视口宽 250。▶/↑ 重叠 134.7×204.3px（▶ 有 59% 按不到）；状态栏被 zoom 放大 3.85× 后宽 1623.6px，**右溢 732.8px**；起点教学卡只剩 90px 可见且文案是键盘键位。横屏 844×390 三项均正常。
+   - **已修 · 石门右侧裁切**：`WORLD_WIDTH` 2870 → **2930**（按门贴图反推：开口中心 2680、贴图不透明内容右缘 2913.2，旧值白切 43.2px）；右岸地面同步到 2930。
+   - **已修 · 抓海鸥瞬间突跳**：真实自动抓取半径是 `tryGrabVine` 默认的 **78px**。新增 130ms `Sine.InOut` 接近插值，把根节点位置/旋转与精灵锚点一起插到抓取姿态；入口 76px 时单帧角色身体中心位移 **25.4px → 2.99px**（根节点 4.32px）。缓动必须用 InOut：锚点从「脚底对齐」换到「握点对齐」自带 ~101px 局部偏移，`Cubic.Out` 会把 39% 挤在第一帧。
+   - **已修 · 松手突跳**：53px 悬垂量由 90ms `Quad.easeOut`（峰值 21.8px/帧）改为 160ms `Sine.easeInOut`（峰值 **≈8px/帧**，含甩出初速的整体峰值 10.3px/帧）；抓取接近途中松手时用当前实际脚底偏移当起点，锚点不硬切。
+   - **已修 · 触屏（仅竖屏，逻辑视口宽 250）**：按钮按字号实测宽度重排（原来 ▶/↑ 重叠 134.7×204.3px，▶ 有 59% 按不到）；状态栏缩字号 + 按显示宽度折行（右溢 732.8px → 界内）；教学卡与帮助面板窄屏缩放居中，文案按触摸/键盘分流（原来教学卡只剩 90px 可见且是键盘键位）。帮助面板高度改为按正文实测高度算（写死 360 时正文压住关闭按钮：landscape 重叠 30.2px / portrait 13.1px，探针 D7 盯这个）。横屏一直正常。
    - 另记（玩家不可见但会影响后续设计）：悬挂期间 `body.enable=false`，Phaser 会跳过 `preUpdate/update/postUpdate`，**碰撞体一直停在抓取前的位置**，松手那一帧才跳回握点。以后若想让海鸥带人撞到礁石／门区，这里会立刻变成 bug。
-   - `archive/2026-10-02-bugs-and-ux-review.md` 里的条目仍不可直接当待修清单：其中 P1-5（隐形墙）、P2-2（松手 39px 突跳）已经被后续代码修掉了。
+   - `archive/2026-10-02-bugs-and-ux-review.md` 里的条目仍不可直接当待修清单：P1-5（隐形墙）、P2-2（松手突跳）早已修掉。
 6. 推送分支 + 开 PR。
 
 需要用户决策：旧素材（6 张已删文件的删除动作、`assets/level2/qilou` 等未跟踪美术）如何处置；并发编辑归属（见下）。
@@ -84,7 +87,7 @@ npm run build               # tsc --noEmit + vite build
 - 调试入口：`?scene=forest` / `?scene=room` / `?scene=island` / `?scene=chapter2` / `?scene=chapter2-room` / `?scene=chapter2-memory` / `?scene=chapter3-preview`。
 - 美术改动后跑一次 `/usr/bin/python3 tools/optimize-images.py`（PNG 保留，生成同名 WebP）。
 - 加载改动用 `node tools/probe-load-perf.mjs` 验收（`ORIGIN=http://localhost:4173` 量生产包）。
-- 第一关四条体验遗留（石门裁切／礁石隐形墙／抓放海鸥突跳／触屏适配）用 `node tools/probe-level1-experience.mjs` 量，改前改后各跑一次看数字（`--json` 出原始数据；截图写 `screenshots/level1-experience/`；任一阈值超标退出码 1）。它的探针里记了两个坑：手动步进不推进 tween（量松手补间必须走真实 rAF），以及 sf0 层位置被 `screenSpaceOrigin` 补偿但**尺寸仍被 zoom 放大**（触屏判定要在放大后的缓冲像素里比边界）。
+- 第一关体验（石门裁切／礁石隐形墙／抓放海鸥突跳／触屏适配）用 `node tools/probe-level1-experience.mjs` 量，改前改后各跑一次看数字（`--json` 出原始数据；截图写 `screenshots/level1-experience/`；任一阈值超标退出码 1）。**当前 12 项全过**（A 门裁剪 · B 礁柱 · C1 抓取突跳 / C2 收身补间 / C3 收身整体 / D1–D7 触屏）。当年基线是 8 项，后来拆成 C1/C2/C3 并补了 D5–D7，所以「基线 1/8」与「现在 12/12」不是同一张表，数字对照要按同一版脚本跑。它的探针里记了两个坑：手动步进不推进 tween（量松手补间必须走真实 rAF），以及 sf0 层位置被 `screenSpaceOrigin` 补偿但**尺寸仍被 zoom 放大**（触屏判定要在放大后的缓冲像素里比边界）。测「角色在哪」不能用 `sprite.getBounds()`（含透明边的帧矩形，换帧会被读成位移），要按当前帧 alpha>128 内容中心算（脚本里 `installOpaqueCenter`）。
 - 测试里 `import` 相对模块需要带 `.ts` 后缀（node 直跑 ESM），`tsconfig` 已开 `allowImportingTsExtensions`。
 - Vite 只打包被 `import` 的素材；用字面路径加载的文件（如 `scene/*.png`）必须改成 `import ... ?url`，否则构建产物里没有这张图。
 - 浏览器验收脚本可用 Playwright：`import { chromium } from '/Users/simon/node_modules/playwright/index.mjs'`，启动加 `--enable-unsafe-swiftshader`；在 WebGL 画布上叠加 DOM 时避免大面积 `backdrop-filter`（会拖慢截图与渲染）。
