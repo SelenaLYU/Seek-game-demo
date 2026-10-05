@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 import { resolveImageUrl } from '../assets';
 import emptyDeskUrl from '../../assets/environment/room-desk-decorated-empty-slots-v1.png?url';
 import propsDeskUrl from '../../assets/environment/room-desk-with-shadow-boat-props-v1.png?url';
@@ -79,6 +80,7 @@ export function showRoomDeskPopup(scene: Phaser.Scene, options: RoomDeskPopupOpt
 
   const shade = document.createElement('div');
   shade.className = 'seek-room-desk-popup__shade';
+  shade.dataset.canvasBackdrop = '';
   const title = document.createElement('h2');
   title.className = 'seek-room-desk-popup__title';
   title.textContent = '书桌';
@@ -114,10 +116,7 @@ export function showRoomDeskPopup(scene: Phaser.Scene, options: RoomDeskPopupOpt
     action.disabled = !options.puzzleAvailable;
   };
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, WIDTH, HEIGHT);
   };
   position();
 

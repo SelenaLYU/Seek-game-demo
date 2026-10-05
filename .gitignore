@@ -11,3 +11,7 @@ backup/scene/*.png
 backup/scene/*.jpg
 screenshots/
 .workbuddy/
+
+# 记忆之岛六栋建筑三视图与提示词：Gloria 明确「本地交付资料，暂不上传 GitHub」，
+# 仅供 Tripo 建模与 3D 接入时本地查阅。
+art/island/

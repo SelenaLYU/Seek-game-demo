@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fitCanvasDomOverlay } from './CanvasDomLayout';
 
 interface ClockPuzzleOptions {
   onClose: () => void;
@@ -123,7 +124,7 @@ export function showClockPuzzleUI(scene: Phaser.Scene, options: ClockPuzzleOptio
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-label', '调整老挂钟');
   root.innerHTML = `
-    <div class="recall-clock__backdrop"></div>
+    <div class="recall-clock__backdrop" data-canvas-backdrop></div>
     <div class="recall-clock__heading"><small>SEEK · 记忆之房</small><h1>老挂钟</h1></div>
     <div class="recall-clock__shell"><div class="recall-clock__face"><svg class="recall-clock__dial" viewBox="0 0 320 320" aria-label="可以拖动指针的钟表"></svg></div></div>
     <section class="recall-clock__panel">
@@ -193,10 +194,7 @@ export function showClockPuzzleUI(scene: Phaser.Scene, options: ClockPuzzleOptio
     status.textContent = '';
   };
   const position = () => {
-    const bounds = scene.game.canvas.getBoundingClientRect();
-    root.style.left = `${bounds.left}px`;
-    root.style.top = `${bounds.top}px`;
-    root.style.transform = `scale(${bounds.width / WIDTH}, ${bounds.height / HEIGHT})`;
+    fitCanvasDomOverlay(scene, root, WIDTH, HEIGHT);
   };
   const close = (result: 'cancel' | 'solved' | 'shutdown' = 'cancel') => {
     if (closed) return;

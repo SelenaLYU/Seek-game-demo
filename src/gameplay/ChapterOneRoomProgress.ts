@@ -23,8 +23,11 @@ export interface ChapterOneRoomProgress {
   photoPlacements: number[];
   photoSolved: boolean;
   batteryCollected: boolean;
+  flashlightCollected: boolean;
   flashlightPowered: boolean;
+  flashlightPlaced: boolean;
   paintBrushCollected: boolean;
+  paintBrushUsed: boolean;
   shadowBoatAligned: boolean;
   shadowBoatPieces?: Record<PieceId, PieceState>;
   shadowBoatLightX?: number;
@@ -53,8 +56,11 @@ const DEFAULT_PROGRESS: ChapterOneRoomProgress = {
   photoPlacements: [],
   photoSolved: false,
   batteryCollected: false,
+  flashlightCollected: false,
   flashlightPowered: false,
+  flashlightPlaced: false,
   paintBrushCollected: false,
+  paintBrushUsed: false,
   shadowBoatAligned: false,
   shadowBoatSolved: false,
   windStrokeCount: 0,
@@ -141,8 +147,11 @@ export function normalizeChapterOneRoomProgress(value: unknown): ChapterOneRoomP
     photoPlacements: photoSolved ? Array.from({ length: 16 }, (_, index) => index) : placements,
     photoSolved,
     batteryCollected: input.batteryCollected === true || flashlightPowered,
+    flashlightCollected: input.flashlightCollected === true || flashlightPowered,
     flashlightPowered,
+    flashlightPlaced: input.flashlightPlaced === true || savedAlignmentIsValid || shadowBoatSolved,
     paintBrushCollected: input.paintBrushCollected === true,
+    paintBrushUsed: input.paintBrushUsed === true || shadowBoatSolved,
     shadowBoatAligned: shadowBoatSolved || (input.shadowBoatAligned === true && hasAllPieces && validLightX),
     shadowBoatPieces,
     shadowBoatLightX: validLightX ? rawLightX as number : shadowBoatSolved ? SOLUTION_LIGHT_X : undefined,
