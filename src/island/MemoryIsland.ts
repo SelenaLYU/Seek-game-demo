@@ -6,6 +6,9 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { chapterState, completedChapters } from './Progress';
 import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
 import { characterGroundHeight } from './grounding';
+import { checkScatter, planScatter, type ScatterContext } from './scatter';
+import type { Placement } from './clipping';
+import { MAP_SCALE_X, coastlineRadius, distanceToPath, streamPaths, terrainHeight } from './terrain';
 
 type Options = { justCompleted?: number; completionSaved?: boolean; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
@@ -78,7 +81,7 @@ export function mountMemoryIsland(options: Options): () => void {
   const scene = new THREE.Scene();
   // The supplied plan is a wide, horizontal island. Keep coordinates used by
   // terrain/path generation compact, and widen the assembled island uniformly.
-  const mapScaleX = 1.34;
+  const mapScaleX = MAP_SCALE_X;
   const islandRoot = new THREE.Group();
   islandRoot.scale.x = mapScaleX;
   scene.add(islandRoot);
@@ -275,64 +278,14 @@ export function mountMemoryIsland(options: Options): () => void {
   ocean.castShadow = ocean.receiveShadow = false;
   ocean.frustumCulled = false;
   scene.add(ocean);
-  // The same smooth shoreline drives the ground, beach, trees and walking limit.
-  // Its minimum radius leaves the existing town and all six entrances on dry land.
-  const coastlineRadius = (angle: number) => 29.7
-    + 3.1 * Math.sin(2 * angle + 0.35)
-    + 1.9 * Math.cos(3 * angle - 0.9)
-    + 1.05 * Math.sin(5 * angle + 1.4)
-    + 6.0 * Math.exp(-Math.pow(Math.atan2(Math.sin(angle + Math.PI / 4), Math.cos(angle + Math.PI / 4)), 2) / (2 * 0.27 * 0.27));
-  const streamPaths: [number, number][][] = [
-    [[-27, 4], [-20, 5], [-14, 5], [-8, 6], [-3, 9], [3, 13], [12, 18], [25, 20]],
-    [[-12, -25], [-7, -18], [-2, -11], [3, -5], [8, 1], [15, 5], [25, 7]],
-  ];
-  const hilltops = [
-    { x: -15, z: 19, radius: 12, height: 3.0 },
-    { x: -15, z: -10, radius: 11, height: 3.7 },
-    { x: -1, z: -5, radius: 12, height: 2.7 },
-    { x: 14, z: 0, radius: 12, height: 4.0 },
-    { x: 8, z: 19, radius: 11, height: 3.1 },
-    { x: 14, z: -19, radius: 12, height: 4.8 },
-  ];
+  // Local helpers still used by the terrain shading, the stream ribbon and the
+  // bridge ramps. The height functions themselves are in ./terrain.
   const clamp01 = (value: number) => THREE.MathUtils.clamp(value, 0, 1);
   const ease = (value: number) => value * value * (3 - 2 * value);
-  function baseTerrainHeight(x: number, z: number) {
-    const radius = Math.hypot(x, z);
-    const angle = Math.atan2(x, z);
-    const edgeDistance = Math.max(0, coastlineRadius(angle) - 0.45 - radius);
-    const edgeFade = ease(clamp01(edgeDistance / 3.6));
-    let height = 0.35 + 0.7 * (1 - ease(clamp01(radius / 29)));
-    for (const hill of hilltops) {
-      const dx = (x - hill.x) * 0.92;
-      const dz = (z - hill.z) * 1.08;
-      const distance = Math.hypot(dx, dz);
-      const terrace = ease(clamp01((hill.radius - distance) / (hill.radius * 0.42)));
-      const hillHeight = 0.35 + hill.height * terrace;
-      const blend = Math.max(0.8 - Math.abs(height - hillHeight), 0);
-      height = Math.max(height, hillHeight) + blend * blend / 3.2;
-    }
-    const broadRoll = (Math.sin(x * 0.24 + z * 0.12) + Math.cos(z * 0.22 - x * 0.11)) * 0.11;
-    // Keep a raised rocky rim above the ocean so the island retains a distinct,
-    // stepped silhouette with a clean shoreline.
-    return Math.max(0, 1.15 * (1 - edgeFade) + (height + broadRoll) * edgeFade);
-  }
-  function distanceToPath(x: number, z: number, points: [number, number][]) {
-    let nearest = Infinity;
-    for (let i = 1; i < points.length; i++) {
-      const [ax, az] = points[i - 1], [bx, bz] = points[i];
-      const dx = bx - ax, dz = bz - az;
-      const t = clamp01(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz));
-      nearest = Math.min(nearest, Math.hypot(x - (ax + dx * t), z - (az + dz * t)));
-    }
-    return nearest;
-  }
-  function terrainHeight(x: number, z: number) {
-    const channelDepth = Math.max(...streamPaths.map(path => {
-      const distance = distanceToPath(x, z, path);
-      return 0.52 * (1 - ease(clamp01((distance - 0.6) / 1.65)));
-    }));
-    return Math.max(0, baseTerrainHeight(x, z) - channelDepth);
-  }
+  // The terrain functions now live in ./terrain so the scatter planner, the
+  // clipping audit and the probes all read the same heights as the renderer.
+  // Copying these formulas into a probe is how "the audit passes but the island
+  // still clips" happens.
   function islandGeometry(top: number, bottom: number, height: number) {
     const geometry = new THREE.CylinderGeometry(top, bottom, height, 192);
     const positions = geometry.getAttribute('position');
@@ -590,6 +543,8 @@ export function mountMemoryIsland(options: Options): () => void {
     water.castShadow = water.receiveShadow = false;
   }
   function footbridge(x: number, z: number, yaw: number) {
+    // 桥要坐在「未开溪」的原始地面高度上，与地形着色同一口径
+    const baseTerrainHeight = (px: number, pz: number) => terrainHeight(px, pz);
     const group = new THREE.Group(); group.position.set(x, baseTerrainHeight(x, z) - 0.02, z); group.rotation.y = yaw; islandRoot.add(group);
     bridgeLevels.push({ x, z, y: group.position.y + 0.162, yaw });
     const wood = mat('#9a7353'), plankLight = mat('#bd9670'), rope = mat('#80664d');
@@ -856,19 +811,54 @@ export function mountMemoryIsland(options: Options): () => void {
       label.position.copy(center).add(new THREE.Vector3(0, height + 2.8, 0)); label.scale.set(6.4 / mapScaleX, 1.6, 1); islandRoot.add(label); labels.push(label);
     }
   }
-  // Six concept buildings are the focal points; keep the gray blockout homes
-  // out of this review scene so they do not mask the generated assets.
-  // Sparse scenery stays outside the walking routes.
-  for (let i = 0; i < 18; i++) {
-    const angle = (i + 0.4) * Math.PI * 2 / 18;
-    const radius = coastlineRadius(angle) - 2.15 + Math.sin(i * 7) * 0.45;
+  // Scenery is now placed by the clipping-aware planner instead of hand-tuned
+  // loops. Every candidate point goes through `canPlace`; a rejected point is
+  // dropped (never nudged), which is what keeps the "no clipping" rule true by
+  // construction rather than by eyeballing screenshots.
+  // `walkwayPaths` holds island-local coordinates, but the planner compares in
+  // world space (worldX = x * mapScaleX), so convert once here.
+  const walkwaysInWorld = walkwayPaths.map(path => path.map(([x, z]) => [x * mapScaleX, z] as [number, number]));
+  const scatterFootprints = obstacles.map(box => ({
+    minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z,
+  }));
+  const scatterKeepClear = buildings.map(building => ({
+    x: building.door.x, z: building.door.z, radius: 1.8, label: `${chapterNames[building.id - 1]}门前`,
+  }));
+  const scatterContext: ScatterContext = {
+    footprints: scatterFootprints,
+    keepClear: scatterKeepClear,
+    walkwayPaths: walkwaysInWorld,
+  };
+  /** ScatterItem → clipping 的 Placement，两处判定共用同一个形状。 */
+  const toPlacements = (items: { id: string; x: number; z: number; radius: number; groundY: number }[]) =>
+    items.map(item => ({ id: item.id, x: item.x, z: item.z, radius: item.radius, baseY: item.groundY, groundY: item.groundY }));
+
+  const placedPlacements: Placement[] = [
+    ...obstacles.map((box, index) => ({
+      id: `obstacle#${index}`,
+      x: (box.min.x + box.max.x) / 2,
+      z: (box.min.z + box.max.z) / 2,
+      // 建筑占地盒当大半径的占位圆：盒的半对角 ≥ 半宽，所以更保守
+      radius: Math.max((box.max.x - box.min.x) / 2, (box.max.z - box.min.z) / 2),
+      baseY: 0,
+      groundY: 0,
+    })),
+  ];
+  // A ring of shoreline trees. Gone is the old "18 fixed angles" loop, which put
+  // every tree on a perfect circle and happily grew one into a building corner.
+  const trees = planScatter({
+    kind: 'tree', idPrefix: 'tree', seed: 20261005, count: 18,
+    radius: 0.78, targetHeight: null, modelHeight: 1,
+    context: scatterContext, placed: placedPlacements,
+    rules: { shoreMargin: 2.15 * mapScaleX, maxRadius: 27 },
+  });
+  for (const tree of trees) {
     const trunk = mesh(new THREE.CylinderGeometry(0.12, 0.17, 1.5, 7), mat('#7d8974'));
-    const x = Math.sin(angle) * radius, z = Math.cos(angle) * radius;
-    trunk.position.set(x, terrainHeight(x, z) + 0.75, z);
+    trunk.position.set(tree.x / mapScaleX, tree.groundY + 0.75, tree.z);
     trunk.castShadow = trunk.receiveShadow = false;
-    const blossomTree = angle > 0.75 && angle < 1.65;
+    const blossomTree = Math.abs(Math.hypot(tree.x / mapScaleX, tree.z) - 24) < 6 && tree.z < 0;
     for (let leaf = 0; leaf < 3; leaf++) {
-      const crown = mesh(new THREE.IcosahedronGeometry(0.72 + ((i + leaf) % 3) * 0.12, 1), mat(blossomTree ? (leaf % 2 ? '#e7a9c5' : '#f0bad0') : (leaf % 2 ? '#8eaa89' : '#769989')));
+      const crown = mesh(new THREE.IcosahedronGeometry(0.72 + ((tree.id.length + leaf) % 3) * 0.12, 1), mat(blossomTree ? (leaf % 2 ? '#e7a9c5' : '#f0bad0') : (leaf % 2 ? '#8eaa89' : '#769989')));
       const a = leaf * Math.PI * 2 / 3;
       crown.position.copy(trunk.position).add(new THREE.Vector3(Math.sin(a) * 0.48, 1.1 + (leaf % 2) * 0.32, Math.cos(a) * 0.48));
       crown.scale.set(1.08, 0.86 + (leaf % 2) * 0.12, 0.98);
@@ -876,17 +866,24 @@ export function mountMemoryIsland(options: Options): () => void {
     }
   }
   // A denser pink grove frames the fourth memory house while leaving the path open.
-  for (const [x, z, tint] of [[11, -3, '#e7a9c5'], [17, -3, '#f0bad0'], [18, 3, '#e7a9c5'], [10, 3, '#f4c7d7']] as const) {
+  // It sits well inside the shoreline, so it only needs the default shore margin.
+  const grove = planScatter({
+    kind: 'tree', idPrefix: 'grove', seed: 20261006, count: 4,
+    radius: 1.05, targetHeight: null, modelHeight: 1,
+    context: scatterContext, placed: placedPlacements,
+    rules: { maxRadius: 27 },
+  });
+  for (const item of grove) {
     const trunk = mesh(new THREE.CylinderGeometry(0.13, 0.19, 1.8, 7), mat('#806d62'));
-    trunk.position.set(x, terrainHeight(x, z) + 0.9, z);
+    trunk.position.set(item.x / mapScaleX, item.groundY + 0.9, item.z);
     for (let leaf = 0; leaf < 4; leaf++) {
-      const crown = mesh(new THREE.IcosahedronGeometry(0.9 + (leaf % 2) * 0.14, 1), mat(tint));
-      // 树冠必须挂在树干顶端而不是绝对高度：这片树丛坐在树屋山头上（地形高 3~4），
+      const crown = mesh(new THREE.IcosahedronGeometry(0.9 + (leaf % 2) * 0.14, 1), mat(leaf % 2 ? '#e7a9c5' : '#f0bad0'));
+      // 树冠挂在树干顶端而不是绝对高度：这片树丛坐在树屋山头上（地形高 3~4），
       // 旧实现把树冠放在绝对 y≈1.75，整冠埋进山体，只剩光杆戳出坡面，远看像破面。
       crown.position.set(
-        x + Math.sin(leaf * Math.PI / 2) * 0.55,
+        item.x / mapScaleX + Math.sin(leaf * Math.PI / 2) * 0.55,
         trunk.position.y + 0.85 + (leaf % 2) * 0.34,
-        z + Math.cos(leaf * Math.PI / 2) * 0.55,
+        item.z + Math.cos(leaf * Math.PI / 2) * 0.55,
       );
       crown.scale.set(1.1, 0.9, 1);
     }
@@ -897,30 +894,36 @@ export function mountMemoryIsland(options: Options): () => void {
   const flowerGeometry = new THREE.SphereGeometry(0.085, 8, 6);
   const groundCoverMats = ['#7e9f7e', '#93ae83', '#a2b985'].map(color => mat(color));
   const flowerMats = ['#f1d98d', '#f0b6c7', '#f4efe0'].map(color => mat(color));
-  let groundCoverCount = 0;
-  for (let i = 0; i < 90 && groundCoverCount < 38; i++) {
-    const angle = i * 2.399963;
-    const radius = 7.2 + (i * 7.13 % 17.5);
-    const x = Math.sin(angle) * radius, z = Math.cos(angle) * radius;
-    if (radius > coastlineRadius(angle) - 4.2) continue;
-    if (sites.some(site => Math.hypot(x - site.x, z - site.z) < 5.6)) continue;
-    if (streamPaths.some(path => distanceToPath(x, z, path) < 2.5)) continue;
-    if (walkwayPaths.some(path => distanceToPath(x, z, path) < 2.65)) continue;
-    groundCoverCount++;
+  // cover is planned last, so it must see the trees/grove that are already down.
+  // Planning it against only the obstacles is exactly the "one rule while placing,
+  // another while auditing" failure the clipping module exists to prevent.
+  const cover = planScatter({
+    kind: 'groundCover', idPrefix: 'cover', seed: 20261007, count: 38,
+    radius: 0.55, targetHeight: null, modelHeight: 1,
+    context: scatterContext, placed: [...placedPlacements, ...toPlacements([...trees, ...grove])],
+    rules: { shoreMargin: 4.2 * mapScaleX, maxRadius: 24, pathMargin: 2.65 },
+  });
+  cover.forEach((item, index) => {
+    placedPlacements.push({ id: item.id, x: item.x, z: item.z, radius: item.radius, baseY: item.groundY, groundY: item.groundY });
     for (let tuft = 0; tuft < 3; tuft++) {
-      const offsetX = Math.sin(tuft * 2.1 + angle) * 0.32;
-      const offsetZ = Math.cos(tuft * 2.1 + angle) * 0.32;
-      const bush = mesh(groundCoverGeometry, groundCoverMats[(i + tuft) % groundCoverMats.length]);
-      bush.position.set(x + offsetX, terrainHeight(x + offsetX, z + offsetZ) + 0.22, z + offsetZ);
-      bush.scale.set(0.9 + tuft * 0.14, 0.62 + (tuft % 2) * 0.12, 0.85 + (i % 3) * 0.08);
+      const offsetX = Math.sin(tuft * 2.1 + index) * 0.32;
+      const offsetZ = Math.cos(tuft * 2.1 + index) * 0.32;
+      const bush = mesh(groundCoverGeometry, groundCoverMats[(index + tuft) % groundCoverMats.length]);
+      bush.position.set(item.x / mapScaleX + offsetX, terrainHeight(item.x / mapScaleX + offsetX, item.z + offsetZ) + 0.22, item.z + offsetZ);
+      bush.scale.set(0.9 + tuft * 0.14, 0.62 + (tuft % 2) * 0.12, 0.85 + (index % 3) * 0.08);
     }
     for (let bloom = 0; bloom < 3; bloom++) {
-      const a = angle + bloom * Math.PI * 2 / 3;
-      const flowerX = x + Math.sin(a) * 0.48, flowerZ = z + Math.cos(a) * 0.48;
-      const flower = mesh(flowerGeometry, flowerMats[(i + bloom) % flowerMats.length]);
+      const a = index * 2.399963 + bloom * Math.PI * 2 / 3;
+      const flowerX = item.x / mapScaleX + Math.sin(a) * 0.48, flowerZ = item.z + Math.cos(a) * 0.48;
+      const flower = mesh(flowerGeometry, flowerMats[(index + bloom) % flowerMats.length]);
       flower.position.set(flowerX, terrainHeight(flowerX, flowerZ) + 0.22, flowerZ);
     }
-  }
+  });
+  // Full audit after everything is placed: an empty result is the only way the
+  // "no clipping" rule can be considered satisfied.
+  const scatterIssues = checkScatter([...trees, ...grove, ...cover], scatterContext);
+  if (scatterIssues.length) console.error('[MemoryIsland] 散布穿模审计未通过', scatterIssues);
+  else console.info('[MemoryIsland] 散布穿模审计通过', { trees: trees.length, grove: grove.length, cover: cover.length });
   const player = new THREE.Group(); scene.add(player); player.position.set(0, characterGroundHeight(0, 3, walkableHeight), 3);
   const blockoutPlayer = new THREE.Group(); player.add(blockoutPlayer);
   const body = mesh(new THREE.CapsuleGeometry(0.29, 0.6, 5, 10), mat('#385b60'), blockoutPlayer); body.position.y = 1;
@@ -933,6 +936,59 @@ export function mountMemoryIsland(options: Options): () => void {
     const arm = mesh(new THREE.CapsuleGeometry(0.09, 0.46, 4, 8), mat('#75958b'), blockoutPlayer);
     arm.position.set(side * 0.4, 1.04, 0);
   }
+  // Eight Tripo props (rocks, coral, palm, blossom, bush, flowers, broadleaf,
+  // rock-outcrop) from public/island-models/props/. They are placed by the same
+  // planner as the scenery, so they obey the same no-clipping rule.
+  const propAssets = [
+    { file: 'rock', targetHeight: 1.6, radius: 1.0, count: 5 },
+    { file: 'rock-outcrop', targetHeight: 2.0, radius: 1.2, count: 4 },
+    { file: 'coral', targetHeight: 1.1, radius: 0.7, count: 4 },
+    { file: 'palm', targetHeight: 3.4, radius: 1.1, count: 5 },
+    { file: 'blossom', targetHeight: 2.6, radius: 0.9, count: 4 },
+    { file: 'broadleaf', targetHeight: 3.0, radius: 1.0, count: 4 },
+    { file: 'bush', targetHeight: 1.2, radius: 0.6, count: 5 },
+    { file: 'flower-clump', targetHeight: 0.8, radius: 0.5, count: 5 },
+  ] as const;
+  const propModels = new Map<string, { height: number; object: THREE.Group }>();
+  const propSpots = propAssets.flatMap((asset, index) => planScatter({
+    kind: 'prop', idPrefix: asset.file, seed: 20261008 + index * 7, count: asset.count,
+    radius: asset.radius, targetHeight: asset.targetHeight, modelHeight: 1,
+    context: scatterContext, placed: placedPlacements,
+    rules: { shoreMargin: 2.4, maxRadius: 25 },
+  }));
+  // Load each prop once and instance it at its planned spots, so eight assets
+  // cover ~36 placements without paying the load cost 36 times.
+  Promise.all(propAssets.map(async asset => {
+    const url = `/island-models/props/${asset.file}.glb`;
+    const gltf = await gltfLoader.loadAsync(url);
+    if (signal.aborted) { disposeGltf(gltf.scene); return; }
+    gltf.scene.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(gltf.scene);
+    const height = bounds.getSize(new THREE.Vector3()).y;
+    gltf.scene.traverse(object => {
+      if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; }
+    });
+    propModels.set(asset.file, { height: Math.max(height, 0.001), object: gltf.scene });
+  })).then(() => {
+    if (signal.aborted) return;
+    for (const spot of propSpots) {
+      const entry = propModels.get(spot.id.split('#')[0]);
+      if (!entry) continue;
+      const instance = entry.object.clone(true);
+      // 底面贴地：模型原点在几何中心，先按目标高度缩放，再把 clone 的最低点
+      // 抬到地形高度——否则一半埋进土里（这正是 decisions 里那条「建筑底座陷沙」的同款错误）。
+      const scale = spot.scale;
+      instance.scale.setScalar(scale);
+      instance.updateMatrixWorld(true);
+      instance.position.set(spot.x, 0, spot.z);
+      instance.updateMatrixWorld(true);
+      const landed = new THREE.Box3().setFromObject(instance);
+      instance.position.y += spot.groundY - landed.min.y;
+      instance.updateMatrixWorld(true);
+      islandRoot.add(instance);
+    }
+  }).catch(error => console.error('[MemoryIsland] 散布道具加载失败', error));
+
   const characterAnimationPaths = {
     idle: '/island-models/character-han-meimei-idle.glb',
     walk: '/island-models/character-han-meimei-walk.glb',

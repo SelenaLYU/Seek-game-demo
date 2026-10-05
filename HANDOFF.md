@@ -106,7 +106,7 @@ npm run build               # tsc --noEmit + vite build
 | `CHAPTER_TWO_MEMORY_ROOM_DESIGN.md` | 第二关房间设计（Selena 维护） |
 | `decisions/2026-10-03-webp-and-load-optimization.md` | WebP 化与加载优化（工具、接入点、实测数据、下一档待办） |
 | `decisions/2026-10-05-island-model-orientation.md` | 记忆之岛资产朝向：作者朝向 +X，统一 -π/2，含罗盘判据与实走判据 |
-| `decisions/2026-10-05-no-clipping-island.md` | **硬约束：岛上不许穿模**（四条判定 + 已知穿模清理清单 + 执行机制） |
+| `decisions/2026-10-05-no-clipping-island.md` | **硬约束：岛上不许穿模**（四条判定 + 已知穿模清理清单 + 执行机制 + 散布系统接线说明） |
 | `decisions/2026-10-05-island-hdr-lighting.md` | 岛屿光照：HDR IBL + Neutral tone mapping + 主光跟随 HDR 太阳，含配方表与阴影视锥修正 |
 | `decisions/` | 架构与设定决策记录 |
 | `archive/` | 全部历史文档，仅作追溯 |
@@ -145,6 +145,27 @@ npm run build               # tsc --noEmit + vite build
   （贴地平线且在镜头背后，形体和影子都不出来），所以把环境与主光一起转到 `KEY_SUN_AZIMUTH`。
   半球光 1.45→0.16、主光 2.15→2.8、`NeutralToneMapping` + exposure 1.32；阴影视锥 ±26 → ±38
   （原来外围地标落在视锥外，根本投不出影子）。
+- **散布系统接进场景（2026-10-05 补齐，此前判定层与测试层都在、唯独没接线）**：
+  环岛 18 棵树、粉色树丛 4 棵、38 丛地被原先是三处硬编码循环（固定角度/固定螺旋），
+  只判「离岸/离路/离溪」，**从不跑穿模判定**；props/README 与 decisions 却写着
+  「由 `src/island/scatter.ts` 摆放并过审计」，而那个文件根本不存在。现在：
+  - 新增 `src/island/terrain.ts`——地形/岸线/溪流/山头算式抽成单一真源。
+    原先这些公式只躺在 `MemoryIsland.ts` 里，探针若要量地形只能抄一份，
+    抄的那份迟早和渲染漂移（「审计过了但岛上一眼看得出穿模」就是这么来的）。
+  - 新增 `src/island/scatter.ts`——所有落点先过 `canPlace`，**被否决就丢，不挪**；
+    摆完 `auditPlacements` 全量复核。散布一律世界坐标（x 未经 `MAP_SCALE_X`），
+    与 `clipping.ts` 的 `Footprint` 口径一致；只有地形高度函数吃岛本地坐标，故经
+    `terrainHeightWorld()` 换算。
+  - 8 件 Tripo 道具真正上岛（此前只是入库，运行时没加载）：按目标高度缩放后
+    **底面贴地**摆放（模型原点在几何中心，直接放会有一半埋土里）。
+  - 回归 `tests/islandScatter.test.mjs` 6 项（规则没被改松、种子可复现、压盒/压门前圈/压路被丢、
+    落点坐地）；`npm test` 67/67。`node tools/probe-island-scatter.mjs` 实跑：
+    审计通过 `{trees: 18, grove: 4, cover: 38}`，0 console error，基线截图 `screenshots/island/scatter-overview.png`。
+  - 接线时当场抓出 3 条互穿（`tree#2` 压 `cover#0/#4`、`tree#15` 压 `cover#2`）：
+    原因是 `cover` 规划时没把已摆好的 `trees`/`grove` 放进 `placed`，
+    正是「摆的时候一套规则、审的时候另一套」这个失效模式本身。修掉后审计转绿。
+  坐标口径提醒：`walkwayPaths`/`sites` 存岛本地坐标，散布要世界坐标，
+  接的时候经 `walkwaysInWorld` 换算过一次；别再抄一份地图缩放。
 - **散布道具**：Tripo P1 生成 8 件（岩石×2、珊瑚、花丛、灌木、棕榈、阔叶树、樱树，共 320 积分），
   `node tools/import-island-props.mjs` 归一化命名并压到 512 贴图 → `public/island-models/props/`（14.3MB → 872KB）。
   原始产物与 task id 见 `public/island-models/props/README.md` 与 `art/island/props/tripo-out/`（本地）。

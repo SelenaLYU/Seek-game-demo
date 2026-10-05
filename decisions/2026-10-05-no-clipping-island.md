@@ -58,6 +58,8 @@
 - `npm test` → `tests/islandClipping.test.mjs` 8 组用例：贴地/悬空/深陷阈值边界、相切不算相交、
   压建筑盒的盒内/压边/压角/擦不到、门前净空圈、两两互穿只报一次、`canPlace` 与审计同口径、种子可复现。
 - 运行时：dev 下散布完成后 `console` 打出审计结果；探针读这条日志并截图
-  （`tools/probe-island-scatter.mjs`，随散布系统一起落地）。
+  （`tools/probe-island-scatter.mjs`，随散布系统一起落地）。**已于 2026-10-05 落地**：
+  `auditPlacements` 全量复核为空才算过，否则 `console.error` 并把问题对象打出来。
 - 现场清理清单（按上表逐条消除，做完一项在 HANDOFF §9 里划掉）：
   栈桥与岸线衔接、建筑底座与坡地关系、树/道具回避建筑 footprint、崖壁与裙边接缝、散布离岸距离。
+  其中「树/道具回避建筑 footprint」与「散布离岸距离」两项已随散布系统接入一起解决。
