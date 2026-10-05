@@ -31,11 +31,8 @@ const TEAMMATE_ASSETS: readonly AssetReviewEntry[] = [
   { label: '骑楼夜景：值班老师', path: 'assets/level2/night-v1/teacher.png', note: '光锥仍由代码绘制' },
   { label: '骑楼夜景：旧钞票（原旧票根）', path: 'assets/level2/night-v1/old-banknote.png', note: 'ID 仍为 memory-token-2' },
   { label: '骑楼夜景：记忆房入口门', path: 'assets/level2/night-v1/door.png' },
-  { label: '骑楼白天：宽幅底图（未接入）', path: 'assets/scenes/chapter2/chapter2-qilou-water-town-background-hd-7360x2200.png', note: '白天版本，已被夜景取代' },
-  { label: '骑楼图集：平台砖块', path: 'assets/level2/qilou/chapter2-platform-tiles-4x2.png', note: '配 .aligned.json，尚未接入' },
-  { label: '骑楼图集：遮挡模块', path: 'assets/level2/qilou/chapter2-cover-modules-5x2.png', note: '尚未接入' },
-  { label: '骑楼图集：静态障碍', path: 'assets/level2/qilou/chapter2-static-obstacles-3x3.png', note: '尚未接入' },
-  { label: '骑楼图集：动态目标', path: 'assets/level2/qilou/chapter2-dynamic-goal-modules-4x2.png', note: '尚未接入' },
+  // 骑楼美术以夜骑楼为唯一真源（ruchengloria 648cadd，见 decisions/2026-10-05-qilou-art-night-only.md）。
+  // 白昼骑楼图集与宽幅底图已于 2026-10-05 废弃并从仓库移除，不再在此列出。
 ];
 
 /** `?storeArt=1` 把美术背景贴进房间；`?artPreview=1` 沿用关卡里的美术检查开关。 */

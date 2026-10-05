@@ -114,7 +114,8 @@ test('asset-review panel resolves every review image to WebP', () => {
   const storeBg = room.match(/const STORE_BG_PATH = '(assets\/[^']+\.(?:png|jpg|jpeg))'/)?.[1];
   assert.ok(storeBg, 'AssetReviewOverlay 的小卖部背景 path 应该能解析出来');
   reviewPaths.push(storeBg);
-  assert.equal(reviewPaths.length, 21, `素材审查面板应列出 21 个资产，实际 ${reviewPaths.length}`);
+  // 2026-10-05：白昼骑楼 5 张（图集 4 + 宽幅底图 1）废弃移除，21 → 16。
+  assert.equal(reviewPaths.length, 16, `素材审查面板应列出 16 个资产，实际 ${reviewPaths.length}`);
   const missing = reviewPaths.filter(p => !existsSync(at(webpOf(p))));
   assert.deepEqual(missing, [], `审查面板图缺 WebP：\n  ${missing.join('\n  ')}`);
   assert.match(overlay, /image\.src\s*=\s*resolveImageUrl\(entry\.path\)/);

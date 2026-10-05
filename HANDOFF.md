@@ -12,7 +12,7 @@
 - `origin/main` = `0f3c916`（PR #11：第二关记忆之房后半段灰盒 + 后续灰盒至此版结尾）。
 - 我的工作分支：`codex/level1-progress-music`（第一关 + UI/工程）。当前本地领先 `origin/codex/level1-progress-music` 1 个提交（`a5849e8` 四条体验遗留修复），**未推送**；PR 仍是 [#18](https://github.com/SelenaLYU/Seek-game-demo/pull/18)（open）。推送前先 `git fetch` 再看 `git status -sb`。
 - 同日并行会话在做第二关美术 / 第三关灰盒与**李雷童年 3D 建模**（`assets/characters/lilei/tripo-out/`、`tools/*chapter2*` 等未跟踪文件归它）；改动前先看 `git status`，别把对方的在改文件带进提交。
-- 只读参考分支：`origin/ART`（骑楼美术）、`origin/island-prototype`、`origin/story-design`。**不要直接 merge `ART`**：它基于很旧的代码，会删掉近万行；只能挑文件。
+- 只读参考分支：`origin/ART`（**白昼**骑楼美术，2026-10-05 已废弃，见 `decisions/2026-10-05-qilou-art-night-only.md`）、`origin/island-prototype`、`origin/story-design`。**不要直接 merge `ART`**：它基于很旧的代码，会删掉近万行；只能挑文件。
 
 ## 2. 剧情依据（唯一）
 
@@ -46,6 +46,8 @@
 
 验收记录（2026-10-05，第二关素材审查面板 WebP）：AssetReviewOverlay 与房间调试背景接入 `resolveImageUrl()`；审查清单 12 张图新增 WebP，总清单 **109.22MB → 10.81MB（节省 90.1%）**。面板浏览器逐个检查 **21/21** 加载成功，0 console error / 失败请求；宽幅底图目视无色损。`npm test` 55/55、`npm run build`、`tools/probe-level1-experience.mjs` 12/12、`tools/optimize-images.py --check` 通过。`tools/test-e2e.mjs` 与 `tools/probe-load-perf.mjs` 因 Chrome CDP `127.0.0.1:9333` 未启动而未运行；待补验。详见 `decisions/2026-10-03-webp-and-load-optimization.md` 第 7 节。
 
+验收记录（2026-10-05，骑楼美术定源 + 白昼骑楼清除）：骑楼美术以**夜骑楼** `assets/level2/night-v1/`（ruchengloria `648cadd`，10-03 17:57）为**唯一真源**；复核过 PNG 与该提交逐字节相同、35 张素材全部接入、尺寸与 `geometry.json` 逐项吻合、`?scene=chapter2` 七处取景 0 console error。白昼骑楼图集 4 组 + 宽幅底图连同接线 WIP 全部移除，**共删 32.81MiB**（PNG 29.55 + WebP 3.26）。素材审查面板 21 → 16 条（PNG 52.38 → 22.83MiB、WebP 5.23 → 1.97MiB）；`tools/optimize-images.py` 清单 83 → 78 条（PNG 109.22 → 79.66MiB、WebP 10.81 → 7.54MiB）。裁定见 `decisions/2026-10-05-qilou-art-night-only.md`。
+
 ## 4. 第二关（Selena 那一侧）现状
 
 PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、瓶盖一盘一笔画、六幕可点击分镜、回岛点亮第二段、岛屿章节列表 1–3、第三关入口提示「未完待续」+ 选项查看**第三关站位预告**（3 秒灰盒，可跳过，自动回岛）。
@@ -70,11 +72,11 @@ PR #11 已合入：货架八件可交换（穷举 40320 种确认唯一解）、
    - `archive/2026-10-02-bugs-and-ux-review.md` 里的条目仍不可直接当待修清单：P1-5（隐形墙）、P2-2（松手突跳）早已修掉。
 6. 推送分支 + 开 PR。
 
-需要用户决策：旧素材（6 张已删文件的删除动作、`assets/level2/qilou` 等未跟踪美术）如何处置；并发编辑归属（见下）。
+已裁定（2026-10-05）：骑楼美术以夜骑楼（ruchengloria `648cadd`）为准，白昼骑楼图集与宽幅底图及全套接线 WIP 已废弃并删除（`decisions/2026-10-05-qilou-art-night-only.md`）。并发编辑归属仍按下节规矩处理。
 
 ## 6. ⚠️ 并发编辑风险
 
-同一个工作区里可能有**另一个会话**同时在改第二关（观察到 `src/scenes/ChapterTwoChallengeScene.ts`、`src/gameplay/chapterTwoRules.ts`、`tests/chapterTwoRules.test.mjs` 被反复改写，且 `assets/level2/qilou/`、`assets/scenes/chapter2/` 的美术素材尚未被任何提交跟踪）。
+同一个工作区里可能有**另一个会话**同时在改第二关（观察到 `src/scenes/ChapterTwoChallengeScene.ts`、`src/gameplay/chapterTwoRules.ts`、`tests/chapterTwoRules.test.mjs` 被反复改写）。另注意：工作区随时可能被那个会话切分支（2026-10-05 18:08 就被从 `codex/level1-progress-music` 切到 `main`），动手前先 `git branch --show-current`。
 
 规矩：
 
