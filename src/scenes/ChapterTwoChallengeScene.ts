@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Player } from '../gameplay/Player';
 import { Terrain } from '../gameplay/Terrain';
 import { applyHDCamera } from '../systems/Resolution';
+import { resolveImageUrl } from '../assets';
 import { TEACHER, LIGHT_ORIGIN, LIGHT_LENGTH, LIGHT_HALF_ANGLE, DETECTION_MS, initialSearchlight, updateLight, isInBeam, belowStreet } from '../gameplay/chapterTwoRules';
 
 import { NIGHT } from '../gameplay/ChapterTwoNightArt';
@@ -70,41 +71,44 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image('night-background', 'assets/level2/night-v1/background-night.png');
-    this.load.image('night-p01', 'assets/level2/night-v1/p01.png');
-    this.load.image('night-p02', 'assets/level2/night-v1/p02.png');
-    this.load.image('night-p03', 'assets/level2/night-v1/p03.png');
-    this.load.image('night-p04', 'assets/level2/night-v1/p04.png');
-    this.load.image('night-p05', 'assets/level2/night-v1/p05.png');
-    this.load.image('night-p06', 'assets/level2/night-v1/p06.png');
-    this.load.image('night-p07', 'assets/level2/night-v1/p07.png');
-    this.load.image('night-p08', 'assets/level2/night-v1/p08.png');
-    this.load.image('night-p09', 'assets/level2/night-v1/p09.png');
-    this.load.image('night-h01', 'assets/level2/night-v1/h01.png');
-    this.load.image('night-h02', 'assets/level2/night-v1/h02.png');
-    this.load.image('night-h03', 'assets/level2/night-v1/h03.png');
-    this.load.image('night-h04', 'assets/level2/night-v1/h04.png');
-    this.load.image('night-h05', 'assets/level2/night-v1/h05.png');
-    this.load.image('night-h06', 'assets/level2/night-v1/h06.png');
-    this.load.image('night-h07', 'assets/level2/night-v1/h07.png');
-    this.load.image('night-h08', 'assets/level2/night-v1/h08.png');
-    this.load.image('night-h09', 'assets/level2/night-v1/h09.png');
-    this.load.image('night-c01', 'assets/level2/night-v1/c01.png');
-    this.load.image('night-c02', 'assets/level2/night-v1/c02.png');
-    this.load.image('night-c03', 'assets/level2/night-v1/c03.png');
-    this.load.image('night-c04', 'assets/level2/night-v1/c04.png');
-    this.load.image('night-c05', 'assets/level2/night-v1/c05.png');
-    this.load.image('night-c06', 'assets/level2/night-v1/c06.png');
-    this.load.image('night-c07', 'assets/level2/night-v1/c07.png');
-    this.load.image('night-c08', 'assets/level2/night-v1/c08.png');
-    this.load.image('night-c09', 'assets/level2/night-v1/c09.png');
-    this.load.image('night-c10', 'assets/level2/night-v1/c10.png');
-    this.load.image('night-s01', 'assets/level2/night-v1/s01.png');
-    this.load.image('night-s02', 'assets/level2/night-v1/s02.png');
-    this.load.image('night-w01', 'assets/level2/night-v1/w01.png');
-    this.load.image('night-teacher', 'assets/level2/night-v1/teacher.png');
-    this.load.image('night-ticket', 'assets/level2/night-v1/old-banknote.png');
-    this.load.image('night-door', 'assets/level2/night-v1/door.png');
+    // 这 35 条 literal 路径写成完整路径（不要用模板拼接）：vite.config 的 runtimeAssetPaths
+    // 会把它们当字面量拷进 dist，模板串会被判成可疑路径直接让构建失败。
+    // 包一层 resolveImageUrl 才能拿到同名 webp——第二关进场 11.9MB → 1.5MB。
+    this.load.image('night-background', resolveImageUrl('assets/level2/night-v1/background-night.png'));
+    this.load.image('night-p01', resolveImageUrl('assets/level2/night-v1/p01.png'));
+    this.load.image('night-p02', resolveImageUrl('assets/level2/night-v1/p02.png'));
+    this.load.image('night-p03', resolveImageUrl('assets/level2/night-v1/p03.png'));
+    this.load.image('night-p04', resolveImageUrl('assets/level2/night-v1/p04.png'));
+    this.load.image('night-p05', resolveImageUrl('assets/level2/night-v1/p05.png'));
+    this.load.image('night-p06', resolveImageUrl('assets/level2/night-v1/p06.png'));
+    this.load.image('night-p07', resolveImageUrl('assets/level2/night-v1/p07.png'));
+    this.load.image('night-p08', resolveImageUrl('assets/level2/night-v1/p08.png'));
+    this.load.image('night-p09', resolveImageUrl('assets/level2/night-v1/p09.png'));
+    this.load.image('night-h01', resolveImageUrl('assets/level2/night-v1/h01.png'));
+    this.load.image('night-h02', resolveImageUrl('assets/level2/night-v1/h02.png'));
+    this.load.image('night-h03', resolveImageUrl('assets/level2/night-v1/h03.png'));
+    this.load.image('night-h04', resolveImageUrl('assets/level2/night-v1/h04.png'));
+    this.load.image('night-h05', resolveImageUrl('assets/level2/night-v1/h05.png'));
+    this.load.image('night-h06', resolveImageUrl('assets/level2/night-v1/h06.png'));
+    this.load.image('night-h07', resolveImageUrl('assets/level2/night-v1/h07.png'));
+    this.load.image('night-h08', resolveImageUrl('assets/level2/night-v1/h08.png'));
+    this.load.image('night-h09', resolveImageUrl('assets/level2/night-v1/h09.png'));
+    this.load.image('night-c01', resolveImageUrl('assets/level2/night-v1/c01.png'));
+    this.load.image('night-c02', resolveImageUrl('assets/level2/night-v1/c02.png'));
+    this.load.image('night-c03', resolveImageUrl('assets/level2/night-v1/c03.png'));
+    this.load.image('night-c04', resolveImageUrl('assets/level2/night-v1/c04.png'));
+    this.load.image('night-c05', resolveImageUrl('assets/level2/night-v1/c05.png'));
+    this.load.image('night-c06', resolveImageUrl('assets/level2/night-v1/c06.png'));
+    this.load.image('night-c07', resolveImageUrl('assets/level2/night-v1/c07.png'));
+    this.load.image('night-c08', resolveImageUrl('assets/level2/night-v1/c08.png'));
+    this.load.image('night-c09', resolveImageUrl('assets/level2/night-v1/c09.png'));
+    this.load.image('night-c10', resolveImageUrl('assets/level2/night-v1/c10.png'));
+    this.load.image('night-s01', resolveImageUrl('assets/level2/night-v1/s01.png'));
+    this.load.image('night-s02', resolveImageUrl('assets/level2/night-v1/s02.png'));
+    this.load.image('night-w01', resolveImageUrl('assets/level2/night-v1/w01.png'));
+    this.load.image('night-teacher', resolveImageUrl('assets/level2/night-v1/teacher.png'));
+    this.load.image('night-ticket', resolveImageUrl('assets/level2/night-v1/old-banknote.png'));
+    this.load.image('night-door', resolveImageUrl('assets/level2/night-v1/door.png'));
     // 与第一关共用同一个年年角色（三套序列帧由 Player 统一下发）
     Player.preload(this);
   }

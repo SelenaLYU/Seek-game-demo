@@ -64,6 +64,56 @@ RUNTIME_IMAGES: tuple[str, ...] = (
     "assets/environment/room-shadow-triangle-ruler.png",
     "assets/environment/room-shadow-pencil.png",
     "assets/environment/room-wall-boat.png",
+    # —— 记忆之房后续补的美术（2026-10-02~05 加进代码，当时漏登记，房间因此多传 15.7MB PNG）——
+    # 记一条教训：这份清单是**手维护**的，新图进代码就必须在这里补一行，
+    # 否则 resolveImageUrl 找不到同名 webp 就安静回落到 PNG，性能问题不会让任何测试变红。
+    "assets/environment/interactive-family-zoo-photo-frame-384x256.png",
+    "assets/environment/interactive-vintage-radio-384x256.png",
+    "assets/environment/room-lockbox-closed-v1.png",
+    "assets/environment/room-lockbox-open-battery-v1.png",
+    "assets/items/room-fairytale-book-v1.png",
+    "assets/items/room-flashlight-battery-v1.png",
+    "assets/items/room-memory-pearl-shell-v1.png",
+    # 碎片 HUD 的 168px 贝壳图标（DOM 层，PNG 已很小；仍登记以便统一走同一套体积报告）
+    "assets/items/room-memory-pearl-shell-hud-v1.png",
+    # —— 第二关：夜骑楼挑战（ChapterTwoChallengeScene 的 35 张 literal load.image）——
+    # 这批图 2026-10-04 入库时没登记，第二关进场一次传 11.9MB PNG；
+    # 登记后走 resolveImageUrl 的同名 webp，落到 ~1MB。
+    "assets/level2/night-v1/background-night.png",
+    "assets/level2/night-v1/c01.png",
+    "assets/level2/night-v1/c02.png",
+    "assets/level2/night-v1/c03.png",
+    "assets/level2/night-v1/c04.png",
+    "assets/level2/night-v1/c05.png",
+    "assets/level2/night-v1/c06.png",
+    "assets/level2/night-v1/c07.png",
+    "assets/level2/night-v1/c08.png",
+    "assets/level2/night-v1/c09.png",
+    "assets/level2/night-v1/c10.png",
+    "assets/level2/night-v1/door.png",
+    "assets/level2/night-v1/h01.png",
+    "assets/level2/night-v1/h02.png",
+    "assets/level2/night-v1/h03.png",
+    "assets/level2/night-v1/h04.png",
+    "assets/level2/night-v1/h05.png",
+    "assets/level2/night-v1/h06.png",
+    "assets/level2/night-v1/h07.png",
+    "assets/level2/night-v1/h08.png",
+    "assets/level2/night-v1/h09.png",
+    "assets/level2/night-v1/old-banknote.png",
+    "assets/level2/night-v1/p01.png",
+    "assets/level2/night-v1/p02.png",
+    "assets/level2/night-v1/p03.png",
+    "assets/level2/night-v1/p04.png",
+    "assets/level2/night-v1/p05.png",
+    "assets/level2/night-v1/p06.png",
+    "assets/level2/night-v1/p07.png",
+    "assets/level2/night-v1/p08.png",
+    "assets/level2/night-v1/p09.png",
+    "assets/level2/night-v1/s01.png",
+    "assets/level2/night-v1/s02.png",
+    "assets/level2/night-v1/teacher.png",
+    "assets/level2/night-v1/w01.png",
 )
 
 # 有透明通道的道具统一用更高的 q（alpha 边缘更容易被抹），背景/实拍用低一档即可。
@@ -99,27 +149,36 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", action="store_true", help="只统计，不写文件")
     parser.add_argument("--force", action="store_true", help="忽略时间戳，强制重转")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="只体检：缺 webp / webp 比 PNG 旧 就退出码 1（不写文件；不需要 cwebp）",
+    )
     args = parser.parse_args()
 
-    if not args.report and subprocess.run(["which", "cwebp"], capture_output=True).returncode != 0:
+    if not args.report and not args.check and subprocess.run(["which", "cwebp"], capture_output=True).returncode != 0:
         print("缺少 cwebp（brew install webp）", file=sys.stderr)
         return 1
 
     results: list[Result] = []
     missing: list[str] = []
+    stale: list[str] = []
     for rel in RUNTIME_IMAGES:
         src = ROOT / rel
         if not src.exists():
             missing.append(rel)
             continue
         out = src.with_suffix(".webp")
-        write = not args.report
+        # webp 比 PNG 旧 = 美术改过但没重跑本脚本：resolveImageUrl 会继续柄旧图，静默发错
+        if out.exists() and out.stat().st_mtime < src.stat().st_mtime:
+            stale.append(rel)
+        write = not args.report and not args.check
         if write and not args.force and out.exists() and out.stat().st_mtime >= src.stat().st_mtime:
             write = False
         if write:
             to_webp(src, out, lossless=False, quality=82 if src.stat().st_size < LARGE_BG else 82)
         if not out.exists():
-            # report 模式下首次运行还没生成过 webp，体积按 0 记
+            # report / check 模式下首次运行还没生成过 webp，体积按 0 记
             out_bytes = 0
         else:
             out_bytes = out.stat().st_size
@@ -136,6 +195,15 @@ def main() -> int:
         print(f"{'合计':<62} {total_src/1024/1024:>9.2f}M {total_out/1024/1024:>9.2f}M {(1-total_out/total_src)*100:>6.1f}%")
     if missing:
         print(f"\n⚠️ 源文件缺失（跳过 {len(missing)} 个）: {', '.join(missing)}")
+    if stale:
+        print(
+            f"\n⚠️ WebP 比 PNG 旧（美术改过但没重跑脚本，运行时会发旧图）: "
+            f"{', '.join(stale)}\n   修法：/usr/bin/python3 tools/optimize-images.py",
+        )
+    if args.check:
+        ok = not missing and not stale
+        print("✅ 体检通过：清单内全部图都有比 PNG 新的 WebP" if ok else "❌ 体检不通过（见上）")
+        return 0 if ok else 1
     if args.report:
         print("\n（--report：未写任何文件）")
     return 0
