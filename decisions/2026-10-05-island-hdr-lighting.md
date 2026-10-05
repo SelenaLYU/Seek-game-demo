@@ -102,7 +102,8 @@ node tools/probe-island-load.mjs     # 11/11 模型就绪，0 console error
 
 ## 待确认
 
-- **`public/env/sky-sunny.hdr` 的来源与授权没有记录**（文件内部只留了 `#?RADIANCE` 头，
-  没有软件/作者注释；同目录 `/tmp/keep-1k.hdr` 是它的 1024×512 上游版本，也是线索终点）。
-  观感与尺寸像 Poly Haven 一类的 CC0 户外 HDR，但**我没有证据**，入库前需要 Simon 确认来源
-  （Poly Haven / 自购 / 自渲），或者换成一份有明确出处的 HDR。
+- 已确认（2026-10-05 补）：`public/env/sky-sunny.hdr` 是 Poly Haven 的 `kloppenheim_02` 1k 版，
+  **CC0 授权、无需署名**，来源与压缩命令记在 `public/env/README.md`。
+- 天空仍是纯色梯度穹顶而非 HDR 天空盒：背景与光照方向分离，改天空盒时要一起重排。
+- 太阳方向依赖 HDR 素材里的太阳；换成阴天/无太阳的素材时 `brightestDirection` 会落到最亮云团上，
+  需要重新挑方位（或改成手写方位而不跟随素材）。
