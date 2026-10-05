@@ -36,6 +36,13 @@ const SWINGS: SwingHazard[] = [
   { x: 930, y: 492, length: 112, phase: 1.7, label: '甩动竹竿' },
 ];
 
+/**
+ * 世界空间路线提示的 depth。
+ * 遮挡素材在 depth 16，会把提示文字整个吃掉（2026-10-05 实测：`↓ 落下后向左走` 被 c04 二层柱影盖住
+ * 26px、`↓ 到底层后向右走` 被 c07 底层柱廊盖住 90px）。提示必须在遮挡之上、老师（18）与 HUD（200+）之下。
+ */
+const ROUTE_HINT_DEPTH = 17;
+
 /** 第二关灰盒：学校后墙 → 骑楼折返 → 长街逃离。 */
 export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private player!: Player;
@@ -212,8 +219,8 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
 
   private drawQilouStreet(): void {
     this.add.image(0, 0, 'night-background').setOrigin(0, 0).setDepth(-30);
-    this.add.text(1370, 515, '↓ 落下后向左走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(10);
-    this.add.text(455, 730, '↓ 到底层后向右走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(10);
+    this.add.text(1370, 515, '↓ 落下后向左走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(ROUTE_HINT_DEPTH);
+    this.add.text(455, 730, '↓ 到底层后向右走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(ROUTE_HINT_DEPTH);
   }
 
   private addStreetPlatform(x: number, y: number, width: number, height: number): void {

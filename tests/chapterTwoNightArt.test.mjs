@@ -152,3 +152,17 @@ test('白昼骑楼不得回流（已裁定的作废素材不能被重新接线�
   }
   assert.equal(existsSync(p('src/gameplay/chapterTwoArt.ts')), false, 'src/gameplay/chapterTwoArt.ts 应该已经删除');
 });
+
+test('世界空间路线提示画在遮挡素材之上（否则会被柱子/雨棚吃掉）', () => {
+  const scene = readFileSync(at('src/scenes/ChapterTwoChallengeScene.ts'), 'utf8');
+  const hintDepth = Number(scene.match(/const ROUTE_HINT_DEPTH = (\d+)/)?.[1]);
+  assert.ok(Number.isFinite(hintDepth), '场景里找不到 ROUTE_HINT_DEPTH');
+  const coverDepth = Number(scene.match(/for \(const a of NIGHT\.covers\)[\s\S]{0,200}?setDepth\((\d+)\)/)?.[1]);
+  const teacherDepth = Number(scene.match(/'night-teacher'\)[\s\S]{0,200}?setDepth\((\d+)\)/)?.[1]);
+  assert.ok(Number.isFinite(coverDepth) && Number.isFinite(teacherDepth), '解析遮挡/老师 depth 失败');
+
+  assert.ok(hintDepth > coverDepth, `路线提示 depth ${hintDepth} 必须高于遮挡素材 ${coverDepth}，否则被压住`);
+  assert.ok(hintDepth < teacherDepth, `路线提示 depth ${hintDepth} 应低于老师 ${teacherDepth}`);
+  const hintsInDraw = (scene.match(/ROUTE_HINT_DEPTH/g) ?? []).length;
+  assert.equal(hintsInDraw, 3, `ROUTE_HINT_DEPTH 应出现 3 次（1 处定义 + 2 条提示），实际 ${hintsInDraw}`);
+});
