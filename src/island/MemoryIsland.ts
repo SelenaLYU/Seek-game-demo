@@ -97,6 +97,10 @@ export function mountMemoryIsland(options: Options): () => void {
   // Neutral (Khronos PBR neutral) keeps the pastel palette while rolling off
   // highlights; ACES desaturated the greens and went muddy at this exposure.
   renderer.toneMapping = THREE.NeutralToneMapping;
+  // Measured with tools/probe-lighting-ab.mjs on the island region (x330-970, y300-780):
+  // exposure only scales the mean, it does not change contrast (1.15 -> mean 0.360 / 1.50 -> 0.411,
+  // contrast ~0.65-0.69 either way). 1.32 was kept; the flattness came from the light rig,
+  // not from the exposure.
   renderer.toneMappingExposure = 1.32;
   root.prepend(renderer.domElement);
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 1000);
@@ -130,6 +134,9 @@ export function mountMemoryIsland(options: Options): () => void {
   // The island spans roughly ±34 world units around the origin. The old ±26 map cut
   // the outer landmarks out of the shadow frustum entirely, so half of them could not
   // cast anything; ±38 with a 120 far plane covers the whole terrain from this angle.
+  // The ±38 extent covers the island's ±34 span so the outer landmarks actually cast.
+  // (WebGLShadowMap calls updateProjectionMatrix on the first shadow pass, so the
+  // assigned frustum does reach the depth render - do not "fix" it here.)
   Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38, far: 120 });
   sun.shadow.bias = -0.0009;
   sun.shadow.normalBias = 0.04;
@@ -338,25 +345,31 @@ export function mountMemoryIsland(options: Options): () => void {
     color.lerp(exposedRock, clamp01((Math.hypot(slopeX, slopeZ) - 0.34) / 0.54) * 0.72);
     terrainColors.push(color.r, color.g, color.b);
   }
-  // Use one vertex at the center and a seam-closed ring around the perimeter.
-  // Duplicating the center once per angular segment creates zero-area triangles;
-  // those can produce unstable normals and the pinched/broken-looking ground seen in preview.
+  // One vertex at the center, then one ring per level around the perimeter.
+  // The ring is closed by *welding* segment 0 to segment `terrainSegments`
+  // (last segment wraps to the first) instead of by emitting a duplicated
+  // column of vertices. A duplicated column does buy a place to start/end a UV
+  // seam, but the UVs here are a flat world-space projection (`x/34 + 0.5`),
+  // so there is no seam to feed: the duplicate only splits the vertex normals
+  // across two columns, leaving a visible lighting crease running from the
+  // island center to the shore. Welding makes every ring genuinely closed and
+  // gives each vertex the full ring of adjacent faces to average.
   addTerrainVertex(0, 0);
-  for (let ring = 1; ring <= terrainRings; ring++) for (let segment = 0; segment <= terrainSegments; segment++) {
+  for (let ring = 1; ring <= terrainRings; ring++) for (let segment = 0; segment < terrainSegments; segment++) {
     const angle = segment / terrainSegments * Math.PI * 2;
     const radius = (coastlineRadius(angle) - 0.45) * ring / terrainRings;
     addTerrainVertex(Math.sin(angle) * radius, Math.cos(angle) * radius);
   }
-  const ringSize = terrainSegments + 1;
+  const ringSize = terrainSegments;
   const ringVertex = (ring: number, segment: number) => 1 + (ring - 1) * ringSize + segment;
   for (let segment = 0; segment < terrainSegments; segment++) {
     // The angle increases clockwise when viewed from above; this order keeps
     // the triangle front faces and computed normals pointing upward.
-    terrainIndices.push(0, ringVertex(1, segment), ringVertex(1, segment + 1));
+    terrainIndices.push(0, ringVertex(1, segment), ringVertex(1, (segment + 1) % terrainSegments));
   }
   for (let ring = 1; ring < terrainRings; ring++) for (let segment = 0; segment < terrainSegments; segment++) {
     const a = ringVertex(ring, segment), b = ringVertex(ring + 1, segment);
-    const c = b + 1, d = a + 1;
+    const c = ringVertex(ring + 1, segment + 1), d = ringVertex(ring, segment + 1);
     terrainIndices.push(a, b, c, a, c, d);
   }
   const terrainGeometry = new THREE.BufferGeometry();
@@ -1303,6 +1316,12 @@ export function mountMemoryIsland(options: Options): () => void {
       overviewFramed = true;
     }
   };
+  // Review hook: ?debugView=1 exposes the scene/camera so probes can place a custom
+  // camera (e.g. a low angle along the shoreline) without the UI fighting it.
+  // Off by default so nothing else in the shipped scene depends on it.
+  if (new URLSearchParams(window.location.search).get('debugView') === '1') {
+    (window as unknown as { __islandView?: unknown }).__islandView = { scene, camera, renderer, controls };
+  }
   window.addEventListener('resize', resize, { signal }); resize();
   let frame = 0, last = performance.now(), disposed = false;
   function tick(now: number) {
