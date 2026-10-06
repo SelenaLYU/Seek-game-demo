@@ -1,0 +1,59 @@
+name: Deploy to GitHub Pages
+
+# 构建 Vite 产物并发布到 GitHub Pages。
+# 站点地址：https://selenalyu.github.io/Seek-game-demo/
+#
+# 产物路径不需要额外配置：vite.config.mjs 里已经是 base: './'，
+# 所有资源都是相对路径，放在子路径下能正常工作（已用本地子路径静态服务实测通过）。
+# 所以这里**不要**去改 base，也不要注入 GITHUB_PAGES 之类的开关。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署；正在发布时不打断（避免线上半截站点）
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # 仓库有 package-lock.json，统一用 npm ci（README / TEAM_GUIDE 同口径）
+      - run: npm ci
+
+      # 测试先跑：挂了就别发线上
+      - run: npm test
+
+      # build 脚本自带 tsc --noEmit
+      - run: npm run build
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
