@@ -19,7 +19,7 @@ import { loadAudioInBackground } from '../systems/DeferredAudio';
 import level1BackgroundUrl from '../../scene/level1-watercolor-game-background-v1-1900x540.png?url';
 import footstepUrl from '../../assets/audio/sfx-footstep.wav?url';
 import jumpSfxUrl from '../../assets/audio/sfx-jump.wav?url';
-import forestBgmUrl from '../../assets/audio/forest-bgm.mp3?url';
+import forestBgmUrl from '../../assets/audio/seek-beach-challenge.m4a?url';
 
 /** 本关正式素材的纹理 key 与运行时路径 */
 const ART = {
@@ -725,7 +725,6 @@ export default class ForestScene extends Phaser.Scene {
     });
 
     this.input.keyboard?.on('keydown-H', () => this.toggleHelpModal());
-    this.input.keyboard?.on('keydown-ESC', () => this.gameHud.showPauseModal());
 
   }
 
@@ -1535,3 +1534,4 @@ export default class ForestScene extends Phaser.Scene {
     this.progressSession.dispatch(event);
   }
 }
+

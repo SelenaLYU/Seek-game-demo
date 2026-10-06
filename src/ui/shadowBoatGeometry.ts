@@ -104,9 +104,12 @@ export function contains(point: Point, polygon: Point[]): boolean {
 }
 
 const samples: { point: Point; target: boolean; pieces: boolean[] }[] = [];
-for (let y = 58; y < 396; y += 2) {
-  for (let x = 20; x < 940; x += 2) {
-    const point = { x: x + 1, y: y + 1 };
+// Four-pixel sampling keeps the alignment check responsive while dragging.
+// The previous two-pixel grid recalculated tens of thousands of points for
+// every pointer event and made the puzzle feel sticky on scaled windows.
+for (let y = 58; y < 396; y += 4) {
+  for (let x = 20; x < 940; x += 4) {
+    const point = { x: x + 2, y: y + 2 };
     const target = TARGET.some(polygon => contains(point, polygon));
     // The narrow ruler can fall between grid samples. Give its presence check
     // the same edge tolerance as the candidate, without inflating its shadow.
@@ -187,5 +190,5 @@ export function alignment(polygons: Point[][]): { overlap: number; ready: boolea
     }
   }
   const overlap = union ? intersection / union : 0;
-  return { overlap, ready: overlap >= .78 && coverage.every((n, i) => n / TOTALS[i] >= .78) };
+  return { overlap, ready: overlap >= .7 && coverage.every((n, i) => n / TOTALS[i] >= .7) };
 }

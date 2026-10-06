@@ -93,3 +93,23 @@ this.load.spritesheet('niannian-run', runUrl, {
 - **脚底线必须落在同一源 y**（建议 153）：现 jump f0 在 146、同图触地帧在 153，待机要单独对齐。
 - 空中只取 4-11（0-3 是地面蹲地预备、12 之后是触地恢复）；如果要画跟着身体弹跳的空中帧，请把这一套单独存一张，不要混进跳跃序列。
 - 修正一条既有描述：跳图 **f0 的脚底是源 y=146**（不是 153）。
+
+## 记忆之岛三维角色参考
+
+- `han-meimei-3d-turnaround-concept-v1.png`：韩梅梅幼年形态的正面、侧面、背面、四分之三视图与互动伸手动作，用作记忆之岛 3D 角色建模参考；不是可直接导入游戏的网格模型。
+- `han-meimei-3d-turnaround-concept-v1.prompt.md`：生成提示词与参考资产记录。
+
+### Tripo 三维模型与动画交付
+
+最终采用 H3.1 多视角模型，保留双辫、红发结和既有服装设定。模型生成时启用 detailed geometry / detailed texture，面数上限设为 80,000；通过 Tripo biped rig-check，随后使用 Rig v1.0 绑定。文件和任务记录在 `tripo-out/`：
+
+- 角色预览：`tripo-out/han-meimei-h31-d9f82193/preview.png`
+- 高细节静态模型：`tripo-out/han-meimei-h31-d9f82193/model.glb`
+- 骨骼模型：`tripo-out/han-meimei-rig-24a947cd/model.glb`
+- 原地动画 GLB：`tripo-out/han-meimei-idle-4ccf110a/model.glb`、`tripo-out/han-meimei-walk-b99f2080/model.glb`、`tripo-out/han-meimei-run-36e4e895/model.glb`、`tripo-out/han-meimei-jump-0310dda6/model.glb`
+
+四个动画分别导出；已确认每份 GLB 都包含一个同名动画片段、一个 skin 和相同的骨骼节点结构，可在运行时共用同一角色骨架。P1 单视图版本保留为轻量备选：`tripo-out/han-meimei-base-da061971/model.glb`。
+
+### 记忆之岛运行时接入
+
+关卡通过 Three.js `GLTFLoader` 加载 `public/island-models/character-han-meimei-h31.glb`，并从旁边四个轻量 GLB 读取同骨架动画片段。移动时切换 idle / walk / run，空格播放 jump；动画均为原地动作，世界位移仍由角色控制器驱动。角色包围盒最大维度按约 2.05 个游戏单位缩放。

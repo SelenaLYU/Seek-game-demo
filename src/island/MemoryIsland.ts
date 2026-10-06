@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { chapterState, completedChapters } from './Progress';
 import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
+import { characterGroundHeight } from './grounding';
 
 type Options = { justCompleted?: number; completionSaved?: boolean; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
@@ -749,7 +750,7 @@ export function mountMemoryIsland(options: Options): () => void {
       flower.position.set(flowerX, terrainHeight(flowerX, flowerZ) + 0.22, flowerZ);
     }
   }
-  const player = new THREE.Group(); scene.add(player); player.position.set(0, walkableHeight(0, 3), 3);
+  const player = new THREE.Group(); scene.add(player); player.position.set(0, characterGroundHeight(0, 3, walkableHeight), 3);
   const blockoutPlayer = new THREE.Group(); player.add(blockoutPlayer);
   const body = mesh(new THREE.CapsuleGeometry(0.29, 0.6, 5, 10), mat('#385b60'), blockoutPlayer); body.position.y = 1;
   const head = mesh(new THREE.SphereGeometry(0.23, 16, 12), mat('#e6ceb0'), blockoutPlayer); head.position.y = 1.73;
@@ -993,7 +994,7 @@ export function mountMemoryIsland(options: Options): () => void {
         const step = dt * (running ? 5.5 : 3.2);
         if (allowed(player.position.x + dx * step, player.position.z)) player.position.x += dx * step;
         if (allowed(player.position.x, player.position.z + dz * step)) player.position.z += dz * step;
-        player.position.y = walkableHeight(player.position.x / mapScaleX, player.position.z);
+        player.position.y = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight);
         player.rotation.y = Math.atan2(dx / mapScaleX, dz);
       }
       legs.forEach((leg, index) => { leg.rotation.x = length ? Math.sin(elapsed * 11 + index * Math.PI) * 0.5 : 0; });

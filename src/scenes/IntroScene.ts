@@ -1,118 +1,74 @@
 import Phaser from 'phaser';
-import { applyHDCamera, BASE_HEIGHT, BASE_WIDTH } from '../systems/Resolution';
 import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
 import { completedChapters } from '../island/Progress';
+import openingVideoUrl from '../../assets/animation/opening.mp4?url';
 
-/** 开场动画接口占位。新动画到货后只替换本场景，不影响后续流程。 */
+/** 原文件直接播放，不受游戏相机或高清缓冲倍率影响。 */
 export default class IntroScene extends Phaser.Scene {
-  constructor() {
-    super('intro');
-  }
+  constructor() { super('intro'); }
 
   create(): void {
-    applyHDCamera(this);
-    this.cameras.main.setBackgroundColor('#050505');
-
-    this.add
-      .rectangle(BASE_WIDTH / 2, BASE_HEIGHT / 2, 760, 420, 0x0d0d0d)
-      .setStrokeStyle(1, 0x454545);
-    this.add
-      .text(BASE_WIDTH / 2, BASE_HEIGHT / 2 - 22, '开场动画占位', {
-        fontFamily: 'sans-serif',
-        fontSize: '26px',
-        color: '#d5d5d5',
-      })
-      .setOrigin(0.5);
-    this.add
-      .text(BASE_WIDTH / 2, BASE_HEIGHT / 2 + 20, '正式动画与配音待制作，这里不接入旧 Demo 的画面', {
-        fontFamily: 'sans-serif',
-        fontSize: '14px',
-        color: '#777777',
-      })
-      .setOrigin(0.5);
-
-    const back = this.add
-      .text(0, 0, '← 返回菜单', {
-        fontFamily: 'sans-serif',
-        fontSize: '14px',
-        color: '#d5d5d5',
-        backgroundColor: '#242424',
-        padding: { x: 12, y: 7 },
-      })
-      .setInteractive({ useHandCursor: true });
-    back.on('pointerup', () => this.scene.start('menu'));
-
-    // 序章也能打开相册：看完开场就可以回看已经找回的记忆。
-    let album: AlbumHandle | undefined;
-    const albumButton = this.add
-      .text(0, 0, '相册', {
-        fontFamily: 'sans-serif',
-        fontSize: '14px',
-        color: '#d5d5d5',
-        backgroundColor: '#242424',
-        padding: { x: 12, y: 7 },
-      })
-      .setInteractive({ useHandCursor: true });
-
-    const next = this.add
-      // 全局音乐开关占用最右上角；跳过按钮固定在右下角，避免二者重叠。
-      .text(0, 0, '跳过动画 →', {
-        fontFamily: 'sans-serif',
-        fontSize: '14px',
-        color: '#fff4cf',
-        backgroundColor: '#36594de8',
-        padding: { x: 14, y: 9 },
-      })
-      .setOrigin(1, 1)
-      .setDepth(1000)
-      .setInteractive({ useHandCursor: true });
-
-    // cover 模式会在窄窗口裁掉 960×540 画面的左右两侧。按钮必须依据相机真实可见区域
-    // 定位，否则固定放在 x=936 时虽然存在，玩家却完全看不见。
-    const placeCornerControls = () => {
-      const camera = this.cameras.main;
-      const visibleWidth = camera.width / Math.max(camera.zoomX, 1e-6);
-      const visibleHeight = camera.height / Math.max(camera.zoomY, 1e-6);
-      const left = BASE_WIDTH / 2 - visibleWidth / 2;
-      const right = BASE_WIDTH / 2 + visibleWidth / 2;
-      const top = BASE_HEIGHT / 2 - visibleHeight / 2;
-      const bottom = BASE_HEIGHT / 2 + visibleHeight / 2;
-      back.setPosition(left + 24, top + 22);
-      albumButton.setPosition(left + 24, top + 22 + 38);
-      next.setPosition(right - 24, bottom - 24);
+    const root = document.createElement('div');
+    root.style.cssText = 'position:fixed;inset:0;z-index:2000;background:#100f0d;display:flex;align-items:center;justify-content:center';
+    const video = document.createElement('video');
+    video.src = openingVideoUrl;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.style.cssText = 'display:block;object-fit:contain';
+    const sizeVideo = () => {
+      const width = video.videoWidth || 760;
+      const height = video.videoHeight || 420;
+      // 按完整视口等比例适配；按钮覆盖在画面上，不占用视频空间。
+      const scale = Math.max(0.01, Math.min(innerWidth / width, innerHeight / height));
+      video.style.width = width * scale + 'px';
+      video.style.height = height * scale + 'px';
     };
-    placeCornerControls();
-    this.time.delayedCall(0, placeCornerControls);
-    this.scale.on(Phaser.Scale.Events.RESIZE, placeCornerControls);
-
-    // 占位动画没有真实时长，3 秒后自动进入第一关；有正式动画后改成播放结束再进。
+    video.addEventListener('loadedmetadata', sizeVideo);
+    window.addEventListener('resize', sizeVideo);
+    sizeVideo();
+    root.append(video);
+    const button = (label: string, position: string, action: () => void) => {
+      const element = document.createElement('button');
+      element.type = 'button';
+      element.textContent = label;
+      element.style.cssText = 'position:absolute;' + position + ';padding:10px 18px;border:1px solid rgba(233,213,173,.45);border-radius:6px;background:rgba(66,59,47,.55);color:#f5e8cc;font:15px/1.4 Georgia,"STSong","Microsoft YaHei",serif;letter-spacing:2px;cursor:pointer;backdrop-filter:blur(8px)';
+      element.addEventListener('click', action);
+      root.append(element);
+      return element;
+    };
     let leaving = false;
     const proceed = () => {
       if (leaving) return;
       leaving = true;
       this.scene.start('loading');
     };
-    next.on('pointerup', proceed);
-    this.input.keyboard?.once('keydown-SPACE', proceed);
-    this.input.keyboard?.once('keydown-ESC', () => this.scene.start('menu'));
-    const autoAdvance = this.time.delayedCall(3000, proceed);
-
-    // 打开相册时暂停自动进场：看了两秒就被自动推进下一关很难看。
-    albumButton.on('pointerup', () => {
+    let album: AlbumHandle | undefined;
+    button('← 返回菜单', 'left:24px;top:22px', () => this.scene.start('menu'));
+    button('相册', 'left:24px;bottom:24px', () => {
       if (album) return;
-      autoAdvance.paused = true;
-      album = showAlbumUI({
-        completed: completedChapters(),
-        onClose: () => { album = undefined; autoAdvance.paused = false; },
-      });
+      video.pause();
+      album = showAlbumUI({ completed: completedChapters(), onClose: () => {
+        album = undefined;
+        void video.play().catch(() => { play.hidden = false; });
+      } });
     });
-
+    button('跳过动画 →', 'right:24px;bottom:24px', proceed);
+    const play = button('播放动画', 'left:50%;top:50%;transform:translate(-50%,-50%)', () => {
+      void video.play().then(() => { play.hidden = true; }).catch(() => { play.hidden = false; });
+    });
+    play.hidden = true;
+    video.addEventListener('ended', proceed);
+    document.body.append(root);
+    void video.play().catch(() => { play.hidden = false; });
+    this.input.keyboard?.once('keydown-SPACE', proceed);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      autoAdvance.remove(false);
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      root.remove();
       album?.close();
-      album = undefined;
+      window.removeEventListener('resize', sizeVideo);
       this.input.keyboard?.off('keydown-SPACE', proceed);
-      this.scale.off(Phaser.Scale.Events.RESIZE, placeCornerControls);
     });
   }
 }

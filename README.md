@@ -4,6 +4,7 @@
 
 ## 文档入口
 
+- **新队友上手指南（怎么拉、怎么跑、怎么提交）**：[TEAM_GUIDE.md](TEAM_GUIDE.md)
 - **当前状态与下一步**：[HANDOFF.md](HANDOFF.md) ← 只看这一份就够
 - **剧情依据**：[GAME_STORY_AND_LEVEL_DESIGN.md](GAME_STORY_AND_LEVEL_DESIGN.md)（主角定名韩梅梅）
 - **新旧故事边界与未完成内容**：[STORY_MIGRATION.md](STORY_MIGRATION.md)
@@ -13,10 +14,13 @@
 ## 本地运行
 
 ```bash
-npm install
-bash dev.sh
+npm ci            # 仓库有 package-lock.json，统一用 npm
+npm run dev       # 本地起 http://localhost:5173
+bash dev.sh       # 沙盒环境（WorkBuddy 等）用这个代替 npm run dev
 npm test
 npm run build
 ```
+
+上线前请按 [TEAM_GUIDE.md](TEAM_GUIDE.md) 第 6 节，在干净副本里复跑 `npm test` 与 `npm run build`。
 
 正式录音、家庭照片、贝壳美术与结尾动画尚待制作／核验，目前均为明确标注的占位，不应计为正式叙事交付。

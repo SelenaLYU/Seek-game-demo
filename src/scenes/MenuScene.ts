@@ -6,167 +6,82 @@ import {
   clearSavedProgress,
   type ChapterOneRoomProgress,
 } from '../gameplay/ChapterOneRoomProgress';
-import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
-import { albumPhotoCount } from '../story/Album';
-import { completedChapters } from '../island/Progress';
+import menuBackgroundUrl from '../../assets/ui/menu-main-v1.png?url';
+import { isBackgroundMusicEnabled, setBackgroundMusicEnabled } from '../MenuRoomMusic';
 
 /** 统一水彩风格游戏主菜单：包含新游戏、继续游戏(读档)、关卡选择、重置存档 */
 export default class MenuScene extends Phaser.Scene {
   private savedProgress!: ChapterOneRoomProgress;
   private hasSave = false;
-  private album?: AlbumHandle;
+  private guide?: HTMLDivElement;
 
   constructor() {
     super('menu');
   }
 
+  preload(): void {
+    if (!this.textures.exists('menu-main-v1')) this.load.image('menu-main-v1', menuBackgroundUrl);
+  }
+
   create(): void {
     applyHDCamera(this);
-    this.cameras.main.setBackgroundColor('#0d1815');
-
-    // 背景水彩微光与渐变
-    this.add
-      .rectangle(BASE_WIDTH / 2, BASE_HEIGHT / 2, BASE_WIDTH, BASE_HEIGHT, 0x12241f)
-      .setDepth(-10);
-
-    // 主标题与意境副标题
-    this.add
-      .text(BASE_WIDTH / 2, 130, 'S E E K', {
-        fontFamily: 'serif',
-        fontSize: '52px',
-        color: '#fff6e2',
-        letterSpacing: 10,
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(BASE_WIDTH / 2, 185, '江南海边的童年记忆之旅', {
-        fontFamily: 'sans-serif',
-        fontSize: '15px',
-        color: '#a3beaf',
-        letterSpacing: 4,
-      })
-      .setOrigin(0.5);
+    // 首页音乐键已经画在封面里，清掉旧的独立 DOM 按钮。
+    document.getElementById('seek-music-toggle')?.remove();
+    this.cameras.main.setBackgroundColor('#171712');
+    this.add.image(BASE_WIDTH / 2, BASE_HEIGHT / 2, 'menu-main-v1')
+      .setDisplaySize(BASE_WIDTH, BASE_HEIGHT);
 
     // 读取持久化存档
     this.savedProgress = loadChapterOneRoomProgress();
     this.hasSave = hasSavedProgress(this.savedProgress);
 
-    const btnYStart = 245;
-    const btnGap = 48;
-    let index = 0;
-
-    const createMenuBtn = (
-      label: string,
-      enabled: boolean,
-      bg: string,
-      hoverBg: string,
-      onClick: () => void,
-      hint?: string,
-    ) => {
-      const y = btnYStart + index * btnGap;
-      index++;
-
-      const btn = this.add
-        .text(BASE_WIDTH / 2, y, label, {
-          fontFamily: 'sans-serif',
-          fontSize: '16px',
-          color: enabled ? '#fff8e4' : '#697a72',
-          backgroundColor: enabled ? bg : '#1a221f',
-          padding: { x: 32, y: 10 },
-        })
-        .setOrigin(0.5);
-
+    // 新主图已经画好了全部按钮，这里只叠加完全透明的点击热区。
+    const createMenuHitArea = (y: number, enabled: boolean, onClick: () => void) => {
+      const hit = this.add.zone(BASE_WIDTH / 2, y, 205, 40).setDepth(20);
       if (enabled) {
-        btn.setInteractive({ useHandCursor: true });
-        btn.on('pointerover', () => btn.setBackgroundColor(hoverBg));
-        btn.on('pointerout', () => btn.setBackgroundColor(bg));
-        btn.on('pointerup', onClick);
+        hit.setInteractive({ useHandCursor: true });
+        hit.on('pointerup', onClick);
       }
-
-      if (hint) {
-        this.add
-          .text(BASE_WIDTH / 2 + 160, y, hint, {
-            fontFamily: 'sans-serif',
-            fontSize: '12px',
-            color: '#e0c98f',
-          })
-          .setOrigin(0, 0.5);
-      }
-
-      return btn;
     };
 
-    // 1. 开始新游戏
-    createMenuBtn('【 开始新游戏 】', true, '#265444', '#387962', () => {
+    createMenuHitArea(292, true, () => {
       clearSavedProgress();
       this.scene.start('intro');
     });
 
-    // 2. 读取存档继续游戏
-    const stageNameMap: Record<string, string> = {
-      forest: '第一章 · 海边跑酷',
-      room: '第一章 · 记忆之房',
-      island: '章节枢纽 · 记忆之岛',
-    };
-    const savedStageName = stageNameMap[this.savedProgress.currentStage] ?? '第一章 · 海边跑酷';
-    const continueHint = this.hasSave
-      ? `进度: ${savedStageName} (积分: ${this.savedProgress.score.toLocaleString()})`
-      : '无旧存档';
-
-    createMenuBtn(
-      this.hasSave ? `【 继续游戏 】` : '【 继续游戏 (暂无存档) 】',
-      this.hasSave,
-      '#364f3d',
-      '#4c6e56',
-      () => {
+    createMenuHitArea(341, this.hasSave, () => {
         // 按存档记录的当前阶段启动场景
         const stage = this.savedProgress.currentStage;
         if (stage === 'room') this.scene.start('room');
         else if (stage === 'island') this.scene.start('island');
         else this.scene.start('forest');
-      },
-      this.hasSave ? continueHint : undefined,
-    );
+    });
 
-    // 3. 关卡选择
-    createMenuBtn('【 关卡快速选择 】', true, '#263b36', '#3b5851', () => {
+    createMenuHitArea(390, true, () => {
       this.openStageSelectModal();
     });
 
-    // 4. 相册：章节收集与回忆照片，未开局也可查看
-    createMenuBtn(
-      '【 相册 】',
-      true,
-      '#2b3a34',
-      '#3f574d',
-      () => {
-        if (this.album) return;
-        this.album = showAlbumUI({
-          completed: completedChapters(),
-          onClose: () => { this.album = undefined; },
-        });
-      },
-      `已收录 ${albumPhotoCount(completedChapters())} / 6`,
-    );
+    createMenuHitArea(440, true, () => this.openHowToPlay());
 
-    // 5. 重置存档
-    if (this.hasSave) {
-      createMenuBtn('重置并清空存档', true, '#362424', '#523434', () => {
-        clearSavedProgress();
-        this.cameras.main.flash(200, 240, 200, 180);
-        this.time.delayedCall(220, () => this.scene.restart());
+    // 右上角音乐按钮同样直接使用封面上的图案，不再叠加旧按钮外观。
+    const musicNotice = this.add.text(902, 66, '', {
+      fontFamily: '"Microsoft YaHei", sans-serif',
+      fontSize: '12px',
+      color: '#fff0cf',
+      backgroundColor: '#302b24dd',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5).setDepth(30).setAlpha(0);
+    let noticeTween: Phaser.Tweens.Tween | undefined;
+    this.add.zone(902, 34, 126, 52)
+      .setDepth(20)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+        const enabled = !isBackgroundMusicEnabled();
+        setBackgroundMusicEnabled(enabled);
+        noticeTween?.stop();
+        musicNotice.setText(enabled ? '音乐已开启' : '音乐已关闭').setAlpha(1);
+        noticeTween = this.tweens.add({ targets: musicNotice, alpha: 0, delay: 700, duration: 300 });
       });
-    }
-
-    // 底部控制说明
-    this.add
-      .text(BASE_WIDTH / 2, 495, '全屏与声音支持 · 回车键直接开始 · 操作指南随时按 [H]', {
-        fontFamily: 'sans-serif',
-        fontSize: '12px',
-        color: '#6e8578',
-      })
-      .setOrigin(0.5);
 
     this.input.keyboard?.once('keydown-ENTER', () => {
       if (this.hasSave) {
@@ -179,11 +94,59 @@ export default class MenuScene extends Phaser.Scene {
       }
     });
 
-    // 相册是挂在 body 上的 DOM 覆盖层，离开菜单时必须自己收掉，否则会跟到下一个场景。
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.album?.close();
-      this.album = undefined;
+      this.guide?.remove();
+      this.guide = undefined;
     });
+  }
+
+  private openHowToPlay(): void {
+    if (this.guide) return;
+    const styleId = 'seek-menu-guide-style';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        .seek-menu-guide { position:fixed; inset:0; z-index:2100; display:grid; place-items:center;
+          font-family:Arial,"Microsoft YaHei",sans-serif; color:#f6e9cc; }
+        .seek-menu-guide__blur { position:absolute; inset:0; background:rgba(19,18,14,.28);
+          backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px); }
+        .seek-menu-guide__panel { position:relative; width:min(520px,calc(100vw - 44px)); padding:38px 46px 34px;
+          border:1px solid rgba(242,221,181,.68); border-radius:12px;
+          background:linear-gradient(145deg,rgba(45,42,35,.94),rgba(24,27,25,.94));
+          box-shadow:0 22px 70px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.08); }
+        .seek-menu-guide h2 { margin:0 0 24px; text-align:center; font:500 25px/1.2 Georgia,"STSong",serif;
+          letter-spacing:.18em; color:#fff0cf; }
+        .seek-menu-guide ul { margin:0; padding:0; list-style:none; display:grid; gap:15px; }
+        .seek-menu-guide li { padding:11px 14px; border-bottom:1px solid rgba(238,218,179,.16);
+          color:rgba(249,237,211,.9); font-size:15px; line-height:1.65; }
+        .seek-menu-guide strong { display:inline-block; min-width:78px; color:#e9c98f; font-weight:600; }
+        .seek-menu-guide__close { display:block; margin:27px auto 0; min-width:150px; padding:10px 22px;
+          border:1px solid rgba(244,222,181,.62); border-radius:7px; color:#f8eaca;
+          background:rgba(86,96,88,.42); font:16px/1.2 Georgia,"STSong",serif; letter-spacing:.15em; cursor:pointer; }
+        .seek-menu-guide__close:hover { background:rgba(104,125,116,.6); }
+      `;
+      document.head.append(style);
+    }
+
+    const root = document.createElement('div');
+    root.className = 'seek-menu-guide';
+    root.innerHTML = `
+      <div class="seek-menu-guide__blur" data-close></div>
+      <section class="seek-menu-guide__panel" aria-label="玩法说明">
+        <h2>玩法说明</h2>
+        <ul>
+          <li><strong>移动探索</strong>使用 A / D 或方向键移动，空格键跳跃。</li>
+          <li><strong>寻找线索</strong>点击场景里的物品，观察文字与画面提示。</li>
+          <li><strong>完成谜题</strong>拖拽、旋转或描画物件，让记忆重新完整。</li>
+          <li><strong>收集回忆</strong>找回记忆碎片，解锁新的房间和故事。</li>
+        </ul>
+        <button class="seek-menu-guide__close" type="button" data-close>返回</button>
+      </section>`;
+    const close = () => { root.remove(); if (this.guide === root) this.guide = undefined; };
+    root.querySelectorAll<HTMLElement>('[data-close]').forEach(element => element.addEventListener('click', close));
+    document.body.append(root);
+    this.guide = root;
   }
 
   /** 关卡选择弹窗：直达任意游玩阶段 */
@@ -262,3 +225,4 @@ export default class MenuScene extends Phaser.Scene {
     modal.add(panel);
   }
 }
+
