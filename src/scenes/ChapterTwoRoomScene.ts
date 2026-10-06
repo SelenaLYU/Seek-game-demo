@@ -1,3 +1,4 @@
+import { preloadRoomPaper, enableRoomPaper, addRoomPaper, ROOM_INK_FONT } from '../ui/RoomPaperTheme';
 import Phaser from 'phaser';
 import { applyHDCamera } from '../systems/Resolution';
 import { ChapterTwoRoomFlow } from '../gameplay/chapterTwoRoomFlow';
@@ -88,13 +89,13 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
 
   constructor() { super('chapter2-room'); }
 
-  preload(): void {
+  preload(): void { preloadRoomPaper(this);
     for (const [key, path] of Object.values(ART)) {
       if (!this.textures.exists(key)) this.load.image(key, path);
     }
   }
 
-  create(): void {
+  create(): void { enableRoomPaper(this);
     this.flow = new ChapterTwoRoomFlow();
     this.modal = undefined;
     this.selectedCell = -1;
@@ -250,8 +251,10 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     color = '#f4ead2',
     width = 660,
   ): Phaser.GameObjects.Text {
+    const onPaper = parent.list.some(child => child instanceof Phaser.GameObjects.NineSlice
+      && Math.abs(x - child.x) <= child.width / 2 && Math.abs(y - child.y) <= child.height / 2);
     const object = this.add.text(x, y, value, {
-      fontFamily: '"Microsoft YaHei", sans-serif', fontSize: `${size}px`, color,
+      fontFamily: ROOM_INK_FONT, fontSize: `${size}px`, color: onPaper ? '#503b29' : color,
       lineSpacing: 7, wordWrap: { width },
     });
     parent.add(object);
@@ -269,6 +272,11 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
   ): Phaser.GameObjects.Rectangle {
     const object = this.add.rectangle(x, y, width, height, color, alpha).setStrokeStyle(1, 0xcbb98e, .45);
     parent.add(object);
+    // 零食格是玩法热区，不盖纸；其余面板和操作按钮共用信纸。
+    if (color !== 0xffe099 && color !== 0x3f3a35) {
+      object.setAlpha(.001);
+      addRoomPaper(this, parent, x, y, width, height);
+    }
     return object;
   }
 
@@ -868,3 +876,5 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     }
   }
 }
+
+
