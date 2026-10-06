@@ -528,6 +528,8 @@ export function mountMemoryIsland(options: Options): () => void {
   const pathTexture = new THREE.CanvasTexture(pathCanvas); pathTexture.colorSpace = THREE.SRGBColorSpace;
   const bridgeLevels: { x: number; z: number; y: number; yaw: number; surfaceAt?: (localZ: number) => number }[] = [];
   const walkwayPaths: [number, number][][] = [];
+  // 与 walkwayPaths 同序的带宽，供 pavingLift 判定「角色是不是踩在路面上」。
+  const walkwayWidths: number[] = [];
   function walkableHeight(x: number, z: number) {
     let height = terrainHeight(x, z);
     for (const bridge of bridgeLevels) {
@@ -548,6 +550,7 @@ export function mountMemoryIsland(options: Options): () => void {
   }
   function lane(points: number[][], width = 2.4) {
     walkwayPaths.push(points.map(([x, z]) => [x, z] as [number, number]));
+    walkwayWidths.push(width);
     const controls = points.map(([x, z]) => new THREE.Vector3(x, 0, z));
     const curve = new THREE.CatmullRomCurve3(controls, false, 'centripetal', 0.25);
     const length = controls.slice(1).reduce((sum, point, index) => sum + point.distanceTo(controls[index]), 0);
@@ -1040,7 +1043,53 @@ export function mountMemoryIsland(options: Options): () => void {
   const scatterIssues = checkScatter([...trees, ...grove, ...cover], scatterContext);
   if (scatterIssues.length) console.error('[MemoryIsland] 散布穿模审计未通过', scatterIssues);
   else console.info('[MemoryIsland] 散布穿模审计通过', { trees: trees.length, grove: grove.length, cover: cover.length });
-  const player = new THREE.Group(); scene.add(player); player.position.set(0, characterGroundHeight(0, 3, walkableHeight), 3);
+  // 路面 ribbon 建在 walkableHeight + 0.12（见上面的 lane），而角色脚底对齐的是 walkableHeight，
+  // 于是站在路上时脚会陷进路面 0.12 个世界单位（接近整只脚的厚度，近景能看出脚被路面切断）。
+  // 这里把「踩在路面上」那份抬升补回来：在带宽内抬 0.12，离开路面回落地形。
+  const PAVING_LIFT = 0.12;
+  function pavingLift(x: number, z: number) {
+    for (let i = 0; i < walkwayPaths.length; i++) {
+      if (distanceToPath(x, z, walkwayPaths[i]) <= walkwayWidths[i] / 2) return PAVING_LIFT;
+    }
+    return 0;
+  }
+  const player = new THREE.Group(); scene.add(player); player.position.set(0, characterGroundHeight(0, 3, walkableHeight) + pavingLift(0, 3), 3);
+  // 接触影子（blob shadow）。为什么需要这张贴图：
+  //  · 主光仰角只有 16.5°（HDR 烤进去的太阳就贴地平线），2.05 高的角色投影落点在
+  //    2.05/tan(16.5°) ≈ 6.9 个世界单位之外，实测落点 (6.50, 5.35)，任何第三人称取景都框不到；
+  //  · 更硬的一条：实测把太阳抬到 60° 后，角色可见/隐藏两帧的地面像素完全一致——角色
+  //    根本没有被写进阴影贴图（castShadow=true 已设、材质非透明、无 customDepthMaterial、
+  //    SkinnedMesh 正常；根因未定，且软件渲染下的结论不能直接外推到真机）。
+  // 所以「脚下没有接触感」不能靠解析光解决。blob 与光源、GPU、蒙皮深度都无关。
+  // 调试用：可以按名字在场景里找到它（探针靠这个定位）。
+  // 用着色器算径向衰减，不用 CanvasTexture：早先用 2D canvas 径向渐变做贴图时，
+  // 同位置同尺寸的不透明版本能正常画出（洋红实验），带 alpha 的贴图版本却整片看不到，
+  // 与其排贴图/alpha 的链路，不如算在片元里，结果确定。
+  const blobShadow = new THREE.Mesh(
+    // 几何体自己先铺到 XZ 面，这样后面用 quaternion 贴坡就只需对齐一个法线
+    new THREE.PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2),
+    new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: { uOpacity: { value: 0.5 } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        precision mediump float;
+        varying vec2 vUv;
+        uniform float uOpacity;
+        void main(){
+          float d = length(vUv - 0.5) * 2.0;
+          // 必须写 1.0 - smoothstep(小, 大, d)：GLSL 的 smoothstep 在 edge0 > edge1 时是
+          // 未定义行为，早先写成 smoothstep(1.0, 0.1, d) 在真机上整片透明（洋红实验里
+          // 不透明版本画得出来、带 alpha 的版本看不见，就是这个）。
+          float a = (1.0 - smoothstep(0.15, 1.0, d)) * uOpacity;
+          gl_FragColor = vec4(0.10, 0.13, 0.11, a);
+        }`,
+    }),
+  );
+  blobShadow.renderOrder = 2;
+  blobShadow.name = 'contactShadow';
+  blobShadow.visible = false;
+  scene.add(blobShadow);
   const blockoutPlayer = new THREE.Group(); player.add(blockoutPlayer);
   const body = mesh(new THREE.CapsuleGeometry(0.29, 0.6, 5, 10), mat('#385b60'), blockoutPlayer); body.position.y = 1;
   const head = mesh(new THREE.SphereGeometry(0.23, 16, 12), mat('#e6ceb0'), blockoutPlayer); head.position.y = 1.73;
@@ -1393,13 +1442,25 @@ export function mountMemoryIsland(options: Options): () => void {
         model.updateMatrixWorld(true);
         const bounds = new THREE.Box3().setFromObject(model);
         const feetY = bounds.min.y;
-        const terrainY = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight);
+        const terrainY = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight)
+          + pavingLift(player.position.x / mapScaleX, player.position.z);
         const feetError = terrainY - feetY;
         // Apply one absolute correction to the stored bind-pose offset. Do not
         // integrate corrections frame-to-frame; that would accumulate drift.
         const correction = THREE.MathUtils.clamp(feetError, -0.08, 0.08);
         model.position.y = Number(model.userData.groundOffset ?? 0) + correction;
         if (Math.abs(feetError) > 0.08) player.position.y += feetError - correction;
+        // 接触影子跟着脚走，并按脚下坡度贴住地面：采样前后左右各 0.6 个单位算法线，
+        // 否则平铺的贴图在上坡侧会扎进地形、下坡侧悬空。
+        const slopeX = THREE.MathUtils.clamp((walkableHeight((player.position.x + 0.6) / mapScaleX, player.position.z)
+          - walkableHeight((player.position.x - 0.6) / mapScaleX, player.position.z)) / 1.2, -0.35, 0.35);
+        const slopeZ = THREE.MathUtils.clamp((walkableHeight(player.position.x / mapScaleX, player.position.z + 0.6)
+          - walkableHeight(player.position.x / mapScaleX, player.position.z - 0.6)) / 1.2, -0.35, 0.35);
+        blobShadow.quaternion.setFromUnitVectors(UP_AXIS, new THREE.Vector3(-slopeX, 1, -slopeZ).normalize());
+        // terrainY 已经包含 pavingLift，等于「脚踩的那个面」（裸地形或路面），blob 只需贴住它。
+        // 早先给 0.05 完全看不见，是因为那时 terrainY 还在路面之下 0.12（pavingLift 补上之前）。
+        blobShadow.position.set(player.position.x, terrainY + 0.04, player.position.z);
+        blobShadow.visible = mode !== 'overview';
       }
     }
     if (jumpPlaying && elapsed >= jumpUntil) {
@@ -1421,7 +1482,8 @@ export function mountMemoryIsland(options: Options): () => void {
         const step = dt * (running ? 5.5 : 3.2);
         if (allowed(player.position.x + dx * step, player.position.z)) player.position.x += dx * step;
         if (allowed(player.position.x, player.position.z + dz * step)) player.position.z += dz * step;
-        player.position.y = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight);
+        player.position.y = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight)
+          + pavingLift(player.position.x / mapScaleX, player.position.z);
         player.rotation.y = Math.atan2(dx / mapScaleX, dz);
       }
       legs.forEach((leg, index) => { leg.rotation.x = length ? Math.sin(elapsed * 11 + index * Math.PI) * 0.5 : 0; });
