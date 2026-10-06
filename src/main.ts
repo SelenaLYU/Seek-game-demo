@@ -10,7 +10,7 @@ import ChapterTwoChallengeScene from './scenes/ChapterTwoChallengeScene';
 import ChapterTwoRoomScene from './scenes/ChapterTwoRoomScene';
 import ChapterTwoMemoryScene from './scenes/ChapterTwoMemoryScene';
 import ChapterThreePreviewScene from './scenes/ChapterThreePreviewScene';
-import { playMainTheme, playQilouRunMusic, playRoomPuzzleMusic } from './MenuRoomMusic';
+import { playMainTheme, playQilouRunMusic, playRoomPuzzleMusic, playStorePuzzleMusic } from './MenuRoomMusic';
 import { resolveImageUrl } from './assets';
 import level1BackgroundUrl from '../scene/level1-watercolor-game-background-v1-1900x540.png?url';
 import roomBackgroundUrl from '../scene/level1-memory-room-night-empty-v2-1920x1080.png?url';
@@ -51,9 +51,12 @@ class BootScene extends Phaser.Scene {
     const chapterTwo = this.scene.get('chapter2');
     chapterTwo.events.off(Phaser.Scenes.Events.CREATE, playQilouRunMusic);
     chapterTwo.events.on(Phaser.Scenes.Events.CREATE, playQilouRunMusic);
+    const chapterTwoRoom = this.scene.get('chapter2-room');
+    chapterTwoRoom.events.off(Phaser.Scenes.Events.CREATE, playStorePuzzleMusic);
+    chapterTwoRoom.events.on(Phaser.Scenes.Events.CREATE, playStorePuzzleMusic);
     // 调试入口：?scene=room / ?scene=forest 直接进对应场景，跳过首页/开场/加载占位链
     const targetScene = new URLSearchParams(window.location.search).get('scene');
-    const debugScenes = new Set(['room', 'forest', 'ending', 'island', 'chapter2', 'chapter2-room', 'chapter2-memory', 'chapter3-preview']);
+    const debugScenes = new Set(['loading', 'room', 'forest', 'ending', 'island', 'chapter2', 'chapter2-room', 'chapter2-memory', 'chapter3-preview']);
     this.scene.start(targetScene && debugScenes.has(targetScene) ? targetScene : 'menu');
   }
 }

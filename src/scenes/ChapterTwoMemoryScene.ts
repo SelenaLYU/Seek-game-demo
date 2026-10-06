@@ -1,66 +1,105 @@
 import Phaser from 'phaser';
-import { applyHDCamera } from '../systems/Resolution';
+import chapterTwoVideoUrl from '../../assets/animation/chapter2.mp4?url';
 
-/** Click-through animatic placeholder; replace art without changing the room handoff. */
+const STYLE_ID = 'seek-chapter-two-memory-style';
+
+/**
+ * 第二段记忆结尾：第二记忆房里触碰光球后进入本场，播放正式动画
+ * （柜台旁偷拆辣辣王子 → 第一次吃辣条 → 翻风景杂志问“海那边是什么样子” →
+ * 被妈妈喊住 → 抓起辣条跑出画面），播完**自动**回记忆之岛，不需要玩家再点一次。
+ *
+ * 这里已经换成 `assets/animation/chapter2.mp4` 正式动画；此前的「分镜灰盒」占位
+ * （色块人物 + 六句字幕 + 点击推进）已删除。
+ * 出岛契约不变：仍然 `scene.start('island', { completedChapter: 2 })`，
+ * 由 IslandScene 点亮第二栋建筑并解锁第三段记忆（见 CHAPTER_TWO_FLOW.md 第 7 条）。
+ */
+function installStyle(): void {
+  if (document.getElementById(STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `
+    .seek-chapter-two-memory {
+      position: fixed; inset: 0; z-index: 1180; background: #100f0d;
+      display: flex; align-items: center; justify-content: center;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+    .seek-chapter-two-memory__video { display: block; object-fit: contain; background: #100f0d; }
+    .seek-chapter-two-memory__skip, .seek-chapter-two-memory__play {
+      position: absolute; z-index: 3; padding: 9px 14px; cursor: pointer;
+      border: 1px solid rgba(239, 224, 190, .38); border-radius: 4px;
+      color: #fff2cf; background: rgba(39, 67, 57, .82); font-size: 14px; letter-spacing: .04em;
+    }
+    .seek-chapter-two-memory__skip { right: 22px; bottom: 22px; }
+    .seek-chapter-two-memory__play { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 11px 20px; font-size: 15px; }
+    .seek-chapter-two-memory__skip:hover, .seek-chapter-two-memory__skip:focus-visible,
+    .seek-chapter-two-memory__play:hover, .seek-chapter-two-memory__play:focus-visible { background: rgba(58, 96, 82, .94); outline: none; }
+  `;
+  document.head.append(style);
+}
+
+/** 第二段记忆动画：播完（或跳过）直接回记忆之岛并点亮第二栋建筑。 */
 export default class ChapterTwoMemoryScene extends Phaser.Scene {
   constructor() { super('chapter2-memory'); }
+
   create(): void {
-    applyHDCamera(this);
-    const fit = () => this.cameras.main.setZoom(Math.min(this.scale.gameSize.width / 960, this.scale.gameSize.height / 540)).centerOn(480, 270);
-    fit(); this.scale.on('resize', fit);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off('resize', fit));
-    this.add.rectangle(480, 270, 960, 540, 0x414d45);
-    this.add.text(40, 25, '第二段记忆 · 分镜灰盒', { fontSize: '22px', color: '#efe5cd' });
-    this.add.rectangle(480, 325, 710, 98, 0x816b50);
-    const children = this.add.container(0, 0);
-    [365, 570].forEach((x, i) => {
-      children.add(this.add.rectangle(x, 241, 65, 92, i ? 0x698c95 : 0xac7366));
-      children.add(this.add.circle(x, 175, 31, 0xd6b58c));
-      children.add(this.add.text(x, 310, i ? '李雷' : '韩梅梅', { fontSize: '16px', color: '#f2e6ce' }).setOrigin(.5));
-    });
-    const packet = this.add.rectangle(468, 255, 66, 82, 0xad5140);
-    const packetText = this.add.text(468, 255, '辣辣\n王子', { fontSize: '17px', color: '#ffe2a7' }).setOrigin(.5);
-    const magazine = this.add.rectangle(490, 307, 162, 64, 0x76a3a6).setVisible(false);
-    const reaction = this.add.text(480, 116, '', { fontSize: '28px', color: '#ffe295' }).setOrigin(.5);
-    const caption = this.add.text(480, 389, '', { fontSize: '20px', color: '#f1e8d4', align: 'center', lineSpacing: 9, wordWrap: { width: 820 } }).setOrigin(.5, 0);
-    const next = this.add.text(480, 492, '', { fontSize: '17px', color: '#f2e6ce', backgroundColor: '#596f60', padding: { x: 25, y: 10 } }).setOrigin(.5).setInteractive({ useHandCursor: true }).setVisible(false);
-    const skip = this.add.text(862, 34, '跳过动画', { fontSize: '14px', color: '#efe5cd', backgroundColor: '#596f60', padding: { x: 12, y: 8 } }).setOrigin(.5).setInteractive({ useHandCursor: true });
-    const count = this.add.text(873, 34, '', { fontSize: '14px', color: '#cfbea1' });
-    const captions = [
-      '两人凑在柜台旁，偷偷拆开一包辣辣王子。',
-      '第一次吃这一款辣条。两人咬了一口，愣住，又互相看了一眼。',
-      '好辣……但也太好吃了！两人扇着嘴，笑着又拿了一根。',
-      '韩梅梅翻开风景杂志：“你过来看。”\n“你说，海那边是什么样子呢？”',
-      '远处传来妈妈的声音：\n“韩梅梅！你怎么又在这里偷吃辣条！跟你说这些垃圾食品不能吃。”',
-      '两人抓起辣条跑出画面。\n桌上的杂志还停在那片海。',
-    ];
-    let index = 0, leaving = false;
-    let timer: Phaser.Time.TimerEvent | undefined;
-    const render = () => {
-      caption.setText(captions[index]); count.setText(`${index + 1} / 6`);
-      reaction.setText(index === 1 ? '……！' : index === 2 ? '好吃！  好辣！' : index === 4 ? '糟了！' : '');
-      magazine.setVisible(index >= 3);
-      this.tweens.killTweensOf(children);
-      this.tweens.add({ targets: children, y: index === 2 ? -8 : 0, yoyo: true, repeat: index === 2 ? 3 : -1, duration: index === 2 ? 140 : 720, ease: 'Sine.inOut' });
-      this.tweens.add({ targets: packet, scale: index === 0 ? 1.08 : 1, yoyo: true, repeat: index === 0 ? 3 : 0, duration: 220 });
-      if (index >= 3) this.tweens.add({ targets: magazine, angle: -2, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.inOut' });
-      if (index === 5) {
-        this.tweens.add({ targets: children, x: 800, duration: 850 });
-        this.tweens.add({ targets: [packet, packetText], x: 1200, duration: 850 });
-        next.setText('返回记忆之岛');
-      }
+    installStyle();
+    this.cameras.main.setBackgroundColor('#100f0d');
+
+    const root = document.createElement('div');
+    root.className = 'seek-chapter-two-memory';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-label', '第二段记忆');
+    root.innerHTML = `
+      <video class="seek-chapter-two-memory__video" src="${chapterTwoVideoUrl}" playsinline preload="auto"></video>
+      <button class="seek-chapter-two-memory__skip" type="button">跳过 →</button>
+      <button class="seek-chapter-two-memory__play" type="button">播放动画</button>
+    `;
+
+    const video = root.querySelector<HTMLVideoElement>('.seek-chapter-two-memory__video')!;
+    const skip = root.querySelector<HTMLButtonElement>('.seek-chapter-two-memory__skip')!;
+    const play = root.querySelector<HTMLButtonElement>('.seek-chapter-two-memory__play')!;
+    play.hidden = true;
+    let leaving = false;
+
+    // 与开场动画同一套做法：按完整视口等比例适配，按钮浮在画面上、不占视频空间。
+    const sizeVideo = () => {
+      const width = video.videoWidth || 1280;
+      const height = video.videoHeight || 720;
+      const scale = Math.max(.01, Math.min(innerWidth / width, innerHeight / height));
+      video.style.width = `${width * scale}px`;
+      video.style.height = `${height * scale}px`;
     };
-    const schedule = () => { timer?.remove(false); timer = this.time.delayedCall(3000, () => { leaving = true; this.scene.start('island', { completedChapter: 2 }); }); };
-    const advance = () => {
+    video.addEventListener('loadedmetadata', sizeVideo);
+    window.addEventListener('resize', sizeVideo);
+    sizeVideo();
+
+    const enterIsland = () => {
       if (leaving) return;
-      if (index < captions.length - 1) { index++; render(); schedule(); }
-      else { leaving = true; this.scene.start('island', { completedChapter: 2 }); }
+      leaving = true;
+      root.remove();
+      this.scene.start('island', { completedChapter: 2 });
     };
-    next.on('pointerdown', advance);
-    skip.on('pointerdown', () => { if (!leaving) { leaving = true; timer?.remove(false); this.scene.start('island', { completedChapter: 2 }); } });
-    this.input.keyboard?.on('keydown-SPACE', advance);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.input.keyboard?.off('keydown-SPACE', advance));
-    render(); schedule();
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { timer?.remove(false); skip.destroy(); });
+
+    const resume = () => {
+      void video.play().then(() => { play.hidden = true; }).catch(() => { play.hidden = false; });
+    };
+
+    // 播完直接进岛：不再等玩家点「返回记忆之岛」。
+    video.addEventListener('ended', enterIsland);
+    skip.addEventListener('click', enterIsland);
+    play.addEventListener('click', resume);
+    this.input.keyboard?.once('keydown-SPACE', enterIsland);
+    this.input.keyboard?.once('keydown-ESC', enterIsland);
+
+    document.body.append(root);
+    resume();
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      window.removeEventListener('resize', sizeVideo);
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      root.remove();
+    });
   }
 }

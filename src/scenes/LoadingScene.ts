@@ -1,7 +1,13 @@
 import Phaser from 'phaser';
 import { applyHDCamera, BASE_HEIGHT, BASE_WIDTH } from '../systems/Resolution';
 
-/** 开场动画与森林之间的加载页占位。以后可接真实资源加载进度。 */
+/**
+ * 开场动画与森林之间的加载页占位。以后可接真实资源加载进度。
+ *
+ * 这里不再播放第一关那段回忆动画（`assets/animation/` 下的第一章视频）：它是**第一关结尾**
+ * 的内容，应该由房间里的贝壳触发（见 RoomScene.touchMemoryOrb → EndingScene），
+ * 放在开场和海边之间属于位置放错。
+ */
 export default class LoadingScene extends Phaser.Scene {
   constructor() {
     super('loading');
