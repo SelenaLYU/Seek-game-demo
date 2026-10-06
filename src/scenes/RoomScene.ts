@@ -1,3 +1,4 @@
+import { preloadRoomPaper, enableRoomPaper, addRoomPaper, ROOM_INK_FONT } from '../ui/RoomPaperTheme';
 import Phaser from 'phaser';
 import { Sfx } from '../systems/Sfx';
 import { Effects } from '../gameplay/Effects';
@@ -21,7 +22,7 @@ import {
   type RoomInventoryUIHandle,
 } from '../ui/RoomInventoryUI';
 import { showShadowBoatPuzzleUI, type ShadowBoatPuzzleHandle } from '../ui/ShadowBoatPuzzleUI';
-import { setBackgroundMusicTemporarilyPaused } from '../MusicSettings';
+import { setSceneMusicTemporarilyPaused } from '../MenuRoomMusic';
 import {
   showPhotoMemoryText,
   showFishBasinText,
@@ -39,8 +40,9 @@ import flashlightOffUrl from '../../assets/environment/room-flashlight-off.png?u
 import flashlightOnUrl from '../../assets/environment/room-flashlight-on.png?url';
 import paintBrushUrl from '../../assets/items/room-paint-brush.png?url';
 import fairyTaleBookUrl from '../../assets/items/room-fairytale-book-v1.png?url';
-import radioStaticUrl from '../../assets/audio/radio-static.mp3?url';
-import radioWindUrl from '../../assets/audio/radio-wind.mp3?url';
+import radioStaticUrl from '../../assets/audio/radio-static.m4a?url';
+import radioWindUrl from '../../assets/audio/radio-wind.m4a?url';
+import radioChongerfeiUrl from '../../assets/audio/radio-chongerfei.m4a?url';
 
 const ROOM_WIDTH = 960;
 const ROOM_HEIGHT = 540;
@@ -171,7 +173,7 @@ export default class RoomScene extends Phaser.Scene {
     super('room');
   }
 
-  preload(): void {
+  preload(): void { preloadRoomPaper(this);
     const images: Array<[string, string]> = ([
       ['room-bg', roomBackgroundUrl],
       ['room-radio-art', 'assets/environment/interactive-vintage-radio-384x256.png'],
@@ -194,17 +196,18 @@ export default class RoomScene extends Phaser.Scene {
         this.load.image(key, url);
       }
     }
-    // 电台音频（radio-static 206KB + radio-wind 453KB）不进 preload：
+    // 三个电台频道按需加载，不阻塞房间进入。
     // 玩家不去碰录音机就不该付这份下载。openRadio() 里按需后台加载。
   }
 
-  /** 录音机两个频道的音频源（按需加载用；key 与 playRadioAudio 一致） */
+  /** 录音机三个频道的音频源（按需加载用；key 与 playRadioAudio 一致） */
   private static readonly RADIO_AUDIO: Record<string, string> = {
     'radio-static': radioStaticUrl,
     'radio-wind': radioWindUrl,
+    'radio-chongerfei': radioChongerfeiUrl,
   };
 
-  create(): void {
+  create(): void { enableRoomPaper(this);
     this.stopRadioAudio();
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.stopRadioAudio());
     // Gameplay 进度由场景外的持久层管理，场景重进只重建显示状态。
@@ -434,7 +437,7 @@ export default class RoomScene extends Phaser.Scene {
         }
         break;
       case 'radio':
-        // 解完后录音机仍保留原来的调频交互，玩家可以随时回来重听四个频道。
+        // 解完后录音机仍保留原来的调频交互，玩家可以随时回来重听三个频道。
         // completeRadioSequence 自己会拦住重复发拼图和记忆碎片。
         this.openRadio();
         break;
@@ -477,10 +480,9 @@ export default class RoomScene extends Phaser.Scene {
     this.panel = layer;
 
     this.panelBackdrop(layer);
-    layer.add(this.panelTitle(480, 72, '把照片拼回原样'));
     const subtitle = this.add
-        .text(480, 101, '把碎片拖回相框 · 放对位置会自动吸住', {
-          fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
+        .text(480, 88, '把碎片拖回相框 · 放对位置会自动吸住', {
+          fontFamily: ROOM_INK_FONT,
           fontSize: '13px',
           fontStyle: 'bold',
           color: '#cbb98a',
@@ -491,7 +493,20 @@ export default class RoomScene extends Phaser.Scene {
     // × 放在 D 的碎片 HUD 挂件（右上 DOM，逻辑区 y 13..73）正下方：
     // 原先 (922,34) 与挂件重叠，× 被毛玻璃压得发糊（HUD 设了 pointer-events:none
     // 不挡点击，但视觉干扰，2026-09-24 实机确认后下移）
-    this.addCloseButton(layer, 922, 92);
+    // 固定在真实视口内，避免窄屏相机裁切或 DOM 挂件遮住退出入口。
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.setAttribute('aria-label', '关闭拼图 / Close puzzle');
+    close.textContent = '×';
+    close.style.cssText = 'position:fixed;right:24px;top:96px;z-index:2147483100;width:36px;height:36px;padding:0;border:0;background:transparent;color:#fff1cf;font:28px/36px Arial,sans-serif;text-shadow:0 1px 4px #15120d;cursor:pointer';
+    close.addEventListener('click', () => this.closePanel());
+    document.body.append(close);
+    const removeClose = () => close.remove();
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, removeClose);
+    layer.once('destroy', () => {
+      removeClose();
+      this.events.off(Phaser.Scenes.Events.SHUTDOWN, removeClose);
+    });
 
     const photoSource = this.textures.get('room-photo').getSourceImage() as { width: number; height: number };
     const srcW = photoSource.width / 4;
@@ -503,13 +518,9 @@ export default class RoomScene extends Phaser.Scene {
     const pad = 12;
     const plate = this.add.graphics();
     plate.fillStyle(0xf0e8d4, 1);
-    plate.fillRoundedRect(
-      boardX - pad, boardY - pad, cellW * 4 + pad * 2, cellH * 4 + pad * 2, 10,
-    );
+    plate.fillRoundedRect(boardX - pad, boardY - pad, cellW * 4 + pad * 2, cellH * 4 + pad * 2, 10);
     plate.lineStyle(3, 0x8a6d3b, 1);
-    plate.strokeRoundedRect(
-      boardX - pad, boardY - pad, cellW * 4 + pad * 2, cellH * 4 + pad * 2, 10,
-    );
+    plate.strokeRoundedRect(boardX - pad, boardY - pad, cellW * 4 + pad * 2, cellH * 4 + pad * 2, 10);
     plate.lineStyle(1, 0x5a4a33, 0.35);
     for (let i = 1; i < 4; i++) {
       plate.lineBetween(boardX + i * cellW, boardY, boardX + i * cellW, boardY + cellH * 4);
@@ -608,7 +619,10 @@ export default class RoomScene extends Phaser.Scene {
         const home = homeXY(t);
         // 落点用指针世界坐标判定：增量跟随跳过首个 drag 事件作基线，
         // img.x 恒滞后指针约一步（长拖可达 70px+），用 img.x 判会把放对的判错
-        if (Phaser.Math.Distance.Between(p.worldX, p.worldY, home.x, home.y) < 50) {
+        // 拼图在缩放后的窗口里也要容易放下：指针或图片中心接近目标都直接吸附。
+        const pointerDistance = Phaser.Math.Distance.Between(p.worldX, p.worldY, home.x, home.y);
+        const pieceDistance = Phaser.Math.Distance.Between(img.x, img.y, home.x, home.y);
+        if (Math.min(pointerDistance, pieceDistance) < 74) {
           // 放对：吸住锁定，金边一闪
           rec.locked = true;
           this.applyProgressEvent({ type: 'photo-placement-added', tile: t });
@@ -673,10 +687,12 @@ export default class RoomScene extends Phaser.Scene {
 
     // 一键拼好：不想逐块拖时直接收束到完成态（演示/快速看回忆的通路），
     // 走与手动完成完全相同的完成演出与发碎片流程（playPuzzleCompletion）
+    let shortcutUsed = false;
     const autoSolve = () => {
-      if (this.puzzleSolved) {
+      if (this.puzzleSolved || shortcutUsed) {
         return;
       }
+      shortcutUsed = true;
       this.puzzleSolved = true; // 锁住输入，防止动画期间继续拖动
       let delay = 0;
       for (const rec of tiles) {
@@ -711,8 +727,8 @@ export default class RoomScene extends Phaser.Scene {
       this.time.delayedCall(delay + 300, () => this.playPuzzleCompletion(layer));
     };
     const autoBtn = this.add
-      .text(480, 522, '一下拼好 · 直接看回忆', {
-        fontFamily: 'sans-serif',
+      .text(480, 522, '[ R ] 一键恢复拼图 · Restore puzzle', {
+        fontFamily: ROOM_INK_FONT,
         fontSize: '14px',
         color: '#cbb98a',
       })
@@ -722,6 +738,9 @@ export default class RoomScene extends Phaser.Scene {
     autoBtn.on('pointerout', () => autoBtn.setColor('#cbb98a'));
     autoBtn.on('pointerdown', autoSolve);
     layer.add(autoBtn);
+    const restoreWithKeyboard = () => autoSolve();
+    this.input.keyboard?.on('keydown-R', restoreWithKeyboard);
+    layer.once('destroy', () => this.input.keyboard?.off('keydown-R', restoreWithKeyboard));
   }
 
   private onPuzzleSolved(layer: Phaser.GameObjects.Container): void {
@@ -797,10 +816,7 @@ export default class RoomScene extends Phaser.Scene {
             this.playRadioAudio('radio-wind');
             break;
           case 3:
-            this.stopRadioAudio();
-            break;
-          case 4:
-            this.stopRadioAudio();
+            this.playRadioAudio('radio-chongerfei');
             break;
         }
       },
@@ -815,9 +831,9 @@ export default class RoomScene extends Phaser.Scene {
     this.saveProgress();
     this.gainFragment('radio');
 
-    // 先让玩家看到四个频道已完成，再自动收起收音机；拼块随后落入道具栏。
+    // 完成后发放拼块，收音机保持打开，等玩家主动关闭。
     this.time.delayedCall(700, () => {
-      if (this.radioPanel) this.closePanel();
+
       this.inventoryBar?.addItem({
         id: 'photo-piece',
         glyph: '拼',
@@ -975,10 +991,9 @@ export default class RoomScene extends Phaser.Scene {
       `碎片聚合 ${this.progress.fragments.length}/3`,
     );
 
-    this.input.keyboard?.on('keydown-ESC', () => this.gameHud.showPauseModal());
 
     this.hintText = this.add.text(260, 14, '', {
-      fontFamily: 'sans-serif',
+      fontFamily: ROOM_INK_FONT,
       fontSize: '14px',
       color: '#f4f9f2',
       // 与森林提示同款深色底牌，任何背景上可读
@@ -1252,7 +1267,7 @@ export default class RoomScene extends Phaser.Scene {
     // 与 D 的文字面板同款标题色/字号，玩法面板与文字面板读作同一套界面
     return this.add
       .text(x, y, text, {
-        fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
+        fontFamily: ROOM_INK_FONT,
         fontSize: '20px',
         fontStyle: 'bold',
         color: '#f0dfb5',
@@ -1339,15 +1354,11 @@ export default class RoomScene extends Phaser.Scene {
     sound.destroy();
   }
 
-  /** 收音机播放期间暂停房间 BGM（menu-room-bgm 由 main.ts 在 CREATE 时播放） */
+  /** 收音机播放期间暂停第一关房间解谜音乐。 */
   private pauseRoomBgm(pause: boolean): void {
-    const manager = this.sound as unknown as {
-      sounds?: Array<Phaser.Sound.WebAudioSound>;
-    };
-    const music = manager.sounds?.find((s) => s.key === 'music-menu-room');
-    if (!music) {
-      return;
-    }
-    setBackgroundMusicTemporarilyPaused(music, pause);
+    setSceneMusicTemporarilyPaused(this, pause);
   }
 }
+
+
+

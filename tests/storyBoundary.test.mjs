@@ -60,12 +60,22 @@ test('closing the radio has no completion side effect', () => {
   assert.match(close, /this\.stopRadioAudio\(\)/);
 });
 
-test('all four radio channels award the photo piece directly to inventory', () => {
+test('all radio channels award the photo piece directly to inventory', () => {
   const radio = read('src/ui/RadioPuzzleUI.ts');
   const room = read('src/scenes/RoomScene.ts');
   const completion = room.slice(room.indexOf('  private completeRadioSequence()'), room.indexOf('  // ---------- 挂钟'));
-  assert.match(radio, /visitedChannels\.size === 4/);
+  // 集齐频道的判定用 CHANNEL_COUNT 表达。2026-10-05 队友整合（e626923）把写死的 4
+  // 重构成了常量、并把电台改成 3 个频道（UI 写 `/ 03`）；设计文档
+  // CHAPTER1_ROOM_PUZZLE_COLLABORATION.md 仍写「四频道」。两者不一致，是设计题不是
+  // 代码题——这里只锁「集齐 → 回调 → 发拼块」这个不变量，频道数由产品裁定，
+  // 不把任何一个数字钉进测试（否则改频道内容就会红）。
+  assert.match(radio, /const CHANNEL_COUNT = \d+/);
+  assert.match(radio, /visitedChannels\.size === CHANNEL_COUNT/);
   assert.match(radio, /options\.onAllChannelsVisited\?\.\(\)/);
+  // 频道数必须与 UI 上写的「/ NN」一致，否则玩家会看到「/ 03」但要听第 4 个才通关。
+  const declared = Number(radio.match(/const CHANNEL_COUNT = (\d+)/)?.[1]);
+  const shown = Number(radio.match(/<span>\/ 0?(\d+)<\/span>/)?.[1]);
+  assert.equal(shown, declared, `频道数不一致：CHANNEL_COUNT=${declared}，界面写 \/ ${shown}`);
   assert.match(completion, /type: 'radio-message-heard'/);
   assert.match(completion, /type: 'photo-piece-collected'/);
   assert.match(completion, /addItem\(\{\s*id: 'photo-piece'/);

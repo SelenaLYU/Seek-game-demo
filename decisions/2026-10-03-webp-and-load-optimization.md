@@ -78,3 +78,65 @@ Phaser 里资源有两条互不相通的加载方式，WebP 必须同时接住�
 
 - [ ] `ending-voice.wav` 4.8MB / `ending.mp4` 27.8MB：旧故事遗留，运行时代码不可达；文件删除是破坏性操作，待用户确认后再清理。
 - [ ] `index` chunk 1.43MB（gzip 395KB）：Phaser 本体占大头，收益有限；真要再压只能按场景做 dynamic import，属于结构性改动，建议等第二关美术定稿再做。
+
+## 7. 补漏一轮（2026-10-05）：管线漏了两批图，两个关卡各多传 10MB+
+
+起因：从头量了一遍三个入口的传输量，发现第一关两个场景正常，但
+
+| 入口 | 修复前 | 修复后 | 说明 |
+| --- | --- | --- | --- |
+| 记忆之房 | **16710KB**（png 8 张） | **2611KB**（png 0 张） | 7 张 2026-10-02 之后补的房间美术没登记 |
+| 第二关 · 夜骑楼 | **11903KB**（39 张几乎全 png） | **1487KB** | 35 条 literal `load.image` 压根没过 `resolveImageUrl` |
+
+根因是两条不同的路：
+
+1. **清单漏登记**：`RUNTIME_IMAGES` 是**手工维护**的。房间后来补的 7 张
+   （`interactive-family-zoo-photo-frame-384x256`、`room-lockbox-closed-v1`、
+   `interactive-vintage-radio-384x256`、`room-lockbox-open-battery-v1`、
+   `room-fairytale-book-v1`、`room-flashlight-battery-v1`、`room-memory-pearl-shell-v1`）
+   加上碎片 HUD 的 168px 贝壳图标都没进清单，`resolveImageUrl()` 找不到同名 `.webp`
+   就**安静回落 PNG**：不报错、不影响功能、测试也不会红。
+2. **绕过了 resolver**：`ChapterTwoChallengeScene` 用字面路径直接 `this.load.image()`
+   （`assets/level2/night-v1/*.png`，35 张）。字面路径由 `vite.config.mjs` 的
+   `runtimeAssetPaths()` 拷进 dist 供回落用，但**不会**经过 `resolveImageUrl`，
+   所以 WebP 管线对第二关完全失效。现已全部包上 `resolveImageUrl(...)`。
+   注意路径必须写完整的字面量：写成模板串（`assets/level2/night-v1/${file}`）会让
+   `runtimeAssetPaths()` 抛 `Suspicious Phaser asset path` 直接构建失败——这是它的设计，
+   不要为了少写几行去绕。
+
+体积（`/usr/bin/python3 tools/optimize-images.py`）：全量清单 PNG 64.51M → WebP 5.82M（91.0%）。
+
+### 防线（防止再安静漏一批）
+
+- `tools/optimize-images.py --check`：只体检不写文件；缺 WebP 或 **WebP 比 PNG 旧**就退出码 1。
+  新增「WebP 比 PNG 旧」是因为 PNG 改了不重跑脚本时，resolver 会继续发旧 WebP——**静默错图**，
+  比回落 PNG 更隐蔽。正常运行时也会把 stale 清单打出来。
+- `tests/imagePipeline.test.mjs` 三条：清单内每条都有 WebP；**所有场景**（`src/scenes/*` + `src/ui/*`）
+  真的会加载的图（`?url` 导入 + `this.load.*` 调用）都有 WebP；没有 WebP 比 PNG 旧。
+  只认这两种加载写法，不扫全文 `'assets/…'` 字面量——否则 ChapterTwoRoomScene 里
+  「素材审查面板」那张未接入清单会被误判成运行时加载。
+  角色序列帧按规则 2 走豁免（`assets/character/`）。
+
+### 已完成（2026-10-05）：素材审查面板 WebP 补漏
+
+AssetReviewOverlay 的 `<img>` 现通过 `resolveImageUrl(entry.path)` 加载；列表与页脚仍展示 PNG 真源路径，便于核对素材。第二关房间调试背景也改为经 resolver 加载。`RUNTIME_IMAGES` 新增面板列出的 12 张：便利店 masters 6 张、骑楼图集 4 张、小卖部背景 1 张、骑楼宽幅底图 1 张；未触碰并行会话的中间产物。
+
+> 后续（2026-10-05 同日）：白昼骑楼图集 4 张 + 骑楼宽幅底图 1 张废弃移除（见下「骑楼美术定源」与 `decisions/2026-10-05-qilou-art-night-only.md`），本节新增的 12 张变成 7 张、面板 21 条变成 16 条；下表的 29.889MB / 3.17MB / 52.38MB / 5.233MB / 22.2MB / 2.12MB / 109.22MB / 10.81MB 是**当次**实测，保留作追溯，当前值见第 7 节末。
+
+- 12 张：29.889MB PNG → 3.17MB WebP（节省 89.4%）。
+- 面板 21 个条目：52.38MB → 5.233MB（节省 90.0%）；宽幅底图 22.2MB → 2.12MB。
+- 优化清单总量：109.22MB → 10.81MB（节省 90.1%）；`--check` 通过。
+- `npm test` 55/55、`npm run build`、`tools/probe-level1-experience.mjs` 12/12 通过；浏览器面板 21/21 加载成功、0 console error / 失败请求，宽幅图目视无色损（3 张小图由 Vite 内联为 data URL，正常）。
+- `tools/test-e2e.mjs` 与 `tools/probe-load-perf.mjs` 未运行：缺少 Chrome CDP `127.0.0.1:9333` 调试实例（ECONNREFUSED）；dev/preview 服务本身可用。
+
+### 还没做
+
+- [ ] 上一轮的两条仍然有效（旧故事遗留音视频待确认删除；`index` chunk 拆分等第二关定稿）。
+
+### 当前值（2026-10-05，白昼骑楼清除后）
+
+白昼骑楼废弃后重算（`RUNTIME_IMAGES` 83 → 78 条）：
+
+- 优化清单总量：**79.66MiB PNG → 7.54MiB WebP（节省 90.5%）**；`--check` 通过。
+- 素材审查面板：**16 个条目，22.83MiB PNG → 1.97MiB WebP（节省 91.4%）**；条目里没有缺 WebP 的。
+- 本文档早先写的 109.22MB / 10.81MB / 52.38MB / 5.233MB 是白昼骑楼还在时的当次实测，保留作追溯。

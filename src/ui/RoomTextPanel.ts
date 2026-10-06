@@ -114,6 +114,7 @@ export function showRoomText(scene: Phaser.Scene, options: RoomTextOptions): Roo
 
   const root = document.createElement('div');
   root.className = `recall-room-text${options.layout === 'photo' ? ' recall-room-text--photo' : ''}`;
+  if (options.title.includes('纸船')) root.classList.add('keep-original-ui');
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-label', options.title);
@@ -221,3 +222,4 @@ export function showRoomText(scene: Phaser.Scene, options: RoomTextOptions): Roo
 export function isRoomTextOpen(scene: Phaser.Scene): boolean {
   return activeOverlays.has(scene);
 }
+

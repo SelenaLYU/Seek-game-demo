@@ -56,7 +56,7 @@ test('slow sweep reaches all three routes from the fixed world light source', ()
     }
     assert.equal(reached, true, `unreachable beam target ${x},${y}`);
   }
-  assert.deepEqual(LIGHT_ORIGIN, { x: 46, y: 230 });
+  assert.deepEqual(LIGHT_ORIGIN, { x: 50, y: 204 }); // 按 teacher.png 的镜片实测标定（见 chapterTwoRules.ts 注释）
 });
 
 test('street recovery catches bottom pits and under-floor pockets but allows normal landings', () => {

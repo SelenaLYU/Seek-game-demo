@@ -579,6 +579,17 @@ export function showShadowBoatPuzzleUI(
     }
   };
 
+  // Collapse rapid pointer events into one visual update per frame. This keeps
+  // the shadow calculation from blocking pointer tracking on smaller devices.
+  let renderFrame = 0;
+  const scheduleRender = () => {
+    if (renderFrame || closed) return;
+    renderFrame = requestAnimationFrame(() => {
+      renderFrame = 0;
+      render();
+    });
+  };
+
   const makeDraggable = (
     element: HTMLElement,
     onMove: (dx: number, dy: number) => void,
@@ -609,7 +620,7 @@ export function showShadowBoatPuzzleUI(
       lastX = event.clientX;
       lastY = event.clientY;
       onMove(dx, dy);
-      render();
+      scheduleRender();
     });
 
     const release = (event: PointerEvent) => {
@@ -618,6 +629,10 @@ export function showShadowBoatPuzzleUI(
       element.classList.remove('is-dragging');
       if (!completed && event.type !== 'pointercancel' && distance < 7) onTap?.();
       pointerId = null;
+      if (renderFrame) {
+        cancelAnimationFrame(renderFrame);
+        renderFrame = 0;
+      }
       render();
       options.onStateChange?.(
         Object.fromEntries(PIECE_IDS.map(id => [id, { ...states[id] }])) as Record<PieceId, PieceState>,
@@ -731,18 +746,18 @@ export function showShadowBoatPuzzleUI(
     event.preventDefault();
     const guidePath = windGuides[windStrokeCount];
     const guideLength = guidePath.getTotalLength();
-    const samples = typeof event.getCoalescedEvents === 'function'
-      ? event.getCoalescedEvents()
-      : [event];
+    // Interpolation below fills the gaps, so processing only the newest event
+    // avoids replaying a large coalesced-event backlog and keeps the brush fluid.
+    const samples = [event];
     const advanceAlongGuide = (point: Point, travelDistance: number) => {
       if (windStrokeInvalid) return false;
-      const from = Math.max(0, windProgress - 0.012);
-      const to = Math.min(1, windProgress + 0.12);
+      const from = Math.max(0, windProgress - 0.04);
+      const to = Math.min(1, windProgress + 0.2);
       let nearest = windProgress;
       let nearestDistance = Number.POSITIVE_INFINITY;
       // 只在当前位置附近向前找，避免一条直线跨过回勾就被当成完成。
-      for (let step = 0; step <= 96; step += 1) {
-        const candidate = from + ((to - from) * step) / 96;
+      for (let step = 0; step <= 36; step += 1) {
+        const candidate = from + ((to - from) * step) / 36;
         const sample = guidePath.getPointAtLength(candidate * guideLength);
         const distance = Math.hypot(point.x - sample.x, point.y - sample.y);
         if (distance < nearestDistance - 0.5
@@ -751,28 +766,27 @@ export function showShadowBoatPuzzleUI(
           nearest = candidate;
         }
       }
-      if (nearestDistance <= 24 && nearest >= windProgress - 0.01) {
+      if (nearestDistance <= 40 && nearest >= windProgress - 0.04) {
         windOffGuideDistance = 0;
         const guidePoint = guidePath.getPointAtLength(nearest * guideLength);
         // 笔迹轻微吸附到引导线，既保留玩家手势，也帮助画出清楚的回勾形状。
         const tracePoint = {
-          x: point.x * 0.65 + guidePoint.x * 0.35,
-          y: point.y * 0.65 + guidePoint.y * 0.35,
+          x: point.x * 0.42 + guidePoint.x * 0.58,
+          y: point.y * 0.42 + guidePoint.y * 0.58,
         };
         const previousTracePoint = windTracePoints[windTracePoints.length - 1];
         if (!previousTracePoint || Math.hypot(tracePoint.x - previousTracePoint.x, tracePoint.y - previousTracePoint.y) >= 1.5) {
           windTracePoints.push(tracePoint);
-          renderWindTrace();
         }
         windProgress = Math.max(windProgress, nearest);
-        if (windProgress >= .97) {
+        if (windProgress >= .9) {
           finishWindStroke();
           return true;
         }
       } else {
         windOffGuideDistance += travelDistance;
         // 允许手抖，但离开引导线一小段以后，本笔必须松手重画。
-        if (windOffGuideDistance > 30) windStrokeInvalid = true;
+        if (windOffGuideDistance > 100) windStrokeInvalid = true;
       }
       return false;
     };
@@ -780,7 +794,7 @@ export function showShadowBoatPuzzleUI(
       const point = windPoint(pointerSample);
       const previous = lastWindPoint ?? point;
       const distance = Math.hypot(point.x - previous.x, point.y - previous.y);
-      const steps = Math.max(1, Math.ceil(distance / 5));
+      const steps = Math.max(1, Math.ceil(distance / 8));
       const travelDistance = distance / steps;
       for (let step = 1; step <= steps; step += 1) {
         const t = step / steps;
@@ -791,6 +805,7 @@ export function showShadowBoatPuzzleUI(
       }
       lastWindPoint = point;
     }
+    renderWindTrace();
   };
 
   windLayer.addEventListener('pointerdown', event => {
@@ -798,7 +813,7 @@ export function showShadowBoatPuzzleUI(
     const guidePath = windGuides[windStrokeCount];
     const start = guidePath.getPointAtLength(0);
     const point = windPoint(event);
-    if (Math.hypot(point.x - start.x, point.y - start.y) > 28) return;
+    if (Math.hypot(point.x - start.x, point.y - start.y) > 48) return;
     event.preventDefault();
     windDrawing = true;
     windPointerId = event.pointerId;
@@ -817,9 +832,12 @@ export function showShadowBoatPuzzleUI(
   const stopWindStroke = (event: PointerEvent) => {
     if (event.pointerId !== windPointerId) return;
     if (windLayer.hasPointerCapture(event.pointerId)) windLayer.releasePointerCapture(event.pointerId);
-    if (windProgress < .965 && windStrokeCount < 3) {
+    if (windProgress < .88 && windStrokeCount < 3) {
       const path = windProgressPaths[windStrokeCount];
       path.setAttribute('d', '');
+    } else if (windStrokeCount < 3 && !windStrokeInvalid) {
+      finishWindStroke();
+      return;
     }
     windDrawing = false;
     windPointerId = null;
@@ -839,6 +857,7 @@ export function showShadowBoatPuzzleUI(
     if (closed) return;
     closed = true;
     if (alignmentTimer) clearTimeout(alignmentTimer);
+    if (renderFrame) cancelAnimationFrame(renderFrame);
     cancelAnimationFrame(sailAnimation);
     scene.scale.off(Phaser.Scale.Events.RESIZE, position);
     scene.events.off(Phaser.Scenes.Events.SHUTDOWN, onShutdown);

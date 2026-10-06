@@ -51,7 +51,6 @@ export interface GameHudHandle {
   setObjective: (text: string) => void;
   /** 弹窗（暂停/通关）是否打开：场景据此暂停物理，避免弹窗后角色继续掉进海里 */
   isModalOpen: () => boolean;
-  showPauseModal: (options?: { onResume?: () => void; onRestart?: () => void; onHome?: () => void }) => void;
   showLevelClearedModal: (options: {
     title: string;
     description: string;
@@ -184,10 +183,6 @@ export function createGameHud(config: GameHudConfig): GameHudHandle {
     curX -= (helpBtn.width + 6);
   }
 
-  const pauseBtn = makeBtn(curX, '⏸ 暂停', '#1f3833', '#2d544c', () => {
-    showPauseModal();
-  });
-  btnRow.add(pauseBtn);
 
   rightGroup.add([objectiveText, btnRow]);
   root.add([leftGroup, centerGroup, rightGroup]);
@@ -371,60 +366,6 @@ export function createGameHud(config: GameHudConfig): GameHudHandle {
     activeModalPanel = null;
   }
 
-  function showPauseModal(options?: { onResume?: () => void; onRestart?: () => void; onHome?: () => void }): void {
-    closeModal();
-    const vpW = logicalWorldViewportWidth(scene);
-    const off = screenSpaceOrigin(scene);
-    const modal = scene.add.container(0, 0).setScrollFactor(0).setDepth(320);
-    activeModal = modal;
-
-    const mask = scene.add.rectangle(0, 0, 3000, 1000, 0x050e0b, 0.82)
-      .setOrigin(0).setInteractive();
-    modal.add(mask);
-
-    // 面板要带上 sf0 补偿量，否则会跑到屏幕左上角外（遮罩只盖屏幕，不跟着补）
-    const panel = scene.add.container(off.x + vpW / 2, off.y + BASE_HEIGHT / 2);
-    activeModalPanel = panel;
-    const panelBg = scene.add.rectangle(0, 0, 420, 310, 0x142b23, 0.98)
-      .setStrokeStyle(2, 0xe0c98f, 0.9);
-
-    const modalTitle = scene.add.text(0, -112, '— 游戏暂停 —', {
-      fontFamily: 'sans-serif', fontSize: '20px', color: '#fff5d8',
-    }).setOrigin(0.5);
-
-    const createModalBtn = (y: number, text: string, bg: string, hoverBg: string, action: () => void) => {
-      const b = scene.add.text(0, y, text, {
-        fontFamily: 'sans-serif', fontSize: '14px', color: '#fff6e4',
-        backgroundColor: bg, padding: { x: 20, y: 9 },
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-      b.on('pointerover', () => b.setBackgroundColor(hoverBg));
-      b.on('pointerout', () => b.setBackgroundColor(bg));
-      b.on('pointerdown', action);
-      return b;
-    };
-
-    const resumeBtn = createModalBtn(-50, '【 继续游戏 】', '#265444', '#387962', () => {
-      closeModal();
-      options?.onResume?.();
-    });
-
-    const restartBtn = createModalBtn(8, '【 重新开始本关 】', '#324736', '#49674f', () => {
-      closeModal();
-      if (options?.onRestart) options.onRestart();
-      else config.onRestart?.();
-    });
-
-    const homeBtn = createModalBtn(66, '【 保存并返回主菜单 】', '#2d3330', '#414a45', () => {
-      closeModal();
-      if (options?.onHome) options.onHome();
-      else if (config.onHome) config.onHome();
-      else scene.scene.start('menu');
-    });
-
-    panel.add([panelBg, modalTitle, resumeBtn, restartBtn, homeBtn]);
-    modal.add(panel);
-  }
-
   function showLevelClearedModal(options: {
     title: string;
     description: string;
@@ -520,8 +461,8 @@ export function createGameHud(config: GameHudConfig): GameHudHandle {
     setProgressPercent,
     setObjective,
     isModalOpen: () => activeModal !== null,
-    showPauseModal,
     showLevelClearedModal,
     destroy,
   };
 }
+

@@ -10,6 +10,7 @@
  * 只用 DOM：不参与 Phaser 场景树，因此不会被房间的 `applyHDCamera` 缩放影响，
  * 也不占用场景生命周期；`?assetReview=1` 打开，关闭时返回的 dispose 会摘干净监听。
  */
+import { resolveImageUrl } from '../assets';
 
 export interface AssetReviewEntry {
   /** 侧栏与标题里显示的名字。 */
@@ -120,7 +121,8 @@ export function createAssetReviewOverlay(entries: readonly AssetReviewEntry[]): 
   const select = (next: number) => {
     index = (next + entries.length) % entries.length;
     const entry = entries[index];
-    image.src = entry.path;
+    // Keep the PNG path in the list/footer as the source-of-truth label, but display its WebP sibling.
+    image.src = resolveImageUrl(entry.path);
     image.alt = entry.label;
     pathText.textContent = entry.path;
     noteText.textContent = entry.note ?? '';

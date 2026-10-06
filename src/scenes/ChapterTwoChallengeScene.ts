@@ -2,9 +2,12 @@ import Phaser from 'phaser';
 import { Player } from '../gameplay/Player';
 import { Terrain } from '../gameplay/Terrain';
 import { applyHDCamera } from '../systems/Resolution';
+import { resolveImageUrl } from '../assets';
 import { TEACHER, LIGHT_ORIGIN, LIGHT_LENGTH, LIGHT_HALF_ANGLE, DETECTION_MS, initialSearchlight, updateLight, isInBeam, belowStreet } from '../gameplay/chapterTwoRules';
 
 import { NIGHT } from '../gameplay/ChapterTwoNightArt';
+import { Flashlight } from '../gameplay/chapterTwoFlashlight';
+import { ARM_CROP, ARM_PIVOT, TEACHER_ART, armHoleRect, armRotationFor } from '../gameplay/chapterTwoTeacherArm';
 
 type Checkpoint = { x: number; y: number; label: string };
 type Cover = { from: number; to: number; baseY: number; label: string };
@@ -35,6 +38,9 @@ const SWINGS: SwingHazard[] = [
   { x: 930, y: 492, length: 112, phase: 1.7, label: '甩动竹竿' },
 ];
 
+/** 光束 depth：高于所有世界层（含摆动 19、钞票 20–22），低于 HUD（200+）。 */
+const LIGHT_DEPTH = 30;
+
 /** 第二关灰盒：学校后墙 → 骑楼折返 → 长街逃离。 */
 export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private player!: Player;
@@ -43,7 +49,9 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private status!: Phaser.GameObjects.Text;
   private checkpointText!: Phaser.GameObjects.Text;
   private alertLabel!: Phaser.GameObjects.Text;
-  private lightGraphics!: Phaser.GameObjects.Graphics;
+  private flashlight!: Flashlight;
+  /** 老师的前臂 + 手电（绕肘旋转，跟随光锥；见 `chapterTwoTeacherArm.ts`） */
+  private teacherArm!: Phaser.GameObjects.Container;
   private hudGraphics!: Phaser.GameObjects.Graphics;
   private swingImages: Phaser.GameObjects.Image[] = [];
   private platformArtIndex = 0;
@@ -70,41 +78,44 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image('night-background', 'assets/level2/night-v1/background-night.png');
-    this.load.image('night-p01', 'assets/level2/night-v1/p01.png');
-    this.load.image('night-p02', 'assets/level2/night-v1/p02.png');
-    this.load.image('night-p03', 'assets/level2/night-v1/p03.png');
-    this.load.image('night-p04', 'assets/level2/night-v1/p04.png');
-    this.load.image('night-p05', 'assets/level2/night-v1/p05.png');
-    this.load.image('night-p06', 'assets/level2/night-v1/p06.png');
-    this.load.image('night-p07', 'assets/level2/night-v1/p07.png');
-    this.load.image('night-p08', 'assets/level2/night-v1/p08.png');
-    this.load.image('night-p09', 'assets/level2/night-v1/p09.png');
-    this.load.image('night-h01', 'assets/level2/night-v1/h01.png');
-    this.load.image('night-h02', 'assets/level2/night-v1/h02.png');
-    this.load.image('night-h03', 'assets/level2/night-v1/h03.png');
-    this.load.image('night-h04', 'assets/level2/night-v1/h04.png');
-    this.load.image('night-h05', 'assets/level2/night-v1/h05.png');
-    this.load.image('night-h06', 'assets/level2/night-v1/h06.png');
-    this.load.image('night-h07', 'assets/level2/night-v1/h07.png');
-    this.load.image('night-h08', 'assets/level2/night-v1/h08.png');
-    this.load.image('night-h09', 'assets/level2/night-v1/h09.png');
-    this.load.image('night-c01', 'assets/level2/night-v1/c01.png');
-    this.load.image('night-c02', 'assets/level2/night-v1/c02.png');
-    this.load.image('night-c03', 'assets/level2/night-v1/c03.png');
-    this.load.image('night-c04', 'assets/level2/night-v1/c04.png');
-    this.load.image('night-c05', 'assets/level2/night-v1/c05.png');
-    this.load.image('night-c06', 'assets/level2/night-v1/c06.png');
-    this.load.image('night-c07', 'assets/level2/night-v1/c07.png');
-    this.load.image('night-c08', 'assets/level2/night-v1/c08.png');
-    this.load.image('night-c09', 'assets/level2/night-v1/c09.png');
-    this.load.image('night-c10', 'assets/level2/night-v1/c10.png');
-    this.load.image('night-s01', 'assets/level2/night-v1/s01.png');
-    this.load.image('night-s02', 'assets/level2/night-v1/s02.png');
-    this.load.image('night-w01', 'assets/level2/night-v1/w01.png');
-    this.load.image('night-teacher', 'assets/level2/night-v1/teacher.png');
-    this.load.image('night-ticket', 'assets/level2/night-v1/old-banknote.png');
-    this.load.image('night-door', 'assets/level2/night-v1/door.png');
+    // 这 35 条 literal 路径写成完整路径（不要用模板拼接）：vite.config 的 runtimeAssetPaths
+    // 会把它们当字面量拷进 dist，模板串会被判成可疑路径直接让构建失败。
+    // 包一层 resolveImageUrl 才能拿到同名 webp——第二关进场 11.9MB → 1.5MB。
+    this.load.image('night-background', resolveImageUrl('assets/level2/night-v1/background-night.png'));
+    this.load.image('night-p01', resolveImageUrl('assets/level2/night-v1/p01.png'));
+    this.load.image('night-p02', resolveImageUrl('assets/level2/night-v1/p02.png'));
+    this.load.image('night-p03', resolveImageUrl('assets/level2/night-v1/p03.png'));
+    this.load.image('night-p04', resolveImageUrl('assets/level2/night-v1/p04.png'));
+    this.load.image('night-p05', resolveImageUrl('assets/level2/night-v1/p05.png'));
+    this.load.image('night-p06', resolveImageUrl('assets/level2/night-v1/p06.png'));
+    this.load.image('night-p07', resolveImageUrl('assets/level2/night-v1/p07.png'));
+    this.load.image('night-p08', resolveImageUrl('assets/level2/night-v1/p08.png'));
+    this.load.image('night-p09', resolveImageUrl('assets/level2/night-v1/p09.png'));
+    this.load.image('night-h01', resolveImageUrl('assets/level2/night-v1/h01.png'));
+    this.load.image('night-h02', resolveImageUrl('assets/level2/night-v1/h02.png'));
+    this.load.image('night-h03', resolveImageUrl('assets/level2/night-v1/h03.png'));
+    this.load.image('night-h04', resolveImageUrl('assets/level2/night-v1/h04.png'));
+    this.load.image('night-h05', resolveImageUrl('assets/level2/night-v1/h05.png'));
+    this.load.image('night-h06', resolveImageUrl('assets/level2/night-v1/h06.png'));
+    this.load.image('night-h07', resolveImageUrl('assets/level2/night-v1/h07.png'));
+    this.load.image('night-h08', resolveImageUrl('assets/level2/night-v1/h08.png'));
+    this.load.image('night-h09', resolveImageUrl('assets/level2/night-v1/h09.png'));
+    this.load.image('night-c01', resolveImageUrl('assets/level2/night-v1/c01.png'));
+    this.load.image('night-c02', resolveImageUrl('assets/level2/night-v1/c02.png'));
+    this.load.image('night-c03', resolveImageUrl('assets/level2/night-v1/c03.png'));
+    this.load.image('night-c04', resolveImageUrl('assets/level2/night-v1/c04.png'));
+    this.load.image('night-c05', resolveImageUrl('assets/level2/night-v1/c05.png'));
+    this.load.image('night-c06', resolveImageUrl('assets/level2/night-v1/c06.png'));
+    this.load.image('night-c07', resolveImageUrl('assets/level2/night-v1/c07.png'));
+    this.load.image('night-c08', resolveImageUrl('assets/level2/night-v1/c08.png'));
+    this.load.image('night-c09', resolveImageUrl('assets/level2/night-v1/c09.png'));
+    this.load.image('night-c10', resolveImageUrl('assets/level2/night-v1/c10.png'));
+    this.load.image('night-s01', resolveImageUrl('assets/level2/night-v1/s01.png'));
+    this.load.image('night-s02', resolveImageUrl('assets/level2/night-v1/s02.png'));
+    this.load.image('night-w01', resolveImageUrl('assets/level2/night-v1/w01.png'));
+    this.load.image('night-teacher', resolveImageUrl('assets/level2/night-v1/teacher.png'));
+    this.load.image('night-ticket', resolveImageUrl('assets/level2/night-v1/old-banknote.png'));
+    this.load.image('night-door', resolveImageUrl('assets/level2/night-v1/door.png'));
     // 与第一关共用同一个年年角色（三套序列帧由 Player 统一下发）
     Player.preload(this);
   }
@@ -155,7 +166,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       this.addHurdle(1540, 865, 62, '摊位架'),
       this.addHurdle(2350, 910, 66, '修路栏'),
       this.addHurdle(3180, 950, 60, '街口木架'),
-      this.addWall(1682, 448, 38, 286, '此路封住 · 向左'),
+      this.addWall(1682, 0, 38, 734, '此路封住 · 向左'),
     ];
     this.drawCovers();
 
@@ -165,12 +176,15 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.previousPlayer.set(this.player.view.x, this.player.view.y);
 
     this.createGoal();
-    this.lightGraphics = this.add.graphics().setDepth(14);
+    // 光束放在世界层最上面（玩家 0、平台 4、障碍 12、门牌 13、提示 17、老师 18、摆动 19、钞票 20–22）：
+    // 灯是空气里的散射光，物理上在观察者与物体之间，所以不该被柱子/雨篷/人物挡断
+    // （2026-10-05 实机截图：光锥被「骑楼柱影」整根切断）。HUD（200/201）仍在它上面。
+    this.flashlight = new Flashlight(this, LIGHT_DEPTH);
     this.swingImages = NIGHT.swings.map(a => this.add.image(a.x, a.y, `night-${a.id}`)
       .setOrigin(.5, 0).setDisplaySize(a.width, a.height).setDepth(19));
-    this.add.image(NIGHT.teacher.x, NIGHT.teacher.y, 'night-teacher').setOrigin(.5, 1)
-      .setDisplaySize(NIGHT.teacher.width, NIGHT.teacher.height).setDepth(18);
+    this.createTeacher();
     this.hudGraphics = this.add.graphics().setDepth(200);
+    // 起点标题是世界物件，像老师一样随相机移出，不跟随 HUD。
     this.title = this.add.text(145, 24, '第二关 · 骑楼街逃课', {
       fontFamily: 'sans-serif', fontSize: '19px', color: '#253631',
       backgroundColor: 'rgba(247,241,220,.9)', padding: { x: 12, y: 8 },
@@ -178,11 +192,11 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.status = this.add.text(18, 474, '先向右逃。灯光从身后扫来时，马上松开方向键站定。', {
       fontFamily: 'sans-serif', fontSize: '14px', color: '#f4edda',
       backgroundColor: 'rgba(20,31,29,.9)', padding: { x: 11, y: 8 },
-    }).setOrigin(0).setDepth(201);
+    }).setOrigin(0).setDepth(201).setVisible(false);
     this.checkpointText = this.add.text(18, 514, '路线 · 第一层向右 →', {
       fontFamily: 'sans-serif', fontSize: '11px', color: '#40524c',
       backgroundColor: 'rgba(235,235,218,.82)', padding: { x: 8, y: 5 },
-    }).setOrigin(0, 1).setDepth(201);
+    }).setOrigin(0, 1).setDepth(201).setVisible(false);
     this.alertLabel = this.add.text(0, 0, '警觉 0%', {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#f4ead0',
     }).setOrigin(0, .5).setDepth(201);
@@ -208,8 +222,6 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
 
   private drawQilouStreet(): void {
     this.add.image(0, 0, 'night-background').setOrigin(0, 0).setDepth(-30);
-    this.add.text(1370, 515, '↓ 落下后向左走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(10);
-    this.add.text(455, 730, '↓ 到底层后向右走', { fontSize: '13px', color: '#d5dfdf', backgroundColor: '#23344baa', padding: { x: 6, y: 3 } }).setDepth(10);
   }
 
   private addStreetPlatform(x: number, y: number, width: number, height: number): void {
@@ -231,7 +243,14 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private addWall(x: number, y: number, width: number, height: number, _label: string): Phaser.GameObjects.Rectangle {
     const wall = this.add.rectangle(x, y, width, height, 0xffffff, 0).setOrigin(.5, 0);
     this.physics.add.existing(wall, true);
-    this.add.image(x, y, 'night-w01').setOrigin(.5, 0).setDepth(11);
+    // 视觉必须跟着碰撞一起加高：w01 是 38×286 的连续柱面切片（无顶无底），
+    // 所以纵向平铺够高即可；拉伸会把石砌纹理抹成条纹，只加碰撞不加贴图则变成隐形墙。
+    const tiles = Math.max(1, Math.ceil(height / NIGHT.wall.height));
+    const tileHeight = height / tiles;
+    for (let i = 0; i < tiles; i++) {
+      this.add.image(x, y + i * tileHeight, 'night-w01')
+        .setOrigin(.5, 0).setDisplaySize(width, tileHeight).setDepth(11);
+    }
     return wall;
   }
 
@@ -267,7 +286,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     debug.lineStyle(1,0x65f4c2,.95);
     for (const p of NIGHT.platforms) debug.strokeRect(p.x,p.y,p.width,p.height);
     for (const h of NIGHT.hurdles) debug.strokeRect(h.body.x,h.body.y,h.body.width,h.body.height);
-    debug.strokeRect(1663,448,38,286);
+    debug.strokeRect(1663,0,38,734);
     debug.lineStyle(1,0xe0b75d,.8);
     for(const c of NIGHT.covers) debug.strokeRect(c.zone.from,c.zone.minY,c.zone.to-c.zone.from,c.zone.maxY-c.zone.minY);
     const btn=document.createElement('button');btn.textContent='显示碰撞框';btn.onclick=()=>{debug.setVisible(!debug.visible);btn.textContent=debug.visible?'隐藏碰撞框':'显示碰撞框';};panel.append(btn);
@@ -275,6 +294,42 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     const update=()=>{const b=this.player.view.body as Phaser.Physics.Arcade.Body;status.textContent=`x${Math.round(this.player.view.x)} y${Math.round(this.player.view.y)} ${b.blocked.down?'落地':'空中'}`;panel.dataset.loaded=String(NIGHT.platforms.length+NIGHT.hurdles.length+NIGHT.covers.length+NIGHT.swings.length+5);panel.dataset.grounded=String(b.blocked.down);};
     this.events.on('postupdate',update);
     this.events.once('shutdown',()=>{this.events.off('postupdate',update);panel.remove();});
+  }
+
+  /**
+   * 老师立绘拆两层：身体（挖掉前臂）与「前臂 + 手电」（绕肘旋转、跟随光锥）。
+   * 立绘是静态的——手电水平握着；不拆层时扫到陡角（光锥可到 +73°）光柱会从灯下面
+   * 垂直垂下来，读成「灯下挂着一团雾」（2026-10-05 实机反馈）。
+   */
+  private createTeacher(): void {
+    const { x, y, width, height } = NIGHT.teacher;
+    // depth 18：在平台/障碍/门牌/路线提示（17）之上，在摆动障碍（19）、光束（30）与 HUD（200+）之下。
+    // 写成字面量而不是常量：`tests/chapterTwoNightArt.test.mjs` 直接从源码里读这个数字来守层级顺序。
+    const body = this.add.image(x, y, 'night-teacher').setOrigin(.5, 1)
+      .setDisplaySize(width, height).setDepth(18);
+    // 反向几何遮罩：身体这一层挖掉前臂那块，改由会转的图层画（不然会有两条手臂）
+    const hole = armHoleRect(x, y, width, height);
+    const holeSource = this.make.graphics({}, false).fillRect(hole.x, hole.y, hole.width, hole.height);
+    const mask = holeSource.createGeometryMask();
+    mask.invertAlpha = true;
+    body.setMask(mask);
+    // make.graphics(add:false) 不在场景显示列表里，需要显式释放，避免重试时泄漏。
+    this.events.once('shutdown', () => {
+      body.clearMask();
+      mask.destroy();
+      holeSource.destroy();
+    });
+
+    // `setCrop` 只裁剪、不重排：裁出来的那块仍按贴图原坐标绘制
+    // （`MultiPipeline.batchSprite` 里 `x = -displayOriginX + crop.x`），
+    // 所以把「轴心在贴图里的位置」挪到容器原点即可让肘成为旋转中心。
+    const scale = width / TEACHER_ART.width;
+    const arm = this.add.image(0, 0, 'night-teacher').setOrigin(0, 0).setScale(scale);
+    arm.setCrop(ARM_CROP.x, ARM_CROP.y, ARM_CROP.width, ARM_CROP.height);
+    arm.setPosition(-ARM_PIVOT.x * scale, -ARM_PIVOT.y * scale);
+    this.teacherArm = this.add.container(x - width / 2 + ARM_PIVOT.x * scale, y - height + ARM_PIVOT.y * scale, [arm])
+      .setDepth(18);
+    this.teacherArm.rotation = armRotationFor(this.searchlight.angle);
   }
 
   private createGoal(): void {
@@ -334,7 +389,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.tweens.add({ targets: this.checkpointText, alpha: { from: .35, to: 1 }, duration: 280, yoyo: true });
   }
 
-  private updateSearchlight(_time: number, delta: number): void {
+  private updateSearchlight(time: number, delta: number): void {
     const x = this.player.view.x, y = this.player.view.y;
     const inCover = COVERS.some(cover => x >= cover.from && x <= cover.to
       && y >= cover.baseY - 115 && y <= cover.baseY + 24);
@@ -345,20 +400,13 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.searchlight = updateLight(this.searchlight, { x, y, moving: moved, covered: inCover, enabled: canCatch, delta });
     this.detectionMs = this.searchlight.exposure;
     const angle = this.searchlight.angle;
+    // 手电跟着光锥转：判定用的仍是固定灯口，但立绘必须指出光柱的方向
+    this.teacherArm.rotation = armRotationFor(angle);
     const lit = !inCover && isInBeam(angle, x, y);
     if (this.searchlight.tracking && !this.wasLit) this.cameras.main.shake(90, .0025);
 
     // 人物和灯源使用固定世界坐标，相机移开后老师自然离开画面。
-    const end = { x: LIGHT_ORIGIN.x + Math.cos(angle) * LIGHT_LENGTH, y: LIGHT_ORIGIN.y + Math.sin(angle) * LIGHT_LENGTH };
-    const halfWidth = LIGHT_LENGTH * Math.tan(LIGHT_HALF_ANGLE);
-    const perpendicular = { x: -Math.sin(angle) * halfWidth, y: Math.cos(angle) * halfWidth };
-    this.lightGraphics.clear();
-    this.lightGraphics.fillStyle(this.searchlight.tracking ? 0xffbf72 : 0xf2db8e, .27).fillTriangle(
-      LIGHT_ORIGIN.x, LIGHT_ORIGIN.y,
-      end.x + perpendicular.x, end.y + perpendicular.y,
-      end.x - perpendicular.x, end.y - perpendicular.y,
-    );
-    this.lightGraphics.lineStyle(2, 0xffe9a5, .6).lineBetween(LIGHT_ORIGIN.x, LIGHT_ORIGIN.y, end.x, end.y);
+    this.flashlight.render(LIGHT_ORIGIN, angle, this.searchlight.tracking, time);
     const progress = this.detectionMs / DETECTION_MS;
     // 前 0.35 秒就到 60%，余下约 0.6 秒快速拉满。
     this.alert = progress <= .37
@@ -377,6 +425,11 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     }
     this.wasLit = lit && moved && canCatch;
     if (this.detectionMs >= DETECTION_MS) this.restartFromCheckpoint('被老师看见了');
+  }
+
+  /** 仅探针/截图使用：暂时关掉光束，避免加色层干扰对位测量 */
+  hideSearchlightArt(): void {
+    this.flashlight.setVisible(false);
   }
 
   private updateDynamicHazards(time: number): void {
@@ -445,7 +498,6 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     // worldView 随窗口比例变化（applyHDCamera 用 cover 模式，宽度 = 540 × 宽高比），
     // 所以 HUD 必须贴 view 的四条边定位，不能写死 960×540 的绝对坐标。
     const view = this.cameras.main.worldView;
-    this.title.setPosition(view.x + 145, view.y + 24);
     this.status.setPosition(view.x + 18, view.y + view.height - 66);
     this.checkpointText.setPosition(view.x + 18, view.y + view.height - 8);
     const x = view.x + view.width - 36 - 278;
