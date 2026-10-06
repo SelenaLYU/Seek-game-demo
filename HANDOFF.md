@@ -126,7 +126,7 @@ npm run build               # tsc --noEmit + vite build
 - **门前可达性**（按载入时实测 `fittedSize` 复算 `allowed()` 的轴对齐盒）：六栋门点到盒边界 0.25（04 树屋，
   `site.yaw = -π/4` 的斜向门点被轴对齐盒切掉一部分）～1.79（01 贝壳屋）个世界单位，都远小于 2.8 触发半径，
   不需要改碰撞；树屋的 0.25 是当前最小值，若以后加宽碰撞要重算。
-- **光照**（2026-10-05 改）：原来「半球光 1.45 + 一盏定向光 2.15」且不做 tone mapping，症状是**没有形**
+- **光照**（2026-10-05 改）：原来「半球光 1.45 + 一盏定向光 2.15」且不做 tone mapping，症状是**没有形** **（配方已于 2026-10-06 再调：env 0.45→0.30、主光 2.8→5.5，见 §10.1）**
   （每个朝上的面都同一亮度，像平涂）。现在环境光走 HDR（`public/env/sky-sunny.hdr` → PMREM →
   `scene.environmentIntensity = 0.45`），渲染器改 `NeutralToneMapping` / exposure `1.32`，解析光只剩
   一盏主光（`2.8` + 投影）和一盏弱补光（`0.24`），半球光降到 `0.16` 只当防纯黑地板。**主光方向跟随
@@ -140,7 +140,7 @@ npm run build               # tsc --noEmit + vite build
 - **不许穿模（硬约束）**：判定在 `src/island/clipping.ts`，回归测试 `tests/islandClipping.test.mjs`（61 项里 8 组）。
   散布摆放必须走 `canPlace`（不过就丢点），摆完跑 `auditPlacements` 复核。已知待清的现场穿模清单见
   `decisions/2026-10-05-no-clipping-island.md`（栈桥断在半空、建筑底座陷沙、树压屋角、崖壁裙边接缝、道具探出岛缘）。
-- **光照（2026-10-05 改）**：`scene.environment` 接 `public/env/sky-sunny.hdr`（439KB，Poly Haven CC0，
+- **光照（2026-10-05 改）**：`scene.environment` 接 `public/env/sky-sunny.hdr`（439KB，Poly Haven CC0， **（2026-10-06 再调：env 0.45→0.30、主光 2.8→5.5，见 §10.1）**
   1k 原图 1.7MB 在软件渲染下让进岛从 18s 拖到 67s，已降到 512×256）。HDR 自带太阳在方位 54.5°/高度 16.5°
   （贴地平线且在镜头背后，形体和影子都不出来），所以把环境与主光一起转到 `KEY_SUN_AZIMUTH`。
   半球光 1.45→0.16、主光 2.15→2.8、`NeutralToneMapping` + exposure 1.32；阴影视锥 ±26 → ±38
@@ -201,6 +201,14 @@ npm run build               # tsc --noEmit + vite build
 
 ### 10.1 已修（有实测数字）
 
+- **整岛「没有形」（光照偏平，本轮修，提交 `fff0a4e`）**：`environmentIntensity` 0.45→0.30、
+  主光 2.8→5.5，实测岛屿区域对比度 **0.671→0.730**、区域内过曝 0%、全图过曝 0.056%→0.056%
+  不变（`node tools/probe-lighting-ab.mjs --origin=http://localhost:5173`）。
+  两条死路也量掉了：**改 exposure 不动对比度**（1.15→1.50 只把均值 0.360→0.411），
+  **抬主光仰角反而更平**（16.5°→45° 对比度 0.671→0.660，只是把均值抬到 0.493）。
+  env 压到 0.18 对比度还能到 0.756，但死黑 0.126%→0.356%，暗部开始糊，不划算，停在 0.30。
+  人眼确认（本地 `screenshots/island/lighting/contact-before-after.png`，按 `.gitignore` 不入库）：
+  中央沙丘有了受光/背光面，树影与屋檐明暗可读。**这是本轮唯一做过视觉确认的 3D 改动。**
 - **地形法线折痕（本轮修，提交 `696bf08`）**：地形每圈多一列重复顶点，几何上重合但把
   邻接面劈成两半，两半法线不同 → 从**岛心到岸线一条笔直的光照折痕**，并产生零面积三角形。
   改成真正闭合（索引收尾 `% terrainSegments` 回绕）。实测 `node tools/analyze-terrain-seam.mjs`：
@@ -218,12 +226,6 @@ npm run build               # tsc --noEmit + vite build
 - **建筑底座陷沙/悬空**。底座高度取 footprint 九采样点的**最高**地形（约 805-810 行
   `baseGround = Math.max(...)`），坡地上必然一边埋掉模型自带的石基/灌木、另一边留缝。
   修法方向明确（改用「footprint 内最低点 + 下沉裙边」或给每栋手工锚点），本轮没做。
-- **光照仍然偏平**。已量清**不是曝光问题**：`tools/probe-lighting-ab.mjs` 实测 exposure
-  1.15→1.50 只把均值从 0.360 抬到 0.411，**对比度 0.65/0.69 基本不变**；瓶颈是 HDR ambient
-  压过唯一那盏主光。被中止的 agent 最后一句正是「raise the key light so it actually dominates
-  the HDR ambient」，**该改动未落地**，当前 `environmentIntensity = 0.45` / 主光 2.8 仍是
-  §9 与 `decisions/2026-10-05-island-hdr-lighting.md` 里的原值。改这个要重跑 A/B 截图对照，
-  别只看单张截图就调。
 
 ### 10.3 未验证（有可疑点，没有任何证据）
 
@@ -237,8 +239,10 @@ npm run build               # tsc --noEmit + vite build
 - **性能**：`tick` 里角色贴地校正每帧 `updateMatrixWorld(true)` + `Box3.setFromObject`
   （CPU 密集）、遮挡回退 raycast 每帧一次、散布材质 `material.clone` —— 都只是被列为
   「重点怀疑」，**没有基线数字**（本机是软件渲染，绝对帧率无意义，要先有相对基线）。
-- **视觉确认缺失**：本轮所有 3D 结论都来自代码与数值探针，**没有做过人眼/截图确认**
-  （§9 提到的 `screenshots/` 对照图按 `.gitignore` 不入库）。
+- **视觉确认缺失**：除光照那条（本轮看了 before/after 对照图）之外，其余 3D 结论都来自
+  代码与数值探针，**没有做过人眼/截图确认**（`screenshots/` 按 `.gitignore` 不入库）。
+- **岛缘地面有可见同心色带**（本轮对照图里看到、还没量）：最外圈绿色带是高程环的
+  顶点色分段上的，近看有台阶感，可能与「塑料底座盘」是同一处观感问题。
 
 ### 10.4 未入库（待 Simon 处置）
 
