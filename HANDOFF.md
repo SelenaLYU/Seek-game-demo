@@ -251,20 +251,42 @@ npm run build               # tsc --noEmit + vite build
   要真正打破机切感得做数十单位的低频起伏，那会动到 coastlineRadius（共用真源），不建议顺手做。
 - **地形内部可见同心色带**（本轮对照图里看到、还没量）：外圈绿色带是高程环的顶点色分段
   上的，近看有台阶感。要治得加一层噪声到顶点色或改用贴图，属于另一轮的事。
-### 10.3 未验证（有可疑点，没有任何证据）
+### 10.3 角色线：已验数字与仍未验的部分（2026-10-06 补测）
 
-- **角色贴地校正的漂移风险**。`MemoryIsland.ts` 约 1343-1347 行：每帧按 `feetError` 做一次
-  clamp 到 ±0.08 的**绝对**校正，并写成 `model.position.y = groundOffset + correction`；
-  同时 `if (Math.abs(feetError) > 0.08) player.position.y += feetError - correction`。
-  注释声称「Do not integrate corrections frame-to-frame，否则累积漂移」，但这个不变量
-  （缓坡、跳跃落点、四套动画 clip 切换瞬间是否真的不抖/不漂）**没人验过**。
-- **角色缩放 2.05 与灰化材质注入**（`onBeforeCompile` 注入 `uIslandGray`）是否让比例失真
-  或材质异常，同样未验证。
-- **性能**：`tick` 里角色贴地校正每帧 `updateMatrixWorld(true)` + `Box3.setFromObject`
-  （CPU 密集）、遮挡回退 raycast 每帧一次、散布材质 `material.clone` —— 都只是被列为
-  「重点怀疑」，**没有基线数字**（本机是软件渲染，绝对帧率无意义，要先有相对基线）。
-- **视觉确认缺失**：光照与岛缘两条本轮都看了 before/after 对照图（本地 `screenshots/`，
-  按 `.gitignore` 不入库）；其余 3D 结论仍只有代码与数值探针，**没做过人眼确认**。
+用独立探针 `tools/probe-character-grounding.mjs` 逐帧采样 1211 帧（W 行走、爬坡、Shift 跑、原地跳 ×3）。
+
+**已验（成立）**
+
+- **贴地校正不写成累加，成立**。`model.position.y − groundOffset` 全场只出现 **1 个值（3.36e-7）**，
+  模型单帧最大跳变 **0**；另一轮在坡上确实触发过 clamp，也只出现 `{0, −0.08}` 两个值，**无累加**。
+  注释声称的「不要逐帧积分」是真的。
+- **`player.position.y` 没有无界单调漂移**：796 个静止帧每帧 Δy 恒为 **0**；移动帧最大单帧 0.317
+  （2.0/s，是地形跟随不是漂移）。`|feetError| > 0.08` 那条分支确实会动，但它是**跳到新平衡点**
+  （取脚底世界坐标做不动点迭代，几帧内收敛），不是累积。
+  ⚠️ 读到「出生点起 `player.position.y` 比裸地形高 0.12 且不回归」不要当成 bug——那正是本轮新增的
+  `pavingLift`（踩在路面上补回路面 ribbon 的 0.12 抬升），见 10.1。
+- **比例不失真（数字）**：缩放 2.05，角色世界尺寸 `0.749 × 2.05 × 1.055`；设计门洞 2.25，
+  角色是门洞的 0.91，**不超过门高**；建筑可见高 4.08–5.86；路面世界宽 1.89–3.49。
+  **没量到**：渲染出来的 GLB 门高（blockout 门 `visible=false`，无法从几何里分离）。
+- **灰化只作用在建筑上**：6 个建筑材质挂 `uIslandGray`（值 1 = 本段记忆未点亮；预置已完成章节时
+  对应建筑转 0）；**角色 0 挂载**、非建筑挂载 0，标题是 DOM。链接程序 6/6 确实含该 uniform。
+  语义提醒：灰 = 「这段记忆没点亮」，**与「是否已解锁可玩」不是一回事**（空存档下 ch1 也是灰的）。
+
+**新发现（重要，本轮没修）**
+
+- **贴地校正读的是 `SkinnedMesh` 首次缓存的 bind-pose 包围盒**，对骨骼动画完全不敏感：
+  跳跃时真实蒙皮脚底抬到 **+0.336**，而校正看到的 `feetError` 恒为 0；最坏姿势下真实脚底比站立面
+  低 **0.047**。也就是说这套校正对动画/步态**实际近乎 no-op**，它治的只是根节点偏移。
+  影响量级很小（最坏 4.7cm），本轮按「先记录不扩大改动面」处理；真要修得按骨骼取脚点，
+  不能再用 `Box3.setFromObject`。
+
+**仍未验**
+
+- **性能无基线**：`tick` 里每帧 `updateMatrixWorld(true)` + `Box3.setFromObject`、遮挡回退 raycast、
+  散布材质 `material.clone` 都只是「重点怀疑」，没有数字（本机软件渲染，绝对帧率无意义，需要相对基线）。
+- **视觉确认**：光照与岛缘两条看过 before/after 对照图（本地 `screenshots/`，不入库）；
+  角色这条只看过站立/行走/跳跃近景，**动画切换瞬间、长时间静止没做人眼确认**。
+
 ### 10.4 未入库（待 Simon 处置）
 
 `assets/character/tripo-out/`（83MB）、`assets/characters/lilei/tripo-out/*/model.glb`（6×约 12MB）、
