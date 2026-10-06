@@ -1,4 +1,4 @@
-import { preloadRoomPaper, enableRoomPaper, addRoomPaper, ROOM_INK_FONT } from '../ui/RoomPaperTheme';
+import { english, installRoomEnglish } from '../ui/RoomEnglish';
 import Phaser from 'phaser';
 import { applyHDCamera } from '../systems/Resolution';
 import { resolveImageUrl } from '../assets';
@@ -90,13 +90,15 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
 
   constructor() { super('chapter2-room'); }
 
-  preload(): void { preloadRoomPaper(this);
+  preload(): void {
     for (const [key, path] of Object.values(ART)) {
       if (!this.textures.exists(key)) this.load.image(key, resolveImageUrl(path));
     }
   }
 
-  create(): void { enableRoomPaper(this);
+  create(): void {
+    // DOM 观察面板由公共翻译器处理；画布文字在 text() 中使用独立的小号英文行。
+    installRoomEnglish(this, false);
     this.flow = new ChapterTwoRoomFlow();
     this.modal = undefined;
     this.selectedCell = -1;
@@ -251,15 +253,79 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     size = 16,
     color = '#f4ead2',
     width = 660,
+    withEnglish = true,
   ): Phaser.GameObjects.Text {
-    const onPaper = parent.list.some(child => child instanceof Phaser.GameObjects.NineSlice
-      && Math.abs(x - child.x) <= child.width / 2 && Math.abs(y - child.y) <= child.height / 2);
+    const compactSize = Math.max(9, Math.round(size * .82));
     const object = this.add.text(x, y, value, {
-      fontFamily: ROOM_INK_FONT, fontSize: `${size}px`, color: onPaper ? '#503b29' : color,
-      lineSpacing: 7, wordWrap: { width },
-    });
+      fontFamily: '"Microsoft YaHei", sans-serif', fontSize: `${compactSize}px`, color,
+      lineSpacing: 3, wordWrap: { width },
+    }).setResolution(Math.max(2, window.devicePixelRatio || 1));
     parent.add(object);
+    const englishText = this.add.text(x, y, '', {
+      fontFamily: 'Georgia, serif',
+      fontSize: `${Math.max(7, Math.round(size * .5))}px`,
+      color: '#cdbfa8',
+      lineSpacing: 1,
+      wordWrap: { width },
+    }).setAlpha(.9).setResolution(Math.max(2, window.devicePixelRatio || 1));
+    parent.add(englishText);
+
+    const anchor = { x, y };
+    const originalSetOrigin = object.setOrigin.bind(object);
+    const originalSetPosition = object.setPosition.bind(object);
+    const originalSetText = object.setText.bind(object);
+    const syncLayout = () => {
+      const gap = englishText.text ? 3 : 0;
+      const totalHeight = object.height + gap + englishText.height;
+      const top = anchor.y - totalHeight * object.originY;
+      originalSetPosition(anchor.x, top + object.height * object.originY);
+      englishText
+        .setOrigin(object.originX, object.originY)
+        .setPosition(anchor.x, top + object.height + gap + englishText.height * object.originY);
+    };
+    object.setOrigin = ((originX?: number, originY?: number) => {
+      originalSetOrigin(originX, originY);
+      syncLayout();
+      return object;
+    }) as typeof object.setOrigin;
+    object.setPosition = ((nextX?: number, nextY?: number) => {
+      anchor.x = nextX ?? anchor.x;
+      anchor.y = nextY ?? anchor.y;
+      syncLayout();
+      return object;
+    }) as typeof object.setPosition;
+    object.setText = ((next: string | string[]) => {
+      const chinese = Array.isArray(next) ? next.join('\n') : next;
+      originalSetText(chinese);
+      englishText.setText(withEnglish ? english(chinese) : '');
+      syncLayout();
+      return object;
+    }) as typeof object.setText;
+    object.setText(value);
     return object;
+  }
+
+  /** 中文在左、英文在右的两栏对照：两列从同一行开始，英文不再挤进下一段中文之间。
+   * 左栏带 `·` 列表记号时右栏同步补上，保持两侧排版一致。 */
+  private textPair(
+    parent: Phaser.GameObjects.Container,
+    leftX: number,
+    rightX: number,
+    y: number,
+    value: string,
+    size: number,
+    color: string,
+    leftWidth: number,
+    rightWidth: number,
+    englishSize = Math.max(9, Math.round(size * .8)),
+    englishColor = '#d8c9b0',
+  ): void {
+    this.text(parent, leftX, y, value, size, color, leftWidth, false);
+    const translated = english(value);
+    if (!translated) return;
+    const bulleted = value.split('\n').every(line => line.trim().startsWith('·'));
+    const right = bulleted ? translated.split('\n').map(line => `· ${line}`).join('\n') : translated;
+    this.text(parent, rightX, y, right, englishSize, englishColor, rightWidth, false);
   }
 
   private box(
@@ -273,11 +339,6 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
   ): Phaser.GameObjects.Rectangle {
     const object = this.add.rectangle(x, y, width, height, color, alpha).setStrokeStyle(1, 0xcbb98e, .45);
     parent.add(object);
-    // 零食格是玩法热区，不盖纸；其余面板和操作按钮共用信纸。
-    if (color !== 0xffe099 && color !== 0x3f3a35) {
-      object.setAlpha(.001);
-      addRoomPaper(this, parent, x, y, width, height);
-    }
     return object;
   }
 
@@ -393,10 +454,12 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     label: string,
     action: () => void,
     width = 170,
+    height = 40,
+    labelSize = 15,
   ): Phaser.GameObjects.Rectangle {
-    const object = this.box(parent, x, y, width, 40, 0x3f3a35, .62)
+    const object = this.box(parent, x, y, width, height, 0x3f3a35, .62)
       .setStrokeStyle(1, 0xd2b687, .58).setInteractive({ useHandCursor: true });
-    this.text(parent, x, y, label, 15, '#f5ead4', width - 16).setOrigin(.5);
+    this.text(parent, x, y, label, labelSize, '#f5ead4', width - 16).setOrigin(.5);
     object.on('pointerover', () => object.setFillStyle(0x62594f, .82).setStrokeStyle(1, 0xf1d4a1, .9));
     object.on('pointerout', () => object.setFillStyle(0x3f3a35, .62).setStrokeStyle(1, 0xd2b687, .58));
     object.on('pointerdown', action);
@@ -494,7 +557,13 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     if (this.snackShown) this.addSnack(false);
   }
 
-  private panel(title: string, onClose?: () => void, copySide = false, compactSide = false): Phaser.GameObjects.Container {
+  private panel(
+    title: string,
+    onClose?: () => void,
+    copySide = false,
+    compactSide = false,
+    roomySide = false,
+  ): Phaser.GameObjects.Container {
     this.modal?.destroy(true);
     const panel = this.add.container(0, 0).setDepth(50);
     this.modal = panel;
@@ -512,11 +581,11 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     const camera = this.cameras.main;
     const width = camera.width / camera.zoom, height = camera.height / camera.zoom;
     panel.add(this.add.image(480, 270, blurKey).setDisplaySize(width, height).setInteractive());
-    if (copySide) this.box(panel, compactSide ? 710 : 700, compactSide ? 292 : 280,
-      compactSide ? 420 : 450, compactSide ? 370 : 430, 0x27221f, .68)
+    if (copySide) this.box(panel, compactSide ? 710 : roomySide ? 690 : 700, compactSide ? 292 : 280,
+      compactSide ? 420 : roomySide ? 500 : 450, compactSide ? 370 : roomySide ? 450 : 430, 0x27221f, .68)
       .setStrokeStyle(1, 0xc7aa7d, .18);
-    const heading = this.text(panel, copySide ? (compactSide ? 710 : 700) : 92,
-      copySide ? (compactSide ? 132 : 105) : 62, title, copySide ? 21 : 20,
+    const heading = this.text(panel, copySide ? (compactSide ? 710 : roomySide ? 690 : 700) : 92,
+      copySide ? (compactSide ? 132 : 105) : 62, title, copySide ? (roomySide ? 25 : 21) : 20,
       '#f5ead4', copySide ? (compactSide ? 370 : 400) : 700);
     if (copySide) heading.setOrigin(.5);
     const close = this.text(panel, 910, 43, '×', 25, '#f2e5cb').setOrigin(.5).setInteractive({ useHandCursor: true });
@@ -614,9 +683,9 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
       this.observe('完成的作业', '鸡23只，兔12只。\n35个头，94只脚。作业已经完成。', 'story', 'homework-solved');
       return;
     }
-    const panel = this.panel('数学作业 · 鸡兔同笼', () => this.flow.closeHomework(), true);
+    const panel = this.panel('数学作业 · 鸡兔同笼', () => this.flow.closeHomework(), true, false, true);
     const homework = this.artFit(panel, 'story', 'homework-open', 270, 286, 410, 300);
-    this.text(panel, 500, 145, '笼子里有鸡和兔，共有35个头、94只脚。\n鸡和兔各有多少只？', 16, '#f5ead4', 390);
+    this.text(panel, 470, 140, '笼子里有鸡和兔，共有35个头、94只脚。\n鸡和兔各有多少只？', 19, '#f5ead4', 435);
     const values = [0, 0];
     let selected = 0;
     const fields: Phaser.GameObjects.Text[] = [];
@@ -624,15 +693,15 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     const underlines: Phaser.GameObjects.Rectangle[] = [];
     ['鸡', '兔'].forEach((name, index) => {
       const x = 590 + index * 205;
-      const hit = this.add.rectangle(x, 238, 160, 82, 0xffffff, .001).setInteractive({ useHandCursor: true });
+      const hit = this.add.rectangle(x, 270, 160, 80, 0xffffff, .001).setInteractive({ useHandCursor: true });
       panel.add(hit);
       hit.on('pointerdown', () => { selected = index; refresh(); });
-      const dot = this.add.circle(x - 53, 210, 5, 0xd5b47e, 1);
+      const dot = this.add.circle(x - 53, 246, 5, 0xd5b47e, 1);
       panel.add(dot); dots.push(dot);
-      this.text(panel, x - 36, 210, name, 15, '#f5ead4', 70).setOrigin(0, .5);
-      fields.push(this.text(panel, x - 10, 256, '0', 34, '#fff1d8', 90).setOrigin(.5));
-      this.text(panel, x + 34, 264, '只', 13, '#f0e3ca', 30).setOrigin(.5);
-      const underline = this.add.rectangle(x, 291, 145, 2, 0xbba079, .4);
+      this.text(panel, x - 36, 246, name, 15, '#f5ead4', 70).setOrigin(0, .5);
+      fields.push(this.text(panel, x - 10, 292, '0', 25, '#fff1d8', 90).setOrigin(.5));
+      this.text(panel, x + 34, 298, '只', 13, '#f0e3ca', 42).setOrigin(.5);
+      const underline = this.add.rectangle(x, 320, 145, 2, 0xbba079, .4);
       panel.add(underline); underlines.push(underline);
     });
     const refresh = () => fields.forEach((field, index) => {
@@ -641,15 +710,16 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
       underlines[index].setFillStyle(selected === index ? 0xd7b57e : 0x8a8177, selected === index ? .9 : .4);
     });
     refresh();
+    // 数字键盘整体下移并收窄：题干与作答区之间留出空隙，键盘不再顶到最上排。
     for (let number = 0; number < 10; number++) {
-      this.button(panel, 532 + number % 5 * 76, 337 + Math.floor(number / 5) * 55, String(number), () => {
+      this.button(panel, 578 + number % 5 * 56, 354 + Math.floor(number / 5) * 46, String(number), () => {
         values[selected] = (values[selected] * 10 + number) % 100;
         refresh();
-      }, 64);
+      }, 48, 42, 14);
     }
-    const result = this.text(panel, 500, 406, '', 12, '#d8bd91', 390);
-    this.button(panel, 590, 452, '清空选中项', () => { values[selected] = 0; refresh(); }, 176);
-    this.button(panel, 800, 452, '交作业', () => {
+    const result = this.text(panel, 500, 430, '', 12, '#d8bd91', 390);
+    this.button(panel, 610, 466, '清空选中项', () => { values[selected] = 0; refresh(); }, 145);
+    this.button(panel, 795, 466, '交作业', () => {
       if (!this.flow.answer(values[0], values[1])) {
         result.setText('再算算：头数相加是35，脚数相加要是94。');
         return;
@@ -658,7 +728,7 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
       this.box(panel, 480, 270, 842, 450, 0x201d1b, .76).setInteractive();
       this.text(panel, 480, 270, '✓', 118, '#87d38f').setOrigin(.5);
       this.time.delayedCall(900, () => { if (this.modal === panel) this.close(); });
-    }, 145);
+    }, 112);
   }
 
   private magazine(): void {
@@ -666,7 +736,7 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     if (this.flow.hasMap) { this.showMap(); return; }
     const panel = this.panel('');
     this.artFit(panel, 'story', 'magazine-open', 270, 285, 410, 330);
-    this.box(panel, 710, 285, 390, 150, 0x27221f, .68).setStrokeStyle(1, 0xc7aa7d, .18);
+    this.box(panel, 700, 285, 420, 175, 0x27221f, .68).setStrokeStyle(1, 0xc7aa7d, .18);
     this.text(panel, 710, 266, '海的另外一边是什么样子呢？', 19, '#f5ead4', 350).setOrigin(.5);
     this.text(panel, 710, 309, '这句话写在杂志的页边。', 13, '#cdbb9e', 350).setOrigin(.5);
     const next = this.text(panel, 464, 404, '›', 38, '#eee2c8', 40)
@@ -677,13 +747,20 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
   }
 
   private showMap(collect = false): void {
-    const panel = this.panel('小卖部货架平面图', undefined, true, true);
+    const panel = this.panel('', undefined, true, true);
     this.artFit(panel, 'story', 'map-open', 270, 285, 410, 325);
-    this.text(panel, 520, 175, '图上的记号', 15, '#e4c99b', 360);
-    this.text(panel, 520, 208, CLUES.map(line => `· ${line}`).join('\n'), 12, '#f0e4ce', 365);
-    this.text(panel, 520, 368, this.flow.hasMap
+    const clueText = CLUES.map(line => `· ${line}`).join('\n');
+    const mapNote = this.flow.hasMap
       ? '平面图已放进物品栏。关闭后点击中间货架。'
-      : '杂志夹页里藏着一张手画的货架平面图。', 12, '#d8bd91', 365);
+      : '杂志夹页里藏着一张手画的货架平面图。';
+    this.text(panel, 520, 130, '小卖部货架平面图', 17, '#f5ead4', 180, false).setOrigin(0, .5);
+    this.text(panel, 712, 130, english('小卖部货架平面图'), 15, '#d8c9b0', 195, false).setOrigin(0, .5);
+    this.text(panel, 520, 170, '图上的记号', 14, '#e4c99b', 180, false);
+    this.text(panel, 712, 170, english('图上的记号'), 12, '#cdbfa8', 195, false);
+    this.text(panel, 520, 202, clueText, 11, '#f0e4ce', 175, false);
+    this.text(panel, 712, 202, english(clueText), 10, '#d8c9b0', 195, false);
+    this.text(panel, 520, 382, mapNote, 11, '#d8bd91', 175, false);
+    this.text(panel, 712, 382, english(mapNote), 10, '#cdbfa8', 195, false);
     if (collect && !this.flow.hasMap) {
       this.button(panel, 710, 438, '收进物品栏', () => {
         this.flow.discoverMap();
@@ -709,7 +786,14 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
     if (puzzle.phase === 'trace') { this.traceCaps(); return; }
     const panel = this.panel('整理货架', undefined, true);
     this.art(panel, 'cabinet', 'shelf-front', 250, 286, 330, 470).setTint(0xe0d8c7);
-    this.text(panel, 505, 132, '根据平面图交换商品的位置。\n中间的干脆面不能移动。', 15, '#f5ead4', 385);
+    // 中文左栏 / 英文右栏，两栏逐段对齐。
+    // 底板是 475..925（见 panel()），两栏各留 30px 内边距，文字不贴框。
+    const copyLeft = 505;
+    const copyRight = 693;
+    const copyLeftWidth = 176;
+    const copyRightWidth = 202;
+    this.textPair(panel, copyLeft, copyRight, 130, '根据平面图交换商品的位置。\n中间的干脆面不能移动。',
+      15, '#f5ead4', copyLeftWidth, copyRightWidth);
     puzzle.shelf.forEach((id, index) => {
       const x = 170 + index % 3 * 80;
       const surfaceY = [170, 279, 387][Math.floor(index / 3)];
@@ -732,9 +816,11 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
         this.shelf();
       });
     });
-    this.text(panel, 505, 205, '摆放线索', 17, '#e4c99b', 380);
-    this.text(panel, 505, 240, CLUES.map(line => `· ${line}`).join('\n'), 13, '#f0e4ce', 385);
-    this.text(panel, 505, 413, message || '先选一件，再选择另一件交换位置。', 13, '#d8bd91', 380);
+    this.textPair(panel, copyLeft, copyRight, 200, '摆放线索', 17, '#e4c99b', copyLeftWidth, copyRightWidth);
+    this.textPair(panel, copyLeft, copyRight, 236, CLUES.map(line => `· ${line}`).join('\n'),
+      13, '#f0e4ce', copyLeftWidth, copyRightWidth);
+    this.textPair(panel, copyLeft, copyRight, 410, message || '先选一件，再选择另一件交换位置。',
+      13, '#d8bd91', copyLeftWidth, copyRightWidth);
     this.button(panel, 710, 462, '检查货架', () => {
       this.selectedCell = -1;
       if (puzzle.checkShelf()) this.traceCaps();

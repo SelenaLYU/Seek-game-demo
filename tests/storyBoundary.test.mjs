@@ -36,15 +36,20 @@ test('new-story placeholders are explicit and follow the documented childhood me
   assert.match(CHAPTER_ONE_MEMORY_TEXT, /爸爸/);
 });
 
-test('chapter-one ending lands on the family photo instead of the predecessor video', () => {
+test('chapter-one ending plays the real animation instead of the predecessor video', () => {
   const ending = read('src/scenes/EndingScene.ts');
-  // 旧 Demo 的「鱼鱼 + 公公」动画已核验为冲突内容（STORY_MIGRATION.md）：
-  // 结尾场景不得再引用那个文件，分镜文案必须取自故事真源。
+  // 旧 Demo 的「鱼鱼 + 公公」动画已核验为冲突内容（STORY_MIGRATION.md）：不得再引用。
   assert.doesNotMatch(ending, /ending\.mp4/);
-  assert.match(ending, /chapter1-family-photo-seaside\.png\?url/);
-  assert.match(ending, /CHAPTER_ONE_MEMORY_TEXT/);
+  // 正式第一章动画到货，结尾由同风格分镜占位换成 assets/animation/chapter1.mp4。
+  assert.match(ending, /assets\/animation\/chapter1\.mp4\?url/);
   assert.match(ending, /跳过/);
-  // 相册第一格与结尾定格的是同一张照片。
+  // 分镜占位已删除：逐句字幕 / 照片显影那套时间线不得再回来。
+  assert.doesNotMatch(ending, /CHAPTER_ONE_MEMORY_TEXT/);
+  assert.doesNotMatch(ending, /seek-ending__beat/);
+  assert.doesNotMatch(ending, /seek-ending__photo/);
+  // 动画位置：只属于「贝壳 → 结尾」，不得再出现在开场动画与海边之间的加载页。
+  assert.doesNotMatch(read('src/scenes/LoadingScene.ts'), /chapter1\.mp4/);
+  // 相册第一格仍是正式家庭照片，删掉分镜不影响收录内容。
   assert.match(read('src/ui/AlbumUI.ts'), /chapter1-family-photo-seaside\.png\?url/);
   // 旧占位图已由正式照片取代，不得再被任何运行时源码引用。
   for (const path of sources(resolve(root, 'src'))) {

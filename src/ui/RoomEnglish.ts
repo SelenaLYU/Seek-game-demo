@@ -134,7 +134,7 @@ export function english(text: string): string {
 }
 
 /** DOM 文案变化时同步英文，保留原节点及其事件。 */
-export function installRoomEnglish(scene: Phaser.Scene): void {
+export function installRoomEnglish(scene: Phaser.Scene, translatePhaserText = true): void {
   const translate = (root: HTMLElement) => {
     for (const element of [root, ...root.querySelectorAll<HTMLElement>('*')]) {
       if (element.closest('.room-english') || ['SCRIPT','STYLE','SVG','CANVAS'].includes(element.tagName)) continue;
@@ -161,6 +161,7 @@ export function installRoomEnglish(scene: Phaser.Scene): void {
   scan();
   scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => observer.disconnect());
 
+  if (!translatePhaserText) return;
   const original = scene.add.text.bind(scene.add);
   scene.add.text = ((x: number, y: number, value: string | string[], style?: Phaser.Types.GameObjects.Text.TextStyle) => {
     const text = original(x, y, value, style);
