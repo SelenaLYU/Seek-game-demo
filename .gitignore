@@ -19,3 +19,8 @@ art/island/
 # 小咪交付的记忆之岛资产（六栋建筑三视图 + 全景概念图）：其 README 写明
 # 「本文件夹为本地交付资料，暂不上传 GitHub」，是交付方的明确决定，不入库。
 art/island-assets-by-xiaomi/
+
+# AI 协作工作记录（每日工作日志 / 项目长期备忘）：本机开发过程产物，
+# 不是团队交付文档（团队文档看 TEAM_GUIDE.md / HANDOFF.md）。
+# 仓库已转为公开，这类内部推理记录不入库。
+.workbuddy-ai/
