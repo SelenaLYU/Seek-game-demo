@@ -1,10 +1,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { chapterState, completedChapters } from './Progress';
 import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
 import { characterGroundHeight } from './grounding';
+import { checkScatter, planScatter, type ScatterContext } from './scatter';
+import type { Placement } from './clipping';
+import { MAP_SCALE_X, coastlineRadius, distanceToPath, streamPaths, terrainHeight } from './terrain';
 
 type Options = { justCompleted?: number; completionSaved?: boolean; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
@@ -16,6 +20,8 @@ export function mountMemoryIsland(options: Options): () => void {
   root.innerHTML = `<style>
     .memory-island{position:fixed;inset:0;z-index:1100;background:#080d2d;color:#eef2ff;font-family:system-ui,"Microsoft YaHei",sans-serif;overflow:hidden}
     .memory-island canvas{display:block;width:100%;height:100%;touch-action:none}
+    .memory-island.is-art-preview{background:#87b9c5}
+    .memory-island.is-art-preview .hud{display:none}
     .memory-island .hud{position:absolute;inset:0;pointer-events:none;padding:28px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box}
     .memory-island header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
     .memory-island h1{font-family:serif;font-size:30px;font-weight:500;margin:4px 0 8px;letter-spacing:5px}
@@ -31,6 +37,11 @@ export function mountMemoryIsland(options: Options): () => void {
     .memory-island .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .memory-island .chapter-picker{position:absolute;right:28px;top:112px;width:286px;pointer-events:auto}
     .memory-island .asset-status{position:absolute;left:28px;top:157px;color:#c7d6ff;font-size:11px;letter-spacing:.03em;text-shadow:0 1px 10px #081037}
+    .memory-island .chapter-picker strong{color:#31493f}
+    .memory-island .chapter-entry{background:#f7f5eadd;border-color:#c7b998aa;box-shadow:0 4px 14px #163b3d18}
+    .memory-island .chapter-entry:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 7px 18px #163b3d26}
+    .memory-island .chapter-entry:disabled{opacity:.62}
+    .memory-island.is-art-preview .asset-status{display:none}
     .memory-island.is-art-preview .chapter-picker,.memory-island.is-art-preview footer{display:none}
     .memory-island .chapter-picker strong{display:block;margin-bottom:10px;font-size:14px;letter-spacing:.08em}
     .memory-island .chapter-list{display:grid;gap:8px}
@@ -40,7 +51,8 @@ export function mountMemoryIsland(options: Options): () => void {
     .memory-island .chapter-entry small{display:block;margin-top:3px;color:#60766f;font-size:11px}
     .memory-island .chapter-entry:disabled{cursor:default;opacity:.52;background:#dfe4ded8}
     .memory-island .nearby{position:absolute;left:50%;bottom:125px;transform:translateX(-50%);text-align:center;min-width:240px;pointer-events:auto}
-    .memory-island .nearby p{margin:0 0 12px;font-size:14px}
+    .memory-island .nearby p{margin:0 0 8px;font-size:14px;font-weight:650;color:#31493f}
+    .memory-island .nearby small{display:block;margin:0 0 12px;color:#667970;font-size:12px}
     .memory-island [hidden]{display:none!important}
     .memory-island .toast{position:absolute;left:50%;top:120px;transform:translateX(-50%);background:#264d43ed;color:#fff;padding:14px 24px;border-radius:28px;text-align:center;max-width:80%;font-size:14px}
     @media(max-width:650px){.memory-island .hud{padding:15px}.memory-island h1{font-size:24px}.memory-island footer{align-items:stretch;flex-direction:column;gap:10px}.memory-island .panel{padding:12px 16px}.memory-island .nearby{bottom:205px}.memory-island button{padding:10px 14px}.memory-island .subtitle{max-width:210px}.memory-island .chapter-picker{right:15px;top:118px;width:245px}}
@@ -54,7 +66,8 @@ export function mountMemoryIsland(options: Options): () => void {
   const assetStatus = get<HTMLElement>('[data-assets]');
   // Art-review mode reveals the source materials without changing chapter progress.
   const forceColorPreview = new URLSearchParams(window.location.search).get('artPreview') === 'color';
-  root.classList.toggle('is-art-preview', forceColorPreview);
+  const polishedPreview = new URLSearchParams(window.location.search).get('islandPreview') === '1';
+  root.classList.toggle('is-art-preview', forceColorPreview || polishedPreview);
   let assetsSettled = 0;
   let assetsFailed = 0;
   const nearbyPanel = get<HTMLElement>('.nearby');
@@ -68,7 +81,7 @@ export function mountMemoryIsland(options: Options): () => void {
   const scene = new THREE.Scene();
   // The supplied plan is a wide, horizontal island. Keep coordinates used by
   // terrain/path generation compact, and widen the assembled island uniformly.
-  const mapScaleX = 1.34;
+  const mapScaleX = MAP_SCALE_X;
   const islandRoot = new THREE.Group();
   islandRoot.scale.x = mapScaleX;
   scene.add(islandRoot);
@@ -81,6 +94,14 @@ export function mountMemoryIsland(options: Options): () => void {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Neutral (Khronos PBR neutral) keeps the pastel palette while rolling off
+  // highlights; ACES desaturated the greens and went muddy at this exposure.
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  // Measured with tools/probe-lighting-ab.mjs on the island region (x330-970, y300-780):
+  // exposure only scales the mean, it does not change contrast (1.15 -> mean 0.360 / 1.50 -> 0.411,
+  // contrast ~0.65-0.69 either way). 1.32 was kept; the flattness came from the light rig,
+  // not from the exposure.
+  renderer.toneMappingExposure = 1.32;
   root.prepend(renderer.domElement);
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 1000);
   camera.position.set(0, 55, 70);
@@ -88,6 +109,7 @@ export function mountMemoryIsland(options: Options): () => void {
   controls.target.set(0, 0, -8);
   const overviewDirection = camera.position.clone().sub(controls.target).normalize();
   const overviewDistance = camera.position.distanceTo(controls.target);
+  let overviewZoomScale = 1;
   controls.enableDamping = true;
   controls.enablePan = false;
   controls.minDistance = 27;
@@ -96,14 +118,75 @@ export function mountMemoryIsland(options: Options): () => void {
   controls.maxPolarAngle = Math.PI / 2.45;
   controls.update();
   scene.add(camera);
-  scene.add(new THREE.HemisphereLight('#dce6ff', '#35445f', 1.45));
-  const sun = new THREE.DirectionalLight('#ffe4bd', 2.15);
-  sun.position.set(-18, 30, 15);
+  // The HDR environment now carries the ambient sky/ground bounce, so the analytic
+  // lights are down to a key sun (form + cast shadows) plus a very weak fill. The
+  // hemisphere is only a floor against pitch-black shadow interiors.
+  // Horizontal direction the key light should come from. The island's cameras look from
+  // +Z, so a sun on the -X side throws its shadows to the right of frame where a player
+  // actually sees them; only the azimuth is chosen here, the elevation comes from the HDR.
+  const KEY_SUN_AZIMUTH = new THREE.Vector3(-0.94, 0, -0.34).normalize();
+  const UP_AXIS = new THREE.Vector3(0, 1, 0);
+  scene.add(new THREE.HemisphereLight('#cfe0ff', '#41563f', 0.16));
+  // 5.0, not 2.8: the key light has to beat the ambient to produce form, and the ambient
+  // is now carried by the HDR. Measured with tools/probe-lighting-ab.mjs (island region
+  // x330-970 / y300-780, whole-image blown% also 0): raising the key while lowering
+  // environmentIntensity is the only lever that moved contrast, and it is cheap.
+  //   env 0.45 / sun 2.8 (previous) -> contrast 0.671, dead 0.126%
+  //   env 0.30 / sun 5.5 (now)      -> contrast 0.730, dead 0.179%, blown 0%
+  // Raising the sun's *elevation* instead does not help (elev 45 / sun 2.8 / env 0.45
+  // measured contrast 0.660 - it only lifts the mean 0.386 -> 0.493), and exposure
+  // does not touch contrast at all, so those two are dead ends.
+  const sun = new THREE.DirectionalLight('#ffe6c2', 5.5);
+  sun.position.set(-30, 42, 24);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, far: 80 });
-  sun.shadow.bias = -0.0006;
+  // The island spans roughly ±34 world units around the origin. The old ±26 map cut
+  // the outer landmarks out of the shadow frustum entirely, so half of them could not
+  // cast anything; ±38 with a 120 far plane covers the whole terrain from this angle.
+  // The ±38 extent covers the island's ±34 span so the outer landmarks actually cast.
+  // (WebGLShadowMap calls updateProjectionMatrix on the first shadow pass, so the
+  // assigned frustum does reach the depth render - do not "fix" it here.)
+  Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38, far: 120 });
+  sun.shadow.bias = -0.0009;
+  sun.shadow.normalBias = 0.04;
+  sun.shadow.radius = 2.4;
   scene.add(sun);
+  // Weak cool fill from the opposite side so shaded faces keep their form instead of
+  // going muddy now that the hemisphere no longer carries most of the light.
+  const fill = new THREE.DirectionalLight('#bcd9ff', 0.24);
+  fill.position.set(22, 14, -20);
+  scene.add(fill);
+  // Image-based lighting. The scene used to run on a hemisphere + one directional
+  // light, which is why every surface read as the same flat brightness. The HDR drives
+  // ambient sky/ground bounce and the specular response; the key light sits on the
+  // HDR's own sun, so the shading and the sky stay one consistent light source.
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  let environmentTarget: THREE.WebGLRenderTarget | undefined;
+  new HDRLoader().load('/env/sky-sunny.hdr', texture => {
+    if (signal.aborted) { texture.dispose(); pmrem.dispose(); return; }
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    environmentTarget = pmrem.fromEquirectangular(texture);
+    scene.environment = environmentTarget.texture;
+    // A sunny HDR carries enormous dynamic range, so at full strength its irradiance
+    // dwarfs the DirectionalLight and flattens the scene back out. Keep it as the
+    // ambient/specular source and let the sun do the directional work. 0.30 rather than
+    // 0.45: that ratio is the whole difference between form and flat wash (see the sun
+    // comment above for the A/B numbers); 0.18 keeps going up in contrast but triples the
+    // dead-black share (0.126% -> 0.356%), which is not worth it.
+    scene.environmentIntensity = 0.30;
+    // This HDR's own sun sits at azimuth 54.5° / elevation 16.5°, i.e. near the horizon
+    // and roughly behind the island's cameras, so form and cast shadows did not read.
+    // Swing the whole environment - baked sun included - to KEY_SUN_AZIMUTH and put the
+    // key light on the same direction: one sun, placed where the cameras can see it.
+    const bakedSun = brightestDirection(texture);
+    if (bakedSun) {
+      const delta = Math.atan2(KEY_SUN_AZIMUTH.x, KEY_SUN_AZIMUTH.z) - Math.atan2(bakedSun.x, bakedSun.z);
+      scene.environmentRotation = new THREE.Euler(0, delta, 0);
+      sun.position.copy(bakedSun).applyAxisAngle(UP_AXIS, delta).multiplyScalar(64);
+    }
+    texture.dispose();
+    pmrem.dispose();
+  }, undefined, error => { pmrem.dispose(); console.error('[MemoryIsland] Could not load the HDR environment', error); });
   const mat = (color: string) => new THREE.MeshStandardMaterial({ color, roughness: 0.92 });
   function mesh(geometry: THREE.BufferGeometry, material: THREE.Material | THREE.Material[], parent: THREE.Object3D = islandRoot): THREE.Mesh {
     const item = new THREE.Mesh(geometry, material);
@@ -214,64 +297,14 @@ export function mountMemoryIsland(options: Options): () => void {
   ocean.castShadow = ocean.receiveShadow = false;
   ocean.frustumCulled = false;
   scene.add(ocean);
-  // The same smooth shoreline drives the ground, beach, trees and walking limit.
-  // Its minimum radius leaves the existing town and all six entrances on dry land.
-  const coastlineRadius = (angle: number) => 29.7
-    + 3.1 * Math.sin(2 * angle + 0.35)
-    + 1.9 * Math.cos(3 * angle - 0.9)
-    + 1.05 * Math.sin(5 * angle + 1.4)
-    + 6.0 * Math.exp(-Math.pow(Math.atan2(Math.sin(angle + Math.PI / 4), Math.cos(angle + Math.PI / 4)), 2) / (2 * 0.27 * 0.27));
-  const streamPaths: [number, number][][] = [
-    [[-27, 4], [-20, 5], [-14, 5], [-8, 6], [-3, 9], [3, 13], [12, 18], [25, 20]],
-    [[-12, -25], [-7, -18], [-2, -11], [3, -5], [8, 1], [15, 5], [25, 7]],
-  ];
-  const hilltops = [
-    { x: -15, z: 19, radius: 12, height: 3.0 },
-    { x: -15, z: -10, radius: 11, height: 3.7 },
-    { x: -1, z: -5, radius: 12, height: 2.7 },
-    { x: 14, z: 0, radius: 12, height: 4.0 },
-    { x: 8, z: 19, radius: 11, height: 3.1 },
-    { x: 14, z: -19, radius: 12, height: 4.8 },
-  ];
+  // Local helpers still used by the terrain shading, the stream ribbon and the
+  // bridge ramps. The height functions themselves are in ./terrain.
   const clamp01 = (value: number) => THREE.MathUtils.clamp(value, 0, 1);
   const ease = (value: number) => value * value * (3 - 2 * value);
-  function baseTerrainHeight(x: number, z: number) {
-    const radius = Math.hypot(x, z);
-    const angle = Math.atan2(x, z);
-    const edgeDistance = Math.max(0, coastlineRadius(angle) - 0.45 - radius);
-    const edgeFade = ease(clamp01(edgeDistance / 3.6));
-    let height = 0.35 + 0.7 * (1 - ease(clamp01(radius / 29)));
-    for (const hill of hilltops) {
-      const dx = (x - hill.x) * 0.92;
-      const dz = (z - hill.z) * 1.08;
-      const distance = Math.hypot(dx, dz);
-      const terrace = ease(clamp01((hill.radius - distance) / (hill.radius * 0.42)));
-      const hillHeight = 0.35 + hill.height * terrace;
-      const blend = Math.max(0.8 - Math.abs(height - hillHeight), 0);
-      height = Math.max(height, hillHeight) + blend * blend / 3.2;
-    }
-    const broadRoll = (Math.sin(x * 0.24 + z * 0.12) + Math.cos(z * 0.22 - x * 0.11)) * 0.11;
-    // Keep a raised rocky rim above the ocean so the island retains a distinct,
-    // stepped silhouette with a clean shoreline.
-    return Math.max(0, 1.15 * (1 - edgeFade) + (height + broadRoll) * edgeFade);
-  }
-  function distanceToPath(x: number, z: number, points: [number, number][]) {
-    let nearest = Infinity;
-    for (let i = 1; i < points.length; i++) {
-      const [ax, az] = points[i - 1], [bx, bz] = points[i];
-      const dx = bx - ax, dz = bz - az;
-      const t = clamp01(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz));
-      nearest = Math.min(nearest, Math.hypot(x - (ax + dx * t), z - (az + dz * t)));
-    }
-    return nearest;
-  }
-  function terrainHeight(x: number, z: number) {
-    const channelDepth = Math.max(...streamPaths.map(path => {
-      const distance = distanceToPath(x, z, path);
-      return 0.52 * (1 - ease(clamp01((distance - 0.6) / 1.65)));
-    }));
-    return Math.max(0, baseTerrainHeight(x, z) - channelDepth);
-  }
+  // The terrain functions now live in ./terrain so the scatter planner, the
+  // clipping audit and the probes all read the same heights as the renderer.
+  // Copying these formulas into a probe is how "the audit passes but the island
+  // still clips" happens.
   function islandGeometry(top: number, bottom: number, height: number) {
     const geometry = new THREE.CylinderGeometry(top, bottom, height, 192);
     const positions = geometry.getAttribute('position');
@@ -290,8 +323,12 @@ export function mountMemoryIsland(options: Options): () => void {
   // The hidden upper shell must meet the cliff skirt at both ends. Its old
   // top radius extended 1.4 units past the skirt and left exposed gaps along
   // the island edge; these radii match the skirt's inner/outer seam.
-  const shore = mesh(islandGeometry(27, 27.5, 1.8), mat('#ddcda8'));
-  shore.position.y = -1;
+  // 岩脚浅滩：原先这里是 (27, 27.5, 1.8) 贴在 y=-1，等于在水线上挂了一圈 1.8 高的
+  // 竖直浅色带，半径与崖壁几乎重合——贴地视角下「浅色带 + 灰墙」一起读成塑料底座盘。
+  // 现在按锥台压到水下（内径 coastline+0.4 / 外径 coastline+2.6），只当一处不入眼的岩脚；
+  // 水面不透明，正常机位看不到它，留着只是不想在崖壁脚下露出空隙。
+  const shore = mesh(islandGeometry(27.4, 29.6, 0.3), mat('#cfc3a4'));
+  shore.position.y = -2;
   const meadowCanvas = document.createElement('canvas'); meadowCanvas.width = 512; meadowCanvas.height = 512;
   const meadowContext = meadowCanvas.getContext('2d')!;
   meadowContext.fillStyle = '#f8f5e8'; meadowContext.fillRect(0, 0, 512, 512);
@@ -324,25 +361,31 @@ export function mountMemoryIsland(options: Options): () => void {
     color.lerp(exposedRock, clamp01((Math.hypot(slopeX, slopeZ) - 0.34) / 0.54) * 0.72);
     terrainColors.push(color.r, color.g, color.b);
   }
-  // Use one vertex at the center and a seam-closed ring around the perimeter.
-  // Duplicating the center once per angular segment creates zero-area triangles;
-  // those can produce unstable normals and the pinched/broken-looking ground seen in preview.
+  // One vertex at the center, then one ring per level around the perimeter.
+  // The ring is closed by *welding* segment 0 to segment `terrainSegments`
+  // (last segment wraps to the first) instead of by emitting a duplicated
+  // column of vertices. A duplicated column does buy a place to start/end a UV
+  // seam, but the UVs here are a flat world-space projection (`x/34 + 0.5`),
+  // so there is no seam to feed: the duplicate only splits the vertex normals
+  // across two columns, leaving a visible lighting crease running from the
+  // island center to the shore. Welding makes every ring genuinely closed and
+  // gives each vertex the full ring of adjacent faces to average.
   addTerrainVertex(0, 0);
-  for (let ring = 1; ring <= terrainRings; ring++) for (let segment = 0; segment <= terrainSegments; segment++) {
+  for (let ring = 1; ring <= terrainRings; ring++) for (let segment = 0; segment < terrainSegments; segment++) {
     const angle = segment / terrainSegments * Math.PI * 2;
     const radius = (coastlineRadius(angle) - 0.45) * ring / terrainRings;
     addTerrainVertex(Math.sin(angle) * radius, Math.cos(angle) * radius);
   }
-  const ringSize = terrainSegments + 1;
+  const ringSize = terrainSegments;
   const ringVertex = (ring: number, segment: number) => 1 + (ring - 1) * ringSize + segment;
   for (let segment = 0; segment < terrainSegments; segment++) {
     // The angle increases clockwise when viewed from above; this order keeps
     // the triangle front faces and computed normals pointing upward.
-    terrainIndices.push(0, ringVertex(1, segment), ringVertex(1, segment + 1));
+    terrainIndices.push(0, ringVertex(1, segment), ringVertex(1, (segment + 1) % terrainSegments));
   }
   for (let ring = 1; ring < terrainRings; ring++) for (let segment = 0; segment < terrainSegments; segment++) {
     const a = ringVertex(ring, segment), b = ringVertex(ring + 1, segment);
-    const c = b + 1, d = a + 1;
+    const c = ringVertex(ring + 1, segment + 1), d = ringVertex(ring, segment + 1);
     terrainIndices.push(a, b, c, a, c, d);
   }
   const terrainGeometry = new THREE.BufferGeometry();
@@ -358,18 +401,48 @@ export function mountMemoryIsland(options: Options): () => void {
   const cliffRockMaterials = ['#828f86', '#a09b86', '#75877f', '#aaa28c'].map(color => mat(color));
   const cliffVertices: number[] = [], cliffColors: number[] = [], cliffIndices: number[] = [];
   const cliffPalette = ['#777f79', '#909184', '#687a75', '#a0967d'].map(color => new THREE.Color(color));
+  const cliffBrow = new THREE.Color('#d8c99f');
+  const cliffWet = new THREE.Color('#4e5b56');
   const cliffSegments = 192;
-  for (let segment = 0; segment <= cliffSegments; segment++) {
+  // 「塑料底座盘」的真正来源不是配色，是形状：原来剖面只有两行（地形边缘 → 水下脚），
+  // 等于一堵无起伏的直墙；而地形外缘的高度在整圈上是同一个值（terrainHeight 在
+  // coastline-0.45 处 edgeFade=0，恒为 1.15），于是檐口是一条完全水平的圆环。
+  // 直墙 + 水平檐口 + 完美圆 = 机切塑料件。
+  // 这里加两件事：① 四行剖面（地形边缘 → 外挑檐口 → 中段岩体 → 水下脚）；
+  // ② 按角度的确定性扰动（平滑三角函数，不是随机，保证每次截图可复现）。
+  const cliffJitter = (angle: number) =>
+    Math.sin(angle * 7.3) * 0.5 + Math.sin(angle * 13.7 + 1.1) * 0.3 + Math.sin(angle * 23.1 + 2.3) * 0.16;
+  // segment < cliffSegments（不是 <=）：与地形环同样的问题——重复末列会在法线接缝处
+  // 把法线劈成两份，从岸上看就是一条竖直硬边。焊合后每个顶点拿到整圈的邻接面。
+  for (let segment = 0; segment < cliffSegments; segment++) {
     const angle = segment / cliffSegments * Math.PI * 2;
-    const innerRadius = coastlineRadius(angle) - 0.45;
-    const outerRadius = coastlineRadius(angle) + 0.5;
+    const coast = coastlineRadius(angle);
+    const jitter = cliffJitter(angle);
+    const innerRadius = coast - 0.45;
     const innerX = Math.sin(angle) * innerRadius, innerZ = Math.cos(angle) * innerRadius;
-    const outerX = Math.sin(angle) * outerRadius, outerZ = Math.cos(angle) * outerRadius;
-    cliffVertices.push(innerX, terrainHeight(innerX, innerZ), innerZ, outerX, -1.88, outerZ);
-    const tint = cliffPalette[segment % cliffPalette.length];
-    cliffColors.push(tint.r, tint.g, tint.b, tint.r * 0.78, tint.g * 0.78, tint.b * 0.78);
-    if (segment < cliffSegments) {
-      const a = segment * 2, b = a + 1, c = a + 3, d = a + 2;
+    const top = terrainHeight(innerX, innerZ);
+    // 按角度在调色板里连续插值。原来 `segment % 4` 一圈下来是 48 组硬条纹，
+    // 四个颜色虽接近，贴地视角仍读成一圈圈竖纹。
+    const palette = segment / cliffSegments * cliffPalette.length;
+    const lower = cliffPalette[Math.floor(palette) % cliffPalette.length];
+    const upper = cliffPalette[(Math.floor(palette) + 1) % cliffPalette.length];
+    const rock = new THREE.Color().lerpColors(lower, upper, ease(palette - Math.floor(palette)));
+    const browDrop = 0.40 + 0.25 * (0.5 + 0.5 * Math.sin(angle * 5.1 + 0.7));
+    // 檐口必须低于地形唇线（约 1.15），否则会从岸上戳出来
+    const profile: [number, number, THREE.Color][] = [
+      [innerRadius, top, cliffBrow.clone().lerp(rock, 0.3)],
+      [coast + 0.06 + jitter * 0.22, top - browDrop, rock.clone().lerp(cliffBrow, 0.5)],
+      [coast + 0.30 + jitter * 0.55, -1.05 + jitter * 0.1, rock],
+      [coast + 0.46 + jitter * 0.75, -1.88, rock.clone().lerp(cliffWet, 0.72)],
+    ];
+    for (const [radius, y, color] of profile) {
+      cliffVertices.push(Math.sin(angle) * radius, y, Math.cos(angle) * radius);
+      cliffColors.push(color.r, color.g, color.b);
+    }
+    const next = (segment + 1) % cliffSegments;
+    for (let row = 0; row < profile.length - 1; row++) {
+      const a = segment * profile.length + row, b = a + 1;
+      const d = next * profile.length + row, c = d + 1;
       cliffIndices.push(a, b, c, a, c, d);
     }
   }
@@ -385,9 +458,12 @@ export function mountMemoryIsland(options: Options): () => void {
     // 旧实现把岩心放在绝对 y≈-0.62，高出海面 1.3 个单位，一圈 34 块全在空中飘着。
     const rockRadius = 0.42 + (i % 5) * 0.15;
     const rockScaleY = 0.58 + (i % 4) * 0.08;
-    const radius = coastlineRadius(angle) + 1.05 + Math.sin(i * 8.3) * 0.5;
+    // 礁石坐在岸脚上，不是浮在水面。原来在 coastline+1.05 处，而浅滩已经压到水下，
+    // 結果是十几块石头悬在水面上（贴地机位一眼就看出来）。现在收到岸脚半径、
+    // 坐得比水面低一点，半浸入岸脚与水的交界。
+    const radius = coastlineRadius(angle) + 0.55 + Math.sin(i * 8.3) * 0.45;
     const rock = mesh(new THREE.IcosahedronGeometry(rockRadius, 0), cliffRockMaterials[i % cliffRockMaterials.length]);
-    rock.position.set(Math.sin(angle) * radius, -1.92 + rockRadius * rockScaleY * 0.55, Math.cos(angle) * radius);
+    rock.position.set(Math.sin(angle) * radius, -1.86 + rockRadius * rockScaleY * 0.45, Math.cos(angle) * radius);
     rock.scale.set(0.72 + (i % 3) * 0.13, rockScaleY, 0.82 + (i % 2) * 0.18);
     rock.rotation.set((i % 3) * 0.18, angle + i * 0.24, (i % 4) * 0.11);
     rock.castShadow = rock.receiveShadow = false;
@@ -408,7 +484,32 @@ export function mountMemoryIsland(options: Options): () => void {
     '/island-models/ch05-beach-tent.glb',
     '/island-models/ch06-album-house.glb',
   ];
-  const updateAssetStatus = () => { assetStatus.textContent = `3D 模型 ${assetsSettled}/${modelPaths.length + 5} 已载入${forceColorPreview ? ' · 彩色美术预览' : ''}${assetsFailed ? ` · ${assetsFailed} 个失败` : ''}`; };
+  const chapterFiveCandidate = new URLSearchParams(window.location.search).get('ch05Candidate') === '1';
+  const modelCount = modelPaths.length + (chapterFiveCandidate ? 1 : 0);
+  if (chapterFiveCandidate) modelPaths.push('/island-models-candidates/ch05-tent/ch05-tent-p2-clean.glb');
+  const chapterNames = ['贝壳屋', '辣条包装屋', '江南画室', '粉紫树屋', '海边帐篷', '相册书屋'];
+  const chapterThemes = ['童年的贝壳记忆', '学生时代的辣条记忆', '成年后的画室记忆', '树屋里的成长记忆', '海边露营的记忆', '写进相册的人生记忆'];
+  // Per-asset fitting is intentionally explicit: generated objects have very
+  // different authored proportions, but must not dominate or spill from the
+  // reviewed landmark footprints.
+  //
+  // yaw: all six Tripo GLBs were generated from the same three-view sheet layout
+  // and came out with their entrance facing the model's local +X. The group's
+  // local +Z is the reviewed door/interaction direction, so every model needs
+  // -π/2 to turn +X onto +Z (R_y(-π/2) maps +X to +Z). Measured, not guessed:
+  // `node tools/orient-probe.mjs public/island-models/ch0N-*.glb` renders the
+  // eight 45° compass cells, and all six buildings show their entrance dead-on
+  // in the 270° cell. The earlier Math.PI value left the door on the -X side,
+  // i.e. perpendicular to the interaction point.
+  const buildingPresentation = [
+    { scale: 0.92, width: 7.8, depth: 6.2, height: 5.5, yaw: -Math.PI / 2 },
+    { scale: 0.96, width: 7, depth: 5.6, height: 6.8, yaw: -Math.PI / 2 },
+    { scale: 0.94, width: 7.2, depth: 6.1, height: 6, yaw: -Math.PI / 2 },
+    { scale: 0.92, width: 6.8, depth: 6.1, height: 8, yaw: -Math.PI / 2 },
+    { scale: 0.94, width: 7.6, depth: 6.4, height: 5.2, yaw: -Math.PI / 2 },
+    { scale: 0.92, width: 8.8, depth: 7, height: 8.8, yaw: -Math.PI / 2 },
+  ];
+  const updateAssetStatus = () => { assetStatus.textContent = `3D 模型 ${assetsSettled}/${modelCount + 5} 已载入${forceColorPreview ? ' · 彩色美术预览' : ''}${assetsFailed ? ` · ${assetsFailed} 个失败` : ''}`; };
   const districtMaterials: { id: number; material: THREE.MeshStandardMaterial; color: THREE.Color; gray: THREE.Color }[] = [];
   function districtMaterial(id: number, color: string, gray = '#a4adaa') {
     const material = mat(chapterState(id) === 'completed' && options.justCompleted !== id ? color : gray);
@@ -425,8 +526,10 @@ export function mountMemoryIsland(options: Options): () => void {
     pathContext.strokeStyle = 'rgba(153,132,98,0.24)'; pathContext.lineWidth = 2; pathContext.stroke();
   }
   const pathTexture = new THREE.CanvasTexture(pathCanvas); pathTexture.colorSpace = THREE.SRGBColorSpace;
-  const bridgeLevels: { x: number; z: number; y: number; yaw: number }[] = [];
+  const bridgeLevels: { x: number; z: number; y: number; yaw: number; surfaceAt?: (localZ: number) => number }[] = [];
   const walkwayPaths: [number, number][][] = [];
+  // 与 walkwayPaths 同序的带宽，供 pavingLift 判定「角色是不是踩在路面上」。
+  const walkwayWidths: number[] = [];
   function walkableHeight(x: number, z: number) {
     let height = terrainHeight(x, z);
     for (const bridge of bridgeLevels) {
@@ -437,12 +540,17 @@ export function mountMemoryIsland(options: Options): () => void {
       const outsideZ = Math.max(0, Math.abs(localZ) - 2.8);
       const outsideDistance = Math.hypot(outsideX, outsideZ);
       const ramp = 1 - ease(clamp01(outsideDistance / 2.1));
-      height = Math.max(height, THREE.MathUtils.lerp(terrainHeight(x, z), bridge.y, ramp));
+      if (ramp <= 0) continue;
+      // 桥面现在沿 z 随地形倾斜，所以走上去的高度也要按同一条曲线取，
+      // 不能再用桥中心那一处的固定高度（否则玩家会踩在看不见的平面上）。
+      const surface = bridge.surfaceAt ? bridge.surfaceAt(localZ) : bridge.y;
+      height = Math.max(height, THREE.MathUtils.lerp(terrainHeight(x, z), surface, ramp));
     }
     return height;
   }
   function lane(points: number[][], width = 2.4) {
     walkwayPaths.push(points.map(([x, z]) => [x, z] as [number, number]));
+    walkwayWidths.push(width);
     const controls = points.map(([x, z]) => new THREE.Vector3(x, 0, z));
     const curve = new THREE.CatmullRomCurve3(controls, false, 'centripetal', 0.25);
     const length = controls.slice(1).reduce((sum, point, index) => sum + point.distanceTo(controls[index]), 0);
@@ -503,26 +611,72 @@ export function mountMemoryIsland(options: Options): () => void {
     const water = mesh(geometry, material);
     water.castShadow = water.receiveShadow = false;
   }
+  // 桥面是块平板，但地形沿桥跨方向起伏（实测 ±0.7）。旧实现把整块板钉在桥中心
+  // 一处的高度上，于是两端一头埋进土里、一头悬在半空——决策文档里那条「栈桥桥面
+  // 在半空断掉」。现在桥面沿 z 逐段取两岸地形高度：桥头贴岸、桥中略微架高过溪，
+  // deck 用同样的分段高度摆放，走上去才不会出现「踩空/陷进坡里」。
   function footbridge(x: number, z: number, yaw: number) {
-    const group = new THREE.Group(); group.position.set(x, baseTerrainHeight(x, z) - 0.02, z); group.rotation.y = yaw; islandRoot.add(group);
-    bridgeLevels.push({ x, z, y: group.position.y + 0.162, yaw });
+    const halfLength = 2.8;
+    // 桥面沿 z 逐点贴地。不能只取两岸两个端点再线性插值：地形中间有溪流下切
+    // 和山头隆起，直线会插过地形（实测桥中悬空 0.38），所以沿桥跨密集采样取真实地形，
+    // 再在采样点之间线性插值——既贴合又保持桥面平滑。
+    const sampleAt = (localZ: number) => {
+      const px = x + Math.cos(yaw) * localZ, pz = z - Math.sin(yaw) * localZ;
+      return terrainHeight(px, pz);
+    };
+    const bridgeSamples = 12;
+    const profile = Array.from({ length: bridgeSamples + 1 }, (_, i) => {
+      const t = -halfLength + (i * halfLength * 2) / bridgeSamples;
+      return { z: t, y: sampleAt(t) };
+    });
+    const nearY = profile[0].y, farY = profile[profile.length - 1].y;
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    group.rotation.y = yaw;
+    islandRoot.add(group);
+    // deck 顶点按 localZ 线性插值两岸高度，比固定高度贴合得多
+    // 桥面顶相对地形的抬升：两岸压进地面一点（≤ MAX_SINK，让桥头与岸线严丝合缝、
+    // 不出现踩空台阶），跨溪中段抬到桥板厚度（桥要架在水面之上，这是对的）。
+    const surfaceAt = (localZ: number) => {
+      const u = THREE.MathUtils.clamp((localZ + halfLength) / (halfLength * 2), 0, 1);
+      const scaled = u * bridgeSamples;
+      const index = Math.min(Math.floor(scaled), bridgeSamples - 1);
+      const ground = THREE.MathUtils.lerp(profile[index].y, profile[index + 1].y, scaled - index);
+      // 15% 处开始抬：桥头 15% 压进岸里（严丝合缝），过了岸线才架起来
+      const lift = THREE.MathUtils.lerp(-0.06, 0.12, ease(clamp01((u - 0.15) / 0.2)) * ease(clamp01((0.85 - u) / 0.2)));
+      return ground + lift;
+    };
+    // 供 walkableHeight 复用同一条桥面曲线；bridge.y 仍作为无曲线时的兜底
+    bridgeLevels.push({ x, z, y: surfaceAt(0), yaw, surfaceAt });
     const wood = mat('#9a7353'), plankLight = mat('#bd9670'), rope = mat('#80664d');
-    const deck = mesh(new THREE.BoxGeometry(2.65, 0.12, 5.6), wood, group); deck.position.y = 0.06;
-    deck.castShadow = deck.receiveShadow = false;
-    for (let i = 0; i < 9; i++) {
-      const plank = mesh(new THREE.BoxGeometry(2.56, 0.055, 0.48), i % 2 ? plankLight : wood, group);
-      plank.position.set(0, 0.135, -2.48 + i * 0.62);
+    // 桥面拆成分段，每一段坐到自己那段地形上（而不是整块钉在桥中心的高度）
+    const segments = 9;
+    for (let i = 0; i < segments; i++) {
+      const z0 = -halfLength + (i * halfLength * 2 / segments);
+      const z1 = z0 + halfLength * 2 / segments;
+      const y0 = surfaceAt(z0), y1 = surfaceAt(z1);
+      const midZ = (z0 + z1) / 2;
+      const midY = (y0 + y1) / 2;
+      const span = Math.hypot(z1 - z0, y1 - y0);
+      const segment = mesh(new THREE.BoxGeometry(2.65, 0.12, span), wood, group);
+      segment.position.set(0, midY, midZ);
+      // 让每段绕 x 轴倾斜，贴合两岸高差（桥面沿 z 走，旋转轴是组本地 x）
+      segment.rotation.x = Math.atan2(y1 - y0, z1 - z0);
+      segment.castShadow = segment.receiveShadow = false;
+      const plank = mesh(new THREE.BoxGeometry(2.56, 0.055, span * 0.85), i % 2 ? plankLight : wood, group);
+      plank.position.set(0, midY + 0.035, midZ);
+      plank.rotation.x = segment.rotation.x;
       plank.castShadow = plank.receiveShadow = false;
     }
     for (const side of [-1, 1]) {
       for (const end of [-1, 1]) {
         const post = mesh(new THREE.CylinderGeometry(0.075, 0.105, 1, 7), rope, group);
-        post.position.set(side * 1.22, 0.73, end * 2.55);
+        post.position.set(side * 1.22, surfaceAt(end * 2.55) + 0.61, end * 2.55);
         post.castShadow = post.receiveShadow = false;
       }
       const railPath = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(side * 1.22, 0.95, -2.55), new THREE.Vector3(side * 1.22, 0.72, -1.25),
-        new THREE.Vector3(side * 1.22, 0.68, 0), new THREE.Vector3(side * 1.22, 0.72, 1.25), new THREE.Vector3(side * 1.22, 0.95, 2.55),
+        new THREE.Vector3(side * 1.22, surfaceAt(-2.55) + 0.83, -2.55), new THREE.Vector3(side * 1.22, surfaceAt(-1.25) + 0.60, -1.25),
+        new THREE.Vector3(side * 1.22, surfaceAt(0) + 0.56, 0), new THREE.Vector3(side * 1.22, surfaceAt(1.25) + 0.60, 1.25), new THREE.Vector3(side * 1.22, surfaceAt(2.55) + 0.83, 2.55),
       ]);
       const rail = mesh(new THREE.TubeGeometry(railPath, 24, 0.055, 6, false), rope, group);
       rail.castShadow = rail.receiveShadow = false;
@@ -576,9 +730,11 @@ export function mountMemoryIsland(options: Options): () => void {
   }
   const palette = ['#dcb995', '#91afb0', '#acb999', '#d4afa4', '#b5aac6', '#c5be96'];
   const labels: THREE.Sprite[] = [];
-  for (let i = 0; i < 6; i++) {
-    const id = i + 1;
-    const site = sites[i];
+  for (let i = 0; i < modelPaths.length; i++) {
+    const isCandidate = i >= 6;
+    const buildingIndex = isCandidate ? 4 : i;
+    const id = buildingIndex + 1;
+    const site = sites[buildingIndex];
     const center = new THREE.Vector3(site.x, terrainHeight(site.x, site.z), site.z);
     const group = new THREE.Group(); group.position.copy(center); islandRoot.add(group);
     const height = site.height;
@@ -608,8 +764,9 @@ export function mountMemoryIsland(options: Options): () => void {
       const model = gltf.scene;
       const rawBounds = new THREE.Box3().setFromObject(model);
       const rawSize = rawBounds.getSize(new THREE.Vector3());
-      const targetHeight = height * ([1, 2, 5].includes(id) ? 1.16 : id === 4 || id === 6 ? 1.12 : 1.1);
-      const scale = targetHeight / Math.max(rawSize.y, rawSize.x * 0.55, 0.001);
+      const presentation = buildingPresentation[buildingIndex];
+      const targetHeight = presentation.height * 1.1 * presentation.scale;
+      const scale = targetHeight / Math.max(rawSize.y, 0.001);
       model.scale.setScalar(scale);
       model.updateMatrixWorld(true);
       const bounds = new THREE.Box3().setFromObject(model);
@@ -617,7 +774,15 @@ export function mountMemoryIsland(options: Options): () => void {
       model.position.x -= (bounds.min.x + bounds.max.x) / 2;
       model.position.y -= bounds.min.y;
       model.position.z -= (bounds.min.z + bounds.max.z) / 2;
-      model.rotation.y = Math.PI;
+      model.rotation.y = presentation.yaw;
+      model.updateMatrixWorld(true);
+      const centeredBounds = new THREE.Box3().setFromObject(model);
+      const actualSize = centeredBounds.getSize(new THREE.Vector3());
+      const fitXZ = Math.min(presentation.width / Math.max(actualSize.x, 0.001), presentation.depth / Math.max(actualSize.z, 0.001), 1);
+      const fittedHeight = targetHeight * fitXZ;
+      model.scale.multiplyScalar(fitXZ);
+      model.updateMatrixWorld(true);
+      const fittedSize = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
       model.traverse(object => {
         if (!(object instanceof THREE.Mesh)) return;
         object.castShadow = true;
@@ -656,17 +821,95 @@ export function mountMemoryIsland(options: Options): () => void {
         });
         object.material = Array.isArray(object.material) ? cloned : cloned[0];
       });
-      // The art is already authored facing forward. The half-turn makes the
-      // entrance face the local +Z door interaction point.
+      // presentation.yaw turns the authored entrance (+X) onto the group-local
+      // +Z where the door blockout and its interaction point live.
+      if (isCandidate) {
+        model.traverse(object => { object.userData.ch05Candidate = true; });
+        const tint = new THREE.Color('#e4d3b5');
+        model.traverse(object => {
+          if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial) {
+            object.material.color.copy(tint);
+            object.material.roughness = 0.96;
+            object.material.metalness = 0;
+          }
+        });
+      }
       group.add(model);
+      if (isCandidate) {
+        const currentBounds = new THREE.Box3().setFromObject(model);
+        const currentCenter = currentBounds.getCenter(new THREE.Vector3());
+        const targetCenter = group.position.clone().add(new THREE.Vector3(0, 0, -4.2));
+        model.position.x += targetCenter.x - currentCenter.x;
+        model.position.z += targetCenter.z - currentCenter.z;
+        model.position.y += targetCenter.y - currentBounds.min.y;
+        model.updateMatrixWorld(true);
+      }
       walls.visible = roof.visible = door.visible = false;
       group.children.filter(child => child.userData.isBlockout).forEach(child => { child.visible = false; });
-      collisionMeshes.push(model);
+      if (!isCandidate) collisionMeshes.push(model);
       scene.updateMatrixWorld(true);
-      obstacles[obstacles.indexOf(box)].copy(new THREE.Box3().setFromObject(model).expandByScalar(0.42));
-      console.info(`[MemoryIsland] Loaded chapter ${id} Tripo model`, { size: size.toArray(), scale });
+      // A Tripo export keeps its own origin and the reset above drops the base
+      // alignment, so seat the finished model on the real terrain. Measure once
+      // the model is parented, and use the highest terrain sample under the
+      // footprint so a building on a slope never sinks into the hill.
+      const seatedBounds = new THREE.Box3().setFromObject(model);
+      // 坐落在 footprint 下**最低**的那块地形上，不是最高的那块。
+      // 取最高点时，下坡侧整个悬在空中：实测九点采样跨度 ch03 0.688 / ch04 0.608 /
+      // ch05 0.614 世界单位（ch01 0.077、ch02 0.138 基本是平地，看不出来）。
+      // 底座埋进坡里读作「房子坐在地上」，底座悬空读作 bug，所以取下限。
+      // 采样点也放到真正的四角（原先乘 0.9，最小值取的其实是内缩后的最小），
+      // 否则四角比采样点更低时还是会悬一点点。
+      const halfSampleX = fittedSize.x / 2, halfSampleZ = fittedSize.z / 2;
+      const footprintGround: number[] = [];
+      for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) {
+        footprintGround.push(terrainHeight(site.x + sx * halfSampleX / mapScaleX, site.z + sz * halfSampleZ));
+      }
+      const baseGround = Math.min(...footprintGround);
+      model.position.y += baseGround - seatedBounds.min.y;
+      model.updateMatrixWorld(true);
+      // Movement collision is a conservative ground footprint, not the full
+      // canopy/roof/overhang bounds: keep the approach point and walk-around clear.
+      if (!isCandidate) {
+        const footprint = obstacles[obstacles.indexOf(box)];
+        const halfW = Math.min(site.width * mapScaleX, fittedSize.x * mapScaleX) / 2 + 0.42;
+        const halfD = Math.min(site.depth, fittedSize.z) / 2 + 0.42;
+        footprint.min.set(center.x * mapScaleX - halfW, -Infinity, center.z - halfD);
+        footprint.max.set(center.x * mapScaleX + halfW, Infinity, center.z + halfD);
+      }
+      const worldBounds = new THREE.Box3().setFromObject(model);
+      const materialSummary: string[] = [];
+      model.traverse(object => {
+        const mesh = object as unknown as { isMesh?: boolean; material?: THREE.Material | THREE.Material[] };
+        if (!mesh.isMesh) return;
+        const list = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+        for (const entry of list) materialSummary.push(`${entry.type}${(entry as THREE.MeshStandardMaterial).map ? '+map' : ''}`);
+      });
+      console.info(`[MemoryIsland] Loaded chapter ${id}${isCandidate ? ' candidate' : ''} Tripo model`, {
+        rawSize: size.toArray(), fittedSize: fittedSize.toArray(), targetHeight: fittedHeight, scale, fitXZ,
+        siteGround: Number(center.y.toFixed(3)),
+        baseGround: Number(baseGround.toFixed(3)),
+        worldMinY: Number(worldBounds.min.y.toFixed(3)),
+        worldMaxY: Number(worldBounds.max.y.toFixed(3)),
+        materialSummary,
+        footprintGround: footprintGround.map(value => Number(value.toFixed(2))),
+      });
       assetsSettled++; updateAssetStatus();
     }, undefined, error => { assetsSettled++; assetsFailed++; updateAssetStatus(); console.error(`[MemoryIsland] Could not load chapter ${id} model`, error); });
+    if (isCandidate) {
+      group.visible = false;
+      const candidateToggle = document.createElement('button');
+      candidateToggle.type = 'button';
+      candidateToggle.textContent = 'CH05 候选';
+      candidateToggle.style.cssText = 'position:fixed;left:28px;top:205px;z-index:2;pointer-events:auto;display:none';
+      if (chapterFiveCandidate) {
+        get('.hud').append(candidateToggle);
+        candidateToggle.addEventListener('click', () => { group.visible = !group.visible; candidateToggle.textContent = group.visible ? '隐藏候选' : '显示候选'; }, { signal });
+        const previewCandidate = new URLSearchParams(window.location.search).get('ch05Show') === '1';
+        group.visible = previewCandidate;
+        candidateToggle.textContent = previewCandidate ? '隐藏候选' : '显示候选';
+        candidateToggle.style.display = 'block';
+      }
+    }
     const doorLocal = center.clone().addScaledVector(toCenter, site.depth / 2 + 1.5);
     const doorPosition = new THREE.Vector3(doorLocal.x * mapScaleX, doorLocal.y, doorLocal.z);
     scene.updateMatrixWorld(true);
@@ -678,26 +921,63 @@ export function mountMemoryIsland(options: Options): () => void {
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#f4f6edde'; ctx.beginPath(); ctx.roundRect(0, 0, 640, 160, 35); ctx.fill();
     ctx.textAlign = 'center'; ctx.fillStyle = '#2f4b43'; ctx.font = 'bold 40px sans-serif';
-    ctx.fillText(`${String(id).padStart(2, '0')}  ${['童年', '学生时代', '人生阶段三', '人生阶段四', '人生阶段五', '人生阶段六'][i]}`, 320, 65);
+    ctx.fillText(`${String(id).padStart(2, '0')}  ${chapterNames[i]}`, 320, 65);
     ctx.font = '29px sans-serif';
-    ctx.fillText(completed ? '记忆已点亮' : chapterState(id) === 'available' ? '下一段旅程' : '记忆尚未解锁', 320, 118);
+    ctx.fillText(completed ? '记忆已点亮' : chapterState(id) === 'available' ? chapterThemes[i] : '等待前一段记忆', 320, 118);
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
     const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
-    label.position.copy(center).add(new THREE.Vector3(0, height + 2.8, 0)); label.scale.set(6.4 / mapScaleX, 1.6, 1); islandRoot.add(label); labels.push(label);
+    if (!isCandidate) {
+      label.position.copy(center).add(new THREE.Vector3(0, height + 2.8, 0)); label.scale.set(6.4 / mapScaleX, 1.6, 1); islandRoot.add(label); labels.push(label);
+    }
   }
-  // Six concept buildings are the focal points; keep the gray blockout homes
-  // out of this review scene so they do not mask the generated assets.
-  // Sparse scenery stays outside the walking routes.
-  for (let i = 0; i < 18; i++) {
-    const angle = (i + 0.4) * Math.PI * 2 / 18;
-    const radius = coastlineRadius(angle) - 2.15 + Math.sin(i * 7) * 0.45;
+  // Scenery is now placed by the clipping-aware planner instead of hand-tuned
+  // loops. Every candidate point goes through `canPlace`; a rejected point is
+  // dropped (never nudged), which is what keeps the "no clipping" rule true by
+  // construction rather than by eyeballing screenshots.
+  // `walkwayPaths` holds island-local coordinates, but the planner compares in
+  // world space (worldX = x * mapScaleX), so convert once here.
+  const walkwaysInWorld = walkwayPaths.map(path => path.map(([x, z]) => [x * mapScaleX, z] as [number, number]));
+  const scatterFootprints = obstacles.map(box => ({
+    minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z,
+  }));
+  const scatterKeepClear = buildings.map(building => ({
+    x: building.door.x, z: building.door.z, radius: 1.8, label: `${chapterNames[building.id - 1]}门前`,
+  }));
+  const scatterContext: ScatterContext = {
+    footprints: scatterFootprints,
+    keepClear: scatterKeepClear,
+    walkwayPaths: walkwaysInWorld,
+  };
+  /** ScatterItem → clipping 的 Placement，两处判定共用同一个形状。 */
+  const toPlacements = (items: { id: string; x: number; z: number; radius: number; groundY: number }[]) =>
+    items.map(item => ({ id: item.id, x: item.x, z: item.z, radius: item.radius, baseY: item.groundY, groundY: item.groundY }));
+
+  const placedPlacements: Placement[] = [
+    ...obstacles.map((box, index) => ({
+      id: `obstacle#${index}`,
+      x: (box.min.x + box.max.x) / 2,
+      z: (box.min.z + box.max.z) / 2,
+      // 建筑占地盒当大半径的占位圆：盒的半对角 ≥ 半宽，所以更保守
+      radius: Math.max((box.max.x - box.min.x) / 2, (box.max.z - box.min.z) / 2),
+      baseY: 0,
+      groundY: 0,
+    })),
+  ];
+  // A ring of shoreline trees. Gone is the old "18 fixed angles" loop, which put
+  // every tree on a perfect circle and happily grew one into a building corner.
+  const trees = planScatter({
+    kind: 'tree', idPrefix: 'tree', seed: 20261005, count: 18,
+    radius: 0.78, targetHeight: null, modelHeight: 1,
+    context: scatterContext, placed: placedPlacements,
+    rules: { shoreMargin: 2.15 * mapScaleX, maxRadius: 27 },
+  });
+  for (const tree of trees) {
     const trunk = mesh(new THREE.CylinderGeometry(0.12, 0.17, 1.5, 7), mat('#7d8974'));
-    const x = Math.sin(angle) * radius, z = Math.cos(angle) * radius;
-    trunk.position.set(x, terrainHeight(x, z) + 0.75, z);
+    trunk.position.set(tree.x / mapScaleX, tree.groundY + 0.75, tree.z);
     trunk.castShadow = trunk.receiveShadow = false;
-    const blossomTree = angle > 0.75 && angle < 1.65;
+    const blossomTree = Math.abs(Math.hypot(tree.x / mapScaleX, tree.z) - 24) < 6 && tree.z < 0;
     for (let leaf = 0; leaf < 3; leaf++) {
-      const crown = mesh(new THREE.IcosahedronGeometry(0.72 + ((i + leaf) % 3) * 0.12, 1), mat(blossomTree ? (leaf % 2 ? '#e7a9c5' : '#f0bad0') : (leaf % 2 ? '#8eaa89' : '#769989')));
+      const crown = mesh(new THREE.IcosahedronGeometry(0.72 + ((tree.id.length + leaf) % 3) * 0.12, 1), mat(blossomTree ? (leaf % 2 ? '#e7a9c5' : '#f0bad0') : (leaf % 2 ? '#8eaa89' : '#769989')));
       const a = leaf * Math.PI * 2 / 3;
       crown.position.copy(trunk.position).add(new THREE.Vector3(Math.sin(a) * 0.48, 1.1 + (leaf % 2) * 0.32, Math.cos(a) * 0.48));
       crown.scale.set(1.08, 0.86 + (leaf % 2) * 0.12, 0.98);
@@ -705,17 +985,24 @@ export function mountMemoryIsland(options: Options): () => void {
     }
   }
   // A denser pink grove frames the fourth memory house while leaving the path open.
-  for (const [x, z, tint] of [[11, -3, '#e7a9c5'], [17, -3, '#f0bad0'], [18, 3, '#e7a9c5'], [10, 3, '#f4c7d7']] as const) {
+  // It sits well inside the shoreline, so it only needs the default shore margin.
+  const grove = planScatter({
+    kind: 'tree', idPrefix: 'grove', seed: 20261006, count: 4,
+    radius: 1.05, targetHeight: null, modelHeight: 1,
+    context: scatterContext, placed: placedPlacements,
+    rules: { maxRadius: 27 },
+  });
+  for (const item of grove) {
     const trunk = mesh(new THREE.CylinderGeometry(0.13, 0.19, 1.8, 7), mat('#806d62'));
-    trunk.position.set(x, terrainHeight(x, z) + 0.9, z);
+    trunk.position.set(item.x / mapScaleX, item.groundY + 0.9, item.z);
     for (let leaf = 0; leaf < 4; leaf++) {
-      const crown = mesh(new THREE.IcosahedronGeometry(0.9 + (leaf % 2) * 0.14, 1), mat(tint));
-      // 树冠必须挂在树干顶端而不是绝对高度：这片树丛坐在树屋山头上（地形高 3~4），
+      const crown = mesh(new THREE.IcosahedronGeometry(0.9 + (leaf % 2) * 0.14, 1), mat(leaf % 2 ? '#e7a9c5' : '#f0bad0'));
+      // 树冠挂在树干顶端而不是绝对高度：这片树丛坐在树屋山头上（地形高 3~4），
       // 旧实现把树冠放在绝对 y≈1.75，整冠埋进山体，只剩光杆戳出坡面，远看像破面。
       crown.position.set(
-        x + Math.sin(leaf * Math.PI / 2) * 0.55,
+        item.x / mapScaleX + Math.sin(leaf * Math.PI / 2) * 0.55,
         trunk.position.y + 0.85 + (leaf % 2) * 0.34,
-        z + Math.cos(leaf * Math.PI / 2) * 0.55,
+        item.z + Math.cos(leaf * Math.PI / 2) * 0.55,
       );
       crown.scale.set(1.1, 0.9, 1);
     }
@@ -726,31 +1013,83 @@ export function mountMemoryIsland(options: Options): () => void {
   const flowerGeometry = new THREE.SphereGeometry(0.085, 8, 6);
   const groundCoverMats = ['#7e9f7e', '#93ae83', '#a2b985'].map(color => mat(color));
   const flowerMats = ['#f1d98d', '#f0b6c7', '#f4efe0'].map(color => mat(color));
-  let groundCoverCount = 0;
-  for (let i = 0; i < 90 && groundCoverCount < 38; i++) {
-    const angle = i * 2.399963;
-    const radius = 7.2 + (i * 7.13 % 17.5);
-    const x = Math.sin(angle) * radius, z = Math.cos(angle) * radius;
-    if (radius > coastlineRadius(angle) - 4.2) continue;
-    if (sites.some(site => Math.hypot(x - site.x, z - site.z) < 5.6)) continue;
-    if (streamPaths.some(path => distanceToPath(x, z, path) < 2.5)) continue;
-    if (walkwayPaths.some(path => distanceToPath(x, z, path) < 2.65)) continue;
-    groundCoverCount++;
+  // cover is planned last, so it must see the trees/grove that are already down.
+  // Planning it against only the obstacles is exactly the "one rule while placing,
+  // another while auditing" failure the clipping module exists to prevent.
+  const cover = planScatter({
+    kind: 'groundCover', idPrefix: 'cover', seed: 20261007, count: 38,
+    radius: 0.55, targetHeight: null, modelHeight: 1,
+    context: scatterContext, placed: [...placedPlacements, ...toPlacements([...trees, ...grove])],
+    rules: { shoreMargin: 4.2 * mapScaleX, maxRadius: 24, pathMargin: 2.65 },
+  });
+  cover.forEach((item, index) => {
+    placedPlacements.push({ id: item.id, x: item.x, z: item.z, radius: item.radius, baseY: item.groundY, groundY: item.groundY });
     for (let tuft = 0; tuft < 3; tuft++) {
-      const offsetX = Math.sin(tuft * 2.1 + angle) * 0.32;
-      const offsetZ = Math.cos(tuft * 2.1 + angle) * 0.32;
-      const bush = mesh(groundCoverGeometry, groundCoverMats[(i + tuft) % groundCoverMats.length]);
-      bush.position.set(x + offsetX, terrainHeight(x + offsetX, z + offsetZ) + 0.22, z + offsetZ);
-      bush.scale.set(0.9 + tuft * 0.14, 0.62 + (tuft % 2) * 0.12, 0.85 + (i % 3) * 0.08);
+      const offsetX = Math.sin(tuft * 2.1 + index) * 0.32;
+      const offsetZ = Math.cos(tuft * 2.1 + index) * 0.32;
+      const bush = mesh(groundCoverGeometry, groundCoverMats[(index + tuft) % groundCoverMats.length]);
+      bush.position.set(item.x / mapScaleX + offsetX, terrainHeight(item.x / mapScaleX + offsetX, item.z + offsetZ) + 0.22, item.z + offsetZ);
+      bush.scale.set(0.9 + tuft * 0.14, 0.62 + (tuft % 2) * 0.12, 0.85 + (index % 3) * 0.08);
     }
     for (let bloom = 0; bloom < 3; bloom++) {
-      const a = angle + bloom * Math.PI * 2 / 3;
-      const flowerX = x + Math.sin(a) * 0.48, flowerZ = z + Math.cos(a) * 0.48;
-      const flower = mesh(flowerGeometry, flowerMats[(i + bloom) % flowerMats.length]);
+      const a = index * 2.399963 + bloom * Math.PI * 2 / 3;
+      const flowerX = item.x / mapScaleX + Math.sin(a) * 0.48, flowerZ = item.z + Math.cos(a) * 0.48;
+      const flower = mesh(flowerGeometry, flowerMats[(index + bloom) % flowerMats.length]);
       flower.position.set(flowerX, terrainHeight(flowerX, flowerZ) + 0.22, flowerZ);
     }
+  });
+  // Full audit after everything is placed: an empty result is the only way the
+  // "no clipping" rule can be considered satisfied.
+  const scatterIssues = checkScatter([...trees, ...grove, ...cover], scatterContext);
+  if (scatterIssues.length) console.error('[MemoryIsland] 散布穿模审计未通过', scatterIssues);
+  else console.info('[MemoryIsland] 散布穿模审计通过', { trees: trees.length, grove: grove.length, cover: cover.length });
+  // 路面 ribbon 建在 walkableHeight + 0.12（见上面的 lane），而角色脚底对齐的是 walkableHeight，
+  // 于是站在路上时脚会陷进路面 0.12 个世界单位（接近整只脚的厚度，近景能看出脚被路面切断）。
+  // 这里把「踩在路面上」那份抬升补回来：在带宽内抬 0.12，离开路面回落地形。
+  const PAVING_LIFT = 0.12;
+  function pavingLift(x: number, z: number) {
+    for (let i = 0; i < walkwayPaths.length; i++) {
+      if (distanceToPath(x, z, walkwayPaths[i]) <= walkwayWidths[i] / 2) return PAVING_LIFT;
+    }
+    return 0;
   }
-  const player = new THREE.Group(); scene.add(player); player.position.set(0, characterGroundHeight(0, 3, walkableHeight), 3);
+  const player = new THREE.Group(); scene.add(player); player.position.set(0, characterGroundHeight(0, 3, walkableHeight) + pavingLift(0, 3), 3);
+  // 接触影子（blob shadow）。为什么需要这张贴图：
+  //  · 主光仰角只有 16.5°（HDR 烤进去的太阳就贴地平线），2.05 高的角色投影落点在
+  //    2.05/tan(16.5°) ≈ 6.9 个世界单位之外，实测落点 (6.50, 5.35)，任何第三人称取景都框不到；
+  //  · 更硬的一条：实测把太阳抬到 60° 后，角色可见/隐藏两帧的地面像素完全一致——角色
+  //    根本没有被写进阴影贴图（castShadow=true 已设、材质非透明、无 customDepthMaterial、
+  //    SkinnedMesh 正常；根因未定，且软件渲染下的结论不能直接外推到真机）。
+  // 所以「脚下没有接触感」不能靠解析光解决。blob 与光源、GPU、蒙皮深度都无关。
+  // 调试用：可以按名字在场景里找到它（探针靠这个定位）。
+  // 用着色器算径向衰减，不用 CanvasTexture：早先用 2D canvas 径向渐变做贴图时，
+  // 同位置同尺寸的不透明版本能正常画出（洋红实验），带 alpha 的贴图版本却整片看不到，
+  // 与其排贴图/alpha 的链路，不如算在片元里，结果确定。
+  const blobShadow = new THREE.Mesh(
+    // 几何体自己先铺到 XZ 面，这样后面用 quaternion 贴坡就只需对齐一个法线
+    new THREE.PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2),
+    new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: { uOpacity: { value: 0.5 } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        precision mediump float;
+        varying vec2 vUv;
+        uniform float uOpacity;
+        void main(){
+          float d = length(vUv - 0.5) * 2.0;
+          // 必须写 1.0 - smoothstep(小, 大, d)：GLSL 的 smoothstep 在 edge0 > edge1 时是
+          // 未定义行为，早先写成 smoothstep(1.0, 0.1, d) 在真机上整片透明（洋红实验里
+          // 不透明版本画得出来、带 alpha 的版本看不见，就是这个）。
+          float a = (1.0 - smoothstep(0.15, 1.0, d)) * uOpacity;
+          gl_FragColor = vec4(0.10, 0.13, 0.11, a);
+        }`,
+    }),
+  );
+  blobShadow.renderOrder = 2;
+  blobShadow.name = 'contactShadow';
+  blobShadow.visible = false;
+  scene.add(blobShadow);
   const blockoutPlayer = new THREE.Group(); player.add(blockoutPlayer);
   const body = mesh(new THREE.CapsuleGeometry(0.29, 0.6, 5, 10), mat('#385b60'), blockoutPlayer); body.position.y = 1;
   const head = mesh(new THREE.SphereGeometry(0.23, 16, 12), mat('#e6ceb0'), blockoutPlayer); head.position.y = 1.73;
@@ -762,6 +1101,59 @@ export function mountMemoryIsland(options: Options): () => void {
     const arm = mesh(new THREE.CapsuleGeometry(0.09, 0.46, 4, 8), mat('#75958b'), blockoutPlayer);
     arm.position.set(side * 0.4, 1.04, 0);
   }
+  // Eight Tripo props (rocks, coral, palm, blossom, bush, flowers, broadleaf,
+  // rock-outcrop) from public/island-models/props/. They are placed by the same
+  // planner as the scenery, so they obey the same no-clipping rule.
+  const propAssets = [
+    { file: 'rock', targetHeight: 1.6, radius: 1.0, count: 5 },
+    { file: 'rock-outcrop', targetHeight: 2.0, radius: 1.2, count: 4 },
+    { file: 'coral', targetHeight: 1.1, radius: 0.7, count: 4 },
+    { file: 'palm', targetHeight: 3.4, radius: 1.1, count: 5 },
+    { file: 'blossom', targetHeight: 2.6, radius: 0.9, count: 4 },
+    { file: 'broadleaf', targetHeight: 3.0, radius: 1.0, count: 4 },
+    { file: 'bush', targetHeight: 1.2, radius: 0.6, count: 5 },
+    { file: 'flower-clump', targetHeight: 0.8, radius: 0.5, count: 5 },
+  ] as const;
+  const propModels = new Map<string, { height: number; object: THREE.Group }>();
+  const propSpots = propAssets.flatMap((asset, index) => planScatter({
+    kind: 'prop', idPrefix: asset.file, seed: 20261008 + index * 7, count: asset.count,
+    radius: asset.radius, targetHeight: asset.targetHeight, modelHeight: 1,
+    context: scatterContext, placed: placedPlacements,
+    rules: { shoreMargin: 2.4, maxRadius: 25 },
+  }));
+  // Load each prop once and instance it at its planned spots, so eight assets
+  // cover ~36 placements without paying the load cost 36 times.
+  Promise.all(propAssets.map(async asset => {
+    const url = `/island-models/props/${asset.file}.glb`;
+    const gltf = await gltfLoader.loadAsync(url);
+    if (signal.aborted) { disposeGltf(gltf.scene); return; }
+    gltf.scene.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(gltf.scene);
+    const height = bounds.getSize(new THREE.Vector3()).y;
+    gltf.scene.traverse(object => {
+      if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; }
+    });
+    propModels.set(asset.file, { height: Math.max(height, 0.001), object: gltf.scene });
+  })).then(() => {
+    if (signal.aborted) return;
+    for (const spot of propSpots) {
+      const entry = propModels.get(spot.id.split('#')[0]);
+      if (!entry) continue;
+      const instance = entry.object.clone(true);
+      // 底面贴地：模型原点在几何中心，先按目标高度缩放，再把 clone 的最低点
+      // 抬到地形高度——否则一半埋进土里（这正是 decisions 里那条「建筑底座陷沙」的同款错误）。
+      const scale = spot.scale;
+      instance.scale.setScalar(scale);
+      instance.updateMatrixWorld(true);
+      instance.position.set(spot.x, 0, spot.z);
+      instance.updateMatrixWorld(true);
+      const landed = new THREE.Box3().setFromObject(instance);
+      instance.position.y += spot.groundY - landed.min.y;
+      instance.updateMatrixWorld(true);
+      islandRoot.add(instance);
+    }
+  }).catch(error => console.error('[MemoryIsland] 散布道具加载失败', error));
+
   const characterAnimationPaths = {
     idle: '/island-models/character-han-meimei-idle.glb',
     walk: '/island-models/character-han-meimei-walk.glb',
@@ -796,12 +1188,29 @@ export function mountMemoryIsland(options: Options): () => void {
     const model = gltf.scene;
     const bounds = new THREE.Box3().setFromObject(model);
     const size = bounds.getSize(new THREE.Vector3());
+    // Scale by authored height only: using width/depth as competing denominators
+    // shrinks unusually slender poses and made the feet look detached from terrain.
     model.scale.setScalar(2.05 / Math.max(size.y, size.x * 0.9, size.z * 0.9, 0.001));
     model.updateMatrixWorld(true);
     const scaledBounds = new THREE.Box3().setFromObject(model);
+    // Align the model's actual lowest vertex to the player's ground anchor. The
+    // source GLB may have a non-zero origin and the animated rig can bob above it.
     model.position.set(-(scaledBounds.min.x + scaledBounds.max.x) / 2, -scaledBounds.min.y, -(scaledBounds.min.z + scaledBounds.max.z) / 2);
-    model.rotation.y = Math.PI;
+    model.rotation.y = -Math.PI / 2;
+    // 作者朝向是 +X（与六栋建筑同一套 Tripo 流程）：`player.rotation.y` 已把
+    // 「移动方向」写成组本地 +Z，所以模型只需再转 -π/2 把 +X 摆到 +Z。
+    // 原来的 π 让角色始终侧身横走：探针罗盘在 270° 格看得到正脸，
+    // 岛内按 W/S 实走时却只看到左右侧脸，两者结合才能定下来。
+    // Preserve this bind-pose offset. Animation clips may animate root nodes, so
+    // per-frame corrections must be measured against the original ground anchor.
+    model.updateMatrixWorld(true);
+    const groundedBounds = new THREE.Box3().setFromObject(model);
+    const modelGroundOffset = -groundedBounds.min.y;
+    model.position.y += modelGroundOffset;
+    model.userData.groundOffset = modelGroundOffset;
+    model.updateMatrixWorld(true);
     model.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } });
+    model.userData.isHanMeimeiModel = true;
     player.add(model);
     characterMixer = new THREE.AnimationMixer(model);
     pendingCharacterClips.forEach((clip, name) => registerCharacterClip(name, clip));
@@ -821,7 +1230,16 @@ export function mountMemoryIsland(options: Options): () => void {
     }, undefined, error => { assetsSettled++; assetsFailed++; updateAssetStatus(); console.error(`[MemoryIsland] Could not load ${name} animation`, error); });
   }
   let mode: 'overview' | 'explore' = 'overview';
+  // Temporary review hook: ?focusChapter=N frames one landmark so each Tripo
+  // asset can be inspected up close instead of judged from the whole-island view.
+  const focusChapter = Number(new URLSearchParams(window.location.search).get('focusChapter'));
+  // ?focusFrom=door makes the landmark review shot look like a player walking up to the
+  // door: camera sits on the site's outward door direction, at eye height above the
+  // terrain there, looking back at the facade. ?focusDist=N sets that distance.
+  const focusFromDoor = new URLSearchParams(window.location.search).get('focusFrom') === 'door';
+  const focusDistance = Number(new URLSearchParams(window.location.search).get('focusDist')) || 6.5;
   let yaw = 0, pitch = 0.24;
+  let cameraDistance = 5.6;
   let nearby: Building | undefined;
   let toastUntil = 0;
   let elapsed = 0;
@@ -864,8 +1282,7 @@ export function mountMemoryIsland(options: Options): () => void {
     }, { signal });
     chapterList.append(button);
   }
-  function setMode(next: typeof mode) {
-    keys.clear();
+  function setMode(next: typeof mode) {    keys.clear();
     (document.activeElement as HTMLElement | null)?.blur();
     if (next === 'explore') {
       overviewPosition.copy(camera.position); overviewTarget.copy(controls.target);
@@ -923,28 +1340,45 @@ export function mountMemoryIsland(options: Options): () => void {
   }, { signal });
   renderer.domElement.addEventListener('pointermove', event => {
     if (mode !== 'explore' || dragging !== event.pointerId) return;
-    yaw -= (event.clientX - lastX) * 0.005;
-    pitch = THREE.MathUtils.clamp(pitch + (event.clientY - lastY) * 0.004, -0.08, 0.8);
+    const deltaX = event.clientX - lastX, deltaY = event.clientY - lastY;
+    yaw -= deltaX * 0.005;
+    pitch = THREE.MathUtils.clamp(pitch + deltaY * 0.004, -0.08, 0.8);
     lastX = event.clientX; lastY = event.clientY;
   }, { signal });
   renderer.domElement.addEventListener('lostpointercapture', () => { dragging = undefined; }, { signal });
   renderer.domElement.addEventListener('pointerup', () => { dragging = undefined; }, { signal });
   const allowed = (worldX: number, z: number) => {
     const x = worldX / mapScaleX;
-    return Math.hypot(x, z) < coastlineRadius(Math.atan2(x, z)) - 0.8
-      && !obstacles.some(box => worldX > box.min.x && worldX < box.max.x && z > box.min.z && z < box.max.z);
+    const insideIsland = Math.hypot(x, z) < coastlineRadius(Math.atan2(x, z)) - 0.8;
+    if (!insideIsland) return false;
+    const insideBridge = bridgeLevels.some(bridge => {
+      const dx = x - bridge.x, dz = z - bridge.z;
+      const localX = dx * Math.cos(bridge.yaw) - dz * Math.sin(bridge.yaw);
+      const localZ = dx * Math.sin(bridge.yaw) + dz * Math.cos(bridge.yaw);
+      return Math.abs(localX) <= 1.1 && Math.abs(localZ) <= 2.55;
+    });
+    return insideBridge || !obstacles.some(box => worldX > box.min.x && worldX < box.max.x && z > box.min.z && z < box.max.z);
   };
   function updateCamera(blend: number) {
     focus.copy(player.position).add(new THREE.Vector3(0, 1.55, 0));
-    desired.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(5.6).add(focus);
-    direction.copy(desired).sub(focus).normalize(); ray.set(focus, direction); ray.far = 5.6;
+    desired.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(cameraDistance).add(focus);
+    direction.copy(desired).sub(focus).normalize(); ray.set(focus, direction); ray.far = cameraDistance;
     const hit = ray.intersectObjects(collisionMeshes, true)[0];
-    if (hit) desired.copy(focus).addScaledVector(direction, Math.max(0.45, hit.distance - 0.3));
+    if (hit) desired.copy(focus).addScaledVector(direction, Math.max(0.45, hit.distance - 0.55));
     desired.y = Math.max(desired.y, 0.35);
     camera.position.lerp(desired, blend);
     followFocus.lerp(focus, blend);
     camera.lookAt(followFocus);
   }
+  renderer.domElement.addEventListener('wheel', event => {
+    if (mode !== 'overview') return;
+    event.preventDefault();
+    overviewZoomScale = THREE.MathUtils.clamp(overviewZoomScale * Math.exp(event.deltaY * 0.001), 0.65, 2.4);
+    const portraitScale = camera.aspect < 1.15 ? 1 + 1.36 * (1 - camera.aspect) : 1;
+    camera.position.copy(controls.target).addScaledVector(overviewDirection, overviewDistance * portraitScale * overviewZoomScale);
+    controls.update();
+    overviewPosition.copy(camera.position); overviewTarget.copy(controls.target);
+  }, { signal, passive: false });
   get('[data-progress]').textContent = `${completedChapters().length} / 6 段记忆已点亮 · 灰色建筑等待找回`;
   setMode('overview');
   if (options.justCompleted) {
@@ -963,18 +1397,72 @@ export function mountMemoryIsland(options: Options): () => void {
     if (!overviewFramed) {
       const portraitScale = camera.aspect < 1.15 ? 1 + 1.36 * (1 - camera.aspect) : 1;
       controls.target.set(0, 0, -8);
-      camera.position.copy(controls.target).addScaledVector(overviewDirection, overviewDistance * portraitScale);
+      camera.position.copy(controls.target).addScaledVector(overviewDirection, overviewDistance * portraitScale * overviewZoomScale);
+      if (Number.isInteger(focusChapter) && focusChapter >= 1 && focusChapter <= 6) {
+        const site = sites[focusChapter - 1];
+        controls.target.set(site.x * mapScaleX, site.height * 0.45, site.z);
+        if (focusFromDoor) {
+          const outwardX = Math.sin(site.yaw), outwardZ = Math.cos(site.yaw);
+          const away = site.depth / 2 + 1.5 + focusDistance;
+          const doorX = site.x + outwardX * away, doorZ = site.z + outwardZ * away;
+          camera.position.set(
+            doorX * mapScaleX,
+            terrainHeight(doorX, doorZ) + site.height * 0.42,
+            doorZ,
+          );
+        } else {
+          camera.position.copy(controls.target).add(new THREE.Vector3(9, 7.5, 11));
+        }
+        controls.update();
+      }
       controls.update();
       overviewPosition.copy(camera.position); overviewTarget.copy(controls.target);
       overviewFramed = true;
     }
   };
+  // Review hook: ?debugView=1 exposes the scene/camera so probes can place a custom
+  // camera (e.g. a low angle along the shoreline) without the UI fighting it.
+  // Off by default so nothing else in the shipped scene depends on it.
+  if (new URLSearchParams(window.location.search).get('debugView') === '1') {
+    (window as unknown as { __islandView?: unknown }).__islandView = { scene, camera, renderer, controls };
+  }
   window.addEventListener('resize', resize, { signal }); resize();
   let frame = 0, last = performance.now(), disposed = false;
   function tick(now: number) {
     if (disposed) return;
     const dt = Math.min((now - last) / 1000, 0.05); last = now; elapsed += dt;
     characterMixer?.update(dt);
+    if (characterMixer) {
+      // Imported clips can animate the rig root vertically. Restore its bind-pose
+      // ground offset after each mixer tick so feet remain planted on the terrain.
+      const model = player.children.find(child => child.userData.isHanMeimeiModel);
+      if (model) {
+        player.updateMatrixWorld(true);
+        model.position.y = Number(model.userData.groundOffset ?? 0);
+        model.updateMatrixWorld(true);
+        const bounds = new THREE.Box3().setFromObject(model);
+        const feetY = bounds.min.y;
+        const terrainY = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight)
+          + pavingLift(player.position.x / mapScaleX, player.position.z);
+        const feetError = terrainY - feetY;
+        // Apply one absolute correction to the stored bind-pose offset. Do not
+        // integrate corrections frame-to-frame; that would accumulate drift.
+        const correction = THREE.MathUtils.clamp(feetError, -0.08, 0.08);
+        model.position.y = Number(model.userData.groundOffset ?? 0) + correction;
+        if (Math.abs(feetError) > 0.08) player.position.y += feetError - correction;
+        // 接触影子跟着脚走，并按脚下坡度贴住地面：采样前后左右各 0.6 个单位算法线，
+        // 否则平铺的贴图在上坡侧会扎进地形、下坡侧悬空。
+        const slopeX = THREE.MathUtils.clamp((walkableHeight((player.position.x + 0.6) / mapScaleX, player.position.z)
+          - walkableHeight((player.position.x - 0.6) / mapScaleX, player.position.z)) / 1.2, -0.35, 0.35);
+        const slopeZ = THREE.MathUtils.clamp((walkableHeight(player.position.x / mapScaleX, player.position.z + 0.6)
+          - walkableHeight(player.position.x / mapScaleX, player.position.z - 0.6)) / 1.2, -0.35, 0.35);
+        blobShadow.quaternion.setFromUnitVectors(UP_AXIS, new THREE.Vector3(-slopeX, 1, -slopeZ).normalize());
+        // terrainY 已经包含 pavingLift，等于「脚踩的那个面」（裸地形或路面），blob 只需贴住它。
+        // 早先给 0.05 完全看不见，是因为那时 terrainY 还在路面之下 0.12（pavingLift 补上之前）。
+        blobShadow.position.set(player.position.x, terrainY + 0.04, player.position.z);
+        blobShadow.visible = mode !== 'overview';
+      }
+    }
     if (jumpPlaying && elapsed >= jumpUntil) {
       jumpPlaying = false;
       setCharacterMotion(characterMotion);
@@ -994,17 +1482,25 @@ export function mountMemoryIsland(options: Options): () => void {
         const step = dt * (running ? 5.5 : 3.2);
         if (allowed(player.position.x + dx * step, player.position.z)) player.position.x += dx * step;
         if (allowed(player.position.x, player.position.z + dz * step)) player.position.z += dz * step;
-        player.position.y = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight);
+        player.position.y = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight)
+          + pavingLift(player.position.x / mapScaleX, player.position.z);
         player.rotation.y = Math.atan2(dx / mapScaleX, dz);
       }
       legs.forEach((leg, index) => { leg.rotation.x = length ? Math.sin(elapsed * 11 + index * Math.PI) * 0.5 : 0; });
       // Dampen both camera position and aim so the third-person view trails the player smoothly.
-      updateCamera(1 - Math.exp(-8 * dt));
+      cameraDistance = Math.min(9.5, cameraDistance + dt * 0.65);
+      updateCamera(1 - Math.exp(-5 * dt));
       nearby = buildings.find(b => b.door.distanceTo(player.position) < 2.8);
       nearbyPanel.hidden = !nearby;
       if (nearby) {
         const state = chapterState(nearby.id);
-        nearbyPanel.querySelector('p')!.textContent = `第 ${nearby.id} 段记忆 · ${state === 'completed' ? '已点亮' : state === 'available' ? '等待探索' : '尚未解锁'}`;
+        const name = chapterNames[nearby.id - 1];
+        nearbyPanel.querySelector('p')!.textContent = `${name} · ${state === 'completed' ? '记忆已点亮' : state === 'available' ? '新的记忆在等你' : '尚未解锁'}`;
+        const oldDetail = nearbyPanel.querySelector('small');
+        if (oldDetail) oldDetail.remove();
+        const detail = document.createElement('small');
+        detail.textContent = chapterThemes[nearby.id - 1];
+        nearbyPanel.querySelector('p')!.after(detail);
         interactButton.textContent = state === 'locked'
           ? '查看解锁条件'
           : nearby.id === 1
@@ -1025,6 +1521,7 @@ export function mountMemoryIsland(options: Options): () => void {
   frame = requestAnimationFrame(tick);
   return () => {
     disposed = true; cancelAnimationFrame(frame); abort.abort(); controls.dispose(); keys.clear(); characterMixer?.stopAllAction();
+    environmentTarget?.dispose();
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
     scene.traverse(object => {
       if (object instanceof THREE.Mesh) { geometries.add(object.geometry); (Array.isArray(object.material) ? object.material : [object.material]).forEach(m => materials.add(m)); }
@@ -1034,6 +1531,46 @@ export function mountMemoryIsland(options: Options): () => void {
     materials.forEach(m => { if ('map' in m && m.map instanceof THREE.Texture) m.map.dispose(); m.dispose(); });
     renderer.dispose(); renderer.forceContextLoss(); root.remove();
   };
+}
+
+/** Half-float (IEEE 754 binary16) -> number, for reading an HDR's texel data on the CPU. */
+function halfToFloat(value: number): number {
+  const sign = value & 0x8000 ? -1 : 1;
+  const exponent = (value >> 10) & 0x1f;
+  const mantissa = value & 0x3ff;
+  if (exponent === 0) return sign * 2 ** -14 * (mantissa / 1024);
+  if (exponent === 31) return mantissa ? NaN : sign * Infinity;
+  return sign * 2 ** (exponent - 15) * (1 + mantissa / 1024);
+}
+
+/**
+ * Direction of the brightest texel of an equirectangular HDR, i.e. where its sun is.
+ *
+ * three samples an equirect environment as u = atan2(z, x) / 2π + 0.5 and
+ * v = asin(y) / π + 0.5. The loader stores the image flipped, so which sign of v is
+ * "up" cannot be read off the file: build both candidates and keep the one that
+ * lands above the horizon (a daylight HDR always has its sun in the sky).
+ */
+function brightestDirection(texture: THREE.DataTexture): THREE.Vector3 | null {
+  const image = texture.image as { data?: Uint16Array; width?: number; height?: number } | undefined;
+  const data = image?.data, width = image?.width, height = image?.height;
+  if (!data || !width || !height) return null;
+  let best = -1, bestX = 0, bestY = 0;
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const index = (y * width + x) * 4;
+      const luminance = 0.2126 * halfToFloat(data[index]) + 0.7152 * halfToFloat(data[index + 1]) + 0.0722 * halfToFloat(data[index + 2]);
+      if (luminance > best) { best = luminance; bestX = x; bestY = y; }
+    }
+  }
+  const toDirection = (v: number) => {
+    const phi = ((bestX + 0.5) / width - 0.5) * Math.PI * 2;
+    const theta = (v - 0.5) * Math.PI;
+    return new THREE.Vector3(Math.cos(theta) * Math.cos(phi), Math.sin(theta), Math.cos(theta) * Math.sin(phi));
+  };
+  const direct = toDirection((bestY + 0.5) / height);
+  const flipped = toDirection(1 - (bestY + 0.5) / height);
+  return direct.y >= flipped.y ? direct : flipped;
 }
 
 function disposeGltf(root: THREE.Object3D): void {
