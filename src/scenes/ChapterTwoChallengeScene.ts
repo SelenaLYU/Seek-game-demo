@@ -41,11 +41,29 @@ const SWINGS: SwingHazard[] = [
 /** 光束 depth：高于所有世界层（含摆动 19、钞票 20–22），低于 HUD（200+）。 */
 const LIGHT_DEPTH = 30;
 
+/**
+ * 项目统一的「面板语法」：深墨绿底 + 金色发丝描边 + 米色字。
+ * 与 `GameHud` 的 HUD / 通关弹窗（0x142b23 / 0xf0d88e / #fff5d8）同一套色，
+ * 夜戏里所有提示条都走这一套，避免出现「亮纸片」压在夜景上。
+ */
+const HUD_STYLE = {
+  plate: 0x141f1d,
+  plateAlpha: .86,
+  stroke: 0xf0d88e,
+  strokeAlpha: .42,
+  radius: 9,
+  text: '#f2ead4',
+} as const;
+
+/** 右上角警觉条的面板尺寸（逻辑像素，随 worldView 贴边定位） */
+const ALERT_PANEL = { width: 244, height: 42, labelWidth: 80, inset: 14 } as const;
+
 /** 第二关灰盒：学校后墙 → 骑楼折返 → 长街逃离。 */
 export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private player!: Player;
   private terrain!: Terrain;
-  private title!: Phaser.GameObjects.Text;
+  /** 起点标题：底板 + 文字合成一个容器（世界物件，随相机移出） */
+  private title!: Phaser.GameObjects.Container;
   private status!: Phaser.GameObjects.Text;
   private checkpointText!: Phaser.GameObjects.Text;
   private alertLabel!: Phaser.GameObjects.Text;
@@ -185,20 +203,17 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     this.createTeacher();
     this.hudGraphics = this.add.graphics().setDepth(200);
     // 起点标题是世界物件，像老师一样随相机移出，不跟随 HUD。
-    this.title = this.add.text(145, 24, '第二关 · 骑楼街逃课', {
-      fontFamily: 'sans-serif', fontSize: '19px', color: '#253631',
-      backgroundColor: 'rgba(247,241,220,.9)', padding: { x: 12, y: 8 },
-    }).setOrigin(0).setDepth(201);
+    this.title = this.plateLabel(145, 43, '第二关 · 骑楼街逃课', { size: 17, depth: 201, anchor: 'left' });
+    // 底部两条提示的底板由 layoutHud 每帧画在 hudGraphics 上（跟着 worldView 贴边），
+    // 这里只留文字，颜色统一走 HUD_STYLE。
     this.status = this.add.text(18, 474, '先向右逃。灯光从身后扫来时，马上松开方向键站定。', {
-      fontFamily: 'sans-serif', fontSize: '14px', color: '#f4edda',
-      backgroundColor: 'rgba(20,31,29,.9)', padding: { x: 11, y: 8 },
+      fontFamily: 'sans-serif', fontSize: '14px', color: HUD_STYLE.text,
     }).setOrigin(0).setDepth(201).setVisible(false);
     this.checkpointText = this.add.text(18, 514, '路线 · 第一层向右 →', {
-      fontFamily: 'sans-serif', fontSize: '11px', color: '#40524c',
-      backgroundColor: 'rgba(235,235,218,.82)', padding: { x: 8, y: 5 },
+      fontFamily: 'sans-serif', fontSize: '11px', color: '#d8ccb0',
     }).setOrigin(0, 1).setDepth(201).setVisible(false);
     this.alertLabel = this.add.text(0, 0, '警觉 0%', {
-      fontFamily: 'sans-serif', fontSize: '12px', color: '#f4ead0',
+      fontFamily: 'sans-serif', fontSize: '12px', color: HUD_STYLE.text,
     }).setOrigin(0, .5).setDepth(201);
 
     this.cameras.main.startFollow(this.player.view, true, .085, .085);
@@ -335,17 +350,12 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private createGoal(): void {
     const tokenGlow = this.add.circle(3420, 898, 28, 0xe4bd5e, .25).setDepth(20);
     const token = this.add.image(3420, 898, 'night-ticket').setDisplaySize(NIGHT.ticket.width, NIGHT.ticket.height).setDepth(21);
-    const tokenLabel = this.add.text(3420, 860, '旧钞票 · 记忆信物', {
-      fontFamily: 'sans-serif', fontSize: '12px', color: '#3b3222',
-      backgroundColor: 'rgba(247,242,220,.9)', padding: { x: 7, y: 4 },
-    }).setOrigin(.5).setDepth(22);
+    // 信物标签与 HUD 同一套面板语法（深底 + 金色发丝），不再用亮纸片压夜景
+    const tokenLabel = this.plateLabel(3420, 858, '旧钞票 · 记忆信物', { size: 12, depth: 22 });
     const tokenHit = this.add.rectangle(3420, 898, 58, 68, 0xffffff, 0);
     this.physics.add.existing(tokenHit, true);
 
     const door = this.add.image(3600, 872, 'night-door').setDisplaySize(76,156).setDepth(12);
-    const doorSign = this.add.text(3600, 836, '第二记忆房', {
-      fontFamily: 'sans-serif', fontSize: '13px', color: '#e8e5d6', align: 'center',
-    }).setOrigin(.5).setDepth(13);
     const doorHit = this.add.rectangle(3600, 872, 96, 170, 0xffffff, 0);
     this.physics.add.existing(doorHit, true);
 
@@ -355,8 +365,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       this.detectionMs = 0; this.alert = 0;
       token.destroy(); tokenGlow.destroy(); tokenLabel.destroy(); tokenHit.destroy();
       door.setTint(0xd5e8d4);
-      doorSign.setText('门已开启');
-      this.announce('拿到旧钞票了。老师停下了，继续向右进入第二记忆房。', 3600);
+      this.announce('拿到旧钞票了。老师停下了，继续向右进门。', 3600);
       this.tweens.add({ targets: door, alpha: { from: .64, to: 1 }, duration: 420, yoyo: true });
     });
     this.physics.add.overlap(this.player.view, doorHit, () => {
@@ -500,7 +509,7 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
     const view = this.cameras.main.worldView;
     this.status.setPosition(view.x + 18, view.y + view.height - 66);
     this.checkpointText.setPosition(view.x + 18, view.y + view.height - 8);
-    const x = view.x + view.width - 36 - 278;
+    const x = view.x + view.width - 28 - ALERT_PANEL.width;
     const y = view.y + 26;
     const pulse = this.alert > .5 ? .85 + Math.sin(time * .015) * .15 : 1;
     this.hudGraphics.clear();
@@ -508,14 +517,64 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
       this.hudGraphics.fillStyle(0x8f1f1b, this.alert * .07).fillRect(view.x, view.y, view.width, view.height);
       this.hudGraphics.lineStyle(8 + this.alert * 12, 0xd5483e, .24 + this.alert * .5).strokeRect(view.x + 4, view.y + 4, view.width - 8, view.height - 8);
     }
-    this.hudGraphics.fillStyle(0x17231f, .84).fillRoundedRect(x, y, 278, 44, 9);
-    this.hudGraphics.fillStyle(0xebe1bf, .22).fillRoundedRect(x + 76, y + 16, 178, 11, 5);
+
+    // 底部两条提示与右上警觉条共用同一套「深底 + 金色发丝」语法
+    this.drawChip(this.status, 11, 8);
+    this.drawChip(this.checkpointText, 9, 6);
+
+    const { width, height, labelWidth, inset } = ALERT_PANEL;
+    this.hudGraphics.fillStyle(HUD_STYLE.plate, HUD_STYLE.plateAlpha).fillRoundedRect(x, y, width, height, HUD_STYLE.radius);
+    this.hudGraphics.lineStyle(1, HUD_STYLE.stroke, HUD_STYLE.strokeAlpha).strokeRoundedRect(x, y, width, height, HUD_STYLE.radius);
+    const trackX = x + labelWidth;
+    const trackY = y + height / 2 - 5;
+    const trackWidth = width - labelWidth - inset;
+    this.hudGraphics.fillStyle(0xebe1bf, .16).fillRoundedRect(trackX, trackY, trackWidth, 10, 5);
     const color = this.alert > .72 ? 0xd9483f : this.alert > .3 ? 0xe0a64e : 0x83a88c;
-    this.hudGraphics.fillStyle(color, pulse).fillRoundedRect(x + 76, y + 16, 178 * this.alert, 11, 5);
-    this.hudGraphics.lineStyle(1, 0xf2e8cc, .4).strokeRoundedRect(x + 76, y + 16, 178, 11, 5);
+    this.hudGraphics.fillStyle(color, pulse).fillRoundedRect(trackX, trackY, Math.max(0, trackWidth * this.alert), 10, 5);
+    this.hudGraphics.lineStyle(1, HUD_STYLE.stroke, .26).strokeRoundedRect(trackX, trackY, trackWidth, 10, 5);
     this.alertLabel
       .setText(`警觉 ${Math.round(this.alert * 100)}%`)
-      .setColor(this.alert > .45 ? '#ffb0a2' : '#f4ead0')
-      .setPosition(x + 15, y + 22);
+      .setColor(this.alert > .45 ? '#ffb0a2' : HUD_STYLE.text)
+      .setPosition(x + 14, y + height / 2);
+  }
+
+  /** 在 text 背后画一块圆角底板（text 的 origin 决定底板贴哪一侧） */
+  private drawChip(text: Phaser.GameObjects.Text, padX: number, padY: number): void {
+    if (!text.visible) return;
+    const width = Math.ceil(text.width) + padX * 2;
+    const height = Math.ceil(text.height) + padY * 2;
+    const x = text.x - padX;
+    const y = text.originY === 1 ? text.y - text.height - padY : text.y - padY;
+    this.hudGraphics.fillStyle(HUD_STYLE.plate, HUD_STYLE.plateAlpha).fillRoundedRect(x, y, width, height, HUD_STYLE.radius);
+    this.hudGraphics.lineStyle(1, HUD_STYLE.stroke, HUD_STYLE.strokeAlpha).strokeRoundedRect(x, y, width, height, HUD_STYLE.radius);
+  }
+
+  /**
+   * 项目统一的「面板语法」：深墨绿底 + 金色发丝描边 + 米色字。
+   * anchor='center' 用于世界里的物件标签（旧钞票），'left' 用于左上角的起点标题。
+   */
+  private plateLabel(
+    x: number,
+    y: number,
+    value: string,
+    opts: { size?: number; color?: string; depth?: number; padX?: number; padY?: number; anchor?: 'center' | 'left' } = {},
+  ): Phaser.GameObjects.Container {
+    const size = opts.size ?? 12;
+    const padX = opts.padX ?? 10;
+    const padY = opts.padY ?? 6;
+    const label = this.add.text(0, 0, value, {
+      fontFamily: 'sans-serif',
+      fontSize: `${size}px`,
+      color: opts.color ?? HUD_STYLE.text,
+    }).setOrigin(opts.anchor === 'left' ? 0 : .5, .5);
+    const width = Math.ceil(label.width) + padX * 2;
+    const height = Math.ceil(label.height) + padY * 2;
+    const left = opts.anchor === 'left' ? 0 : -width / 2;
+    const top = -height / 2;
+    const plate = this.add.graphics();
+    plate.fillStyle(HUD_STYLE.plate, HUD_STYLE.plateAlpha).fillRoundedRect(left, top, width, height, HUD_STYLE.radius);
+    plate.lineStyle(1, HUD_STYLE.stroke, HUD_STYLE.strokeAlpha).strokeRoundedRect(left, top, width, height, HUD_STYLE.radius);
+    label.setPosition(left + padX, 0);
+    return this.add.container(x, y, [plate, label]).setDepth(opts.depth ?? 22);
   }
 }
