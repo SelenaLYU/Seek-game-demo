@@ -10,6 +10,37 @@ import {
 
 export { isBackgroundMusicEnabled };
 
+/**
+ * 音乐**此刻是不是真的在响**。
+ *
+ * 必须和 `isBackgroundMusicEnabled()` 区分开：后者是玩家的偏好设置，
+ * 而浏览器自动播放策略会拦掉「页面一打开就出声」，所以存在
+ * **「设置是开、但实际一点声音都没有」**的中间态。
+ * 判断「点一下该开还是该关」要看这个，不能看设置值 —— 否则页面刚打开时
+ * 点音乐开关会变成「开→关」，玩家听到的是「点了一下反而没声音」。
+ */
+export function isMusicAudible(): boolean {
+  for (const audio of activeHtmlMusic) if (!audio.paused) return true;
+  return false;
+}
+
+/** 「音乐是否在响」的订阅者 —— 供 UI 同步开关文案。 */
+const audibleListeners = new Set<() => void>();
+
+/**
+ * 订阅可听状态变化（播放 / 暂停 / 场景销毁），返回取消订阅函数。
+ * 菜单的开关文案是按「现在有没有在响」显示的，所以玩家在别处点一下解锁了音乐时，
+ * 文案也得跟着变 —— 否则会出现「明明在放，却写着 Music Off」。
+ */
+export function onMusicAudibleChange(listener: () => void): () => void {
+  audibleListeners.add(listener);
+  return () => { audibleListeners.delete(listener); };
+}
+
+function notifyAudibleChange(): void {
+  for (const listener of audibleListeners) listener();
+}
+
 const activeHtmlMusic = new Set<HTMLAudioElement>();
 const temporarilyPaused = new Set<HTMLAudioElement>();
 const sceneMusic = new WeakMap<Phaser.Scene, HTMLAudioElement>();
@@ -63,6 +94,9 @@ function playSceneMusic(scene: Phaser.Scene, key: string, url: string, volume: n
   };
   prompt.addEventListener('click', start);
   audio.addEventListener('playing', () => prompt.remove());
+  audio.addEventListener('playing', notifyAudibleChange);
+  audio.addEventListener('pause', notifyAudibleChange);
+  audio.addEventListener('ended', notifyAudibleChange);
   const cleanup = () => {
     if (!active) return;
     active = false;
@@ -76,6 +110,7 @@ function playSceneMusic(scene: Phaser.Scene, key: string, url: string, volume: n
     audio.pause();
     audio.remove(); audio.removeAttribute('src');
     audio.load();
+    notifyAudibleChange();
   };
   scene.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup);
   scene.events.once(Phaser.Scenes.Events.DESTROY, cleanup);
