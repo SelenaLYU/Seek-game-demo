@@ -127,7 +127,16 @@ export function mountMemoryIsland(options: Options): () => void {
   const KEY_SUN_AZIMUTH = new THREE.Vector3(-0.94, 0, -0.34).normalize();
   const UP_AXIS = new THREE.Vector3(0, 1, 0);
   scene.add(new THREE.HemisphereLight('#cfe0ff', '#41563f', 0.16));
-  const sun = new THREE.DirectionalLight('#ffe6c2', 2.8);
+  // 5.0, not 2.8: the key light has to beat the ambient to produce form, and the ambient
+  // is now carried by the HDR. Measured with tools/probe-lighting-ab.mjs (island region
+  // x330-970 / y300-780, whole-image blown% also 0): raising the key while lowering
+  // environmentIntensity is the only lever that moved contrast, and it is cheap.
+  //   env 0.45 / sun 2.8 (previous) -> contrast 0.671, dead 0.126%
+  //   env 0.30 / sun 5.5 (now)      -> contrast 0.730, dead 0.179%, blown 0%
+  // Raising the sun's *elevation* instead does not help (elev 45 / sun 2.8 / env 0.45
+  // measured contrast 0.660 - it only lifts the mean 0.386 -> 0.493), and exposure
+  // does not touch contrast at all, so those two are dead ends.
+  const sun = new THREE.DirectionalLight('#ffe6c2', 5.5);
   sun.position.set(-30, 42, 24);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -160,8 +169,11 @@ export function mountMemoryIsland(options: Options): () => void {
     scene.environment = environmentTarget.texture;
     // A sunny HDR carries enormous dynamic range, so at full strength its irradiance
     // dwarfs the DirectionalLight and flattens the scene back out. Keep it as the
-    // ambient/specular source and let the sun do the directional work.
-    scene.environmentIntensity = 0.45;
+    // ambient/specular source and let the sun do the directional work. 0.30 rather than
+    // 0.45: that ratio is the whole difference between form and flat wash (see the sun
+    // comment above for the A/B numbers); 0.18 keeps going up in contrast but triples the
+    // dead-black share (0.126% -> 0.356%), which is not worth it.
+    scene.environmentIntensity = 0.30;
     // This HDR's own sun sits at azimuth 54.5° / elevation 16.5°, i.e. near the horizon
     // and roughly behind the island's cameras, so form and cast shadows did not read.
     // Swing the whole environment - baked sun included - to KEY_SUN_AZIMUTH and put the
