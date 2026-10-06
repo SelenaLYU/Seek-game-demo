@@ -1,5 +1,6 @@
 import { installRoomEnglish } from './RoomEnglish';
 import Phaser from 'phaser';
+import { resolveImageUrl } from '../assets';
 import paperUrl from '../../assets/ui/room-letter-paper.jpg?url';
 
 export const ROOM_PAPER_KEY = 'room-letter-paper';
@@ -41,7 +42,8 @@ function preparePaper(scene: Phaser.Scene): void {
 }
 
 export function preloadRoomPaper(scene: Phaser.Scene): void {
-  if (!scene.textures.exists(ROOM_PAPER_KEY)) scene.load.image(ROOM_PAPER_KEY, paperUrl);
+  // 信纸同样走 WebP 管线：PNG/JPG 真源保留，运行时优先同名 webp（2.4MB → 0.2MB 量级）。
+  if (!scene.textures.exists(ROOM_PAPER_KEY)) scene.load.image(ROOM_PAPER_KEY, resolveImageUrl(paperUrl));
 }
 
 /** 只在两个记忆房间启用，离开时恢复其他场景。 */

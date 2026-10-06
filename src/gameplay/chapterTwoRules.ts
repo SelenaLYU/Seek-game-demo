@@ -1,5 +1,13 @@
 export const TEACHER = { x: 28, groundY: 260 };
-export const LIGHT_ORIGIN = { x: TEACHER.x + 18, y: TEACHER.groundY - 30 };
+/**
+ * 手电筒灯口（世界坐标）。
+ * 2026-10-05 按 `teacher.png` 实测标定：镜片（蓝色高光）在贴图 x 90–98 / y 83–90，
+ * 贴图 100×200 以 `origin(0.5,1)`、`displaySize 50×100` 放在 (28,260)，
+ * 换算过来就是灯口 ≈ (50, 204)。旧值 `(TEACHER.x + 18, groundY - 30) = (46, 230)`
+ * 落在她的腰上，光束像是从身侧凭空冒出来、而不是从手电筒出来（实机截图指出）。
+ * 命中判定 `isInBeam()` 与光锥绘制共用这一个点，所以「看到=被照到」仍然成立。
+ */
+export const LIGHT_ORIGIN = { x: 50, y: 204 };
 export const LIGHT_LENGTH = 4200;
 export const LIGHT_HALF_ANGLE = .065;
 export const DETECTION_MS = 950;

@@ -1,6 +1,7 @@
 import { preloadRoomPaper, enableRoomPaper, addRoomPaper, ROOM_INK_FONT } from '../ui/RoomPaperTheme';
 import Phaser from 'phaser';
 import { applyHDCamera } from '../systems/Resolution';
+import { resolveImageUrl } from '../assets';
 import { ChapterTwoRoomFlow } from '../gameplay/chapterTwoRoomFlow';
 import { FIXED, CLUES, CAP_POINTS, CAP_EDGES } from '../gameplay/bottleCapPuzzle';
 import { createRoomInventoryUI, type RoomInventoryUIHandle } from '../ui/RoomInventoryUI';
@@ -91,7 +92,7 @@ export default class ChapterTwoRoomScene extends Phaser.Scene {
 
   preload(): void { preloadRoomPaper(this);
     for (const [key, path] of Object.values(ART)) {
-      if (!this.textures.exists(key)) this.load.image(key, path);
+      if (!this.textures.exists(key)) this.load.image(key, resolveImageUrl(path));
     }
   }
 
