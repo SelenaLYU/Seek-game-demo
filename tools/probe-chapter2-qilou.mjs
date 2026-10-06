@@ -121,6 +121,10 @@ const layout = await page.evaluate(() => {
 });
 const byKey = key => layout.filter(o => o.key === key);
 
+/** 封路墙碰撞盒的上下端（世界 y）：加高目的是让底层无法向右跳过，视觉必须盖住这一段 */
+const COLLISION_WALL_TOP = 0;
+const COLLISION_WALL_BOTTOM = 734;
+
 /** A 段：与 geometry.json 逐项比对 */
 const layoutProblems = [];
 const near = (a, b) => Math.abs(a - b) < THRESHOLD.layoutTolPx;
@@ -137,12 +141,32 @@ for (const p of geo.platforms) check(`night-${p.id}`, { x: p.x, y: p.y, originX:
 for (const h of geo.hurdles) check(`night-${h.id}`, { x: h.x, y: h.y, originX: .5, originY: 1, displayWidth: h.width, displayHeight: h.height }, h.id);
 for (const c of geo.covers) check(`night-${c.id}`, { x: c.x, y: c.y, originX: 0, originY: 1, displayWidth: c.width, displayHeight: c.height }, c.id);
 for (const s of geo.swings) check(`night-${s.id}`, { x: s.x, y: s.y, originX: .5, originY: 0, displayWidth: s.width, displayHeight: s.height }, s.id);
-check('night-w01', { x: geo.wall.x, y: geo.wall.y, displayWidth: geo.wall.width, displayHeight: geo.wall.height }, '封路墙');
+// 封路墙：碰撞加高后视觉必须一起加高，否则是隐形墙。w01 是 38×286 的连续柱面切片，
+// 所以这里不再比单张几何，而是要求「平铺的贴图堆叠刚好盖住碰撞盒」：横对齐、纵向无缝、上下端对齐。
+const wallTiles = byKey('night-w01').sort((a, b) => a.y - b.y);
+if (!wallTiles.length) {
+  layoutProblems.push('night-w01 没有绘制');
+} else {
+  for (const tile of wallTiles) {
+    if (!near(tile.x, geo.wall.x) || !near(tile.displayWidth, geo.wall.width)) {
+      layoutProblems.push(`night-w01 平铺横向不齐：x=${tile.x} w=${tile.displayWidth}（应为 ${geo.wall.x}/${geo.wall.width}）`);
+    }
+  }
+  const top = wallTiles[0].y;
+  const bottom = Math.max(...wallTiles.map(t => t.y + t.displayHeight));
+  if (!near(top, COLLISION_WALL_TOP) || !near(bottom, COLLISION_WALL_BOTTOM)) {
+    layoutProblems.push(`night-w01 堆叠 ${top}~${bottom} 没有盖住碰撞盒 ${COLLISION_WALL_TOP}~${COLLISION_WALL_BOTTOM}`);
+  }
+  for (let i = 1; i < wallTiles.length; i++) {
+    const seam = wallTiles[i].y - (wallTiles[i - 1].y + wallTiles[i - 1].displayHeight);
+    if (Math.abs(seam) > THRESHOLD.layoutTolPx) layoutProblems.push(`night-w01 第 ${i} 道接缝错开 ${seam.toFixed(2)}px`);
+  }
+}
 check('night-teacher', { x: geo.teacher.x, y: geo.teacher.y, displayWidth: geo.teacher.width, displayHeight: geo.teacher.height }, '老师');
 check('night-ticket', { x: geo.ticket.x, y: geo.ticket.y, displayWidth: geo.ticket.width, displayHeight: geo.ticket.height }, '旧钞票');
 check('night-door', { x: geo.door.x, y: geo.door.y, displayWidth: geo.door.width, displayHeight: geo.door.height }, '门');
 raw.layout = { problems: layoutProblems, count: layout.length };
-record('A1. 35 张骑楼贴图的坐标/原点/显示尺寸', layoutProblems.length === 0,
+record('A1. 骑楼贴图的坐标/原点/显示尺寸（含封路墙平铺）', layoutProblems.length === 0,
   layoutProblems.length ? layoutProblems.slice(0, 6).join(' | ') : `${layout.length} 个 night- 对象全部与 geometry.json 一致`);
 
 /** B 段：遮挡是否真的能躲灯 */

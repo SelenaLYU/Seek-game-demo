@@ -165,7 +165,12 @@ test('二层封墙碰撞直达世界顶边，贴图仍按原始几何显示，�
   assert.equal(geo.wall.y, 448);
   assert.equal(geo.wall.height, 286);
   assert.match(scene, /this\.addWall\(1682, 0, 38, 734,/);
-  assert.match(scene, /'night-w01'[\s\S]*?setDisplaySize\(NIGHT\.wall\.width, NIGHT\.wall\.height\)/);
+  // 视觉必须一起加高：只加碰撞不加贴图就是隐形墙（玩家看到矮墙却过不去）。
+  // w01 是连续柱面切片，用平铺加高；拉伸会把石砌纹理抹成条纹。
+  assert.match(scene, /Math\.ceil\(height \/ NIGHT\.wall\.height\)/);
+  assert.match(scene, /'night-w01'[\s\S]{0,80}setDisplaySize\(width, tileHeight\)/);
+  assert.doesNotMatch(scene, /setDisplaySize\(NIGHT\.wall\.width, NIGHT\.wall\.height\)/,
+    '封路墙的视觉不能再退回固定高度（那会让碰撞高、贴图矮 → 隐形墙）');
   // 第一层地面440，跳跃峰高630²/(2*1100)≈180；墙的碰撞顶部0低于可达范围。
   assert.ok(440 - 630 ** 2 / (2 * 1100) > 0);
 });

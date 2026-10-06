@@ -243,9 +243,14 @@ export default class ChapterTwoChallengeScene extends Phaser.Scene {
   private addWall(x: number, y: number, width: number, height: number, _label: string): Phaser.GameObjects.Rectangle {
     const wall = this.add.rectangle(x, y, width, height, 0xffffff, 0).setOrigin(.5, 0);
     this.physics.add.existing(wall, true);
-    // 视觉仍按 night-w01 原始几何绘制；不可绕过的全高碰撞墙与贴图尺寸分离。
-    this.add.image(NIGHT.wall.x, NIGHT.wall.y, 'night-w01')
-      .setOrigin(.5, 0).setDisplaySize(NIGHT.wall.width, NIGHT.wall.height).setDepth(11);
+    // 视觉必须跟着碰撞一起加高：w01 是 38×286 的连续柱面切片（无顶无底），
+    // 所以纵向平铺够高即可；拉伸会把石砌纹理抹成条纹，只加碰撞不加贴图则变成隐形墙。
+    const tiles = Math.max(1, Math.ceil(height / NIGHT.wall.height));
+    const tileHeight = height / tiles;
+    for (let i = 0; i < tiles; i++) {
+      this.add.image(x, y + i * tileHeight, 'night-w01')
+        .setOrigin(.5, 0).setDisplaySize(width, tileHeight).setDepth(11);
+    }
     return wall;
   }
 

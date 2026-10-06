@@ -7,6 +7,10 @@ import {
   type ChapterOneRoomProgress,
 } from '../gameplay/ChapterOneRoomProgress';
 import menuBackgroundUrl from '../../assets/ui/menu-main-v1.png?url';
+import { resolveImageUrl } from '../assets';
+import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
+import { albumPhotoCount } from '../story/Album';
+import { completedChapters } from '../island/Progress';
 import { isBackgroundMusicEnabled, setBackgroundMusicEnabled } from '../MenuRoomMusic';
 
 /** 统一水彩风格游戏主菜单：包含新游戏、继续游戏(读档)、关卡选择、重置存档 */
@@ -14,13 +18,16 @@ export default class MenuScene extends Phaser.Scene {
   private savedProgress!: ChapterOneRoomProgress;
   private hasSave = false;
   private guide?: HTMLDivElement;
+  /** 相册是挂在 body 上的 DOM 覆盖层：菜单离开时必须自己收掉，否则会跟到下一个场景 */
+  private album?: AlbumHandle;
 
   constructor() {
     super('menu');
   }
 
   preload(): void {
-    if (!this.textures.exists('menu-main-v1')) this.load.image('menu-main-v1', menuBackgroundUrl);
+    // 封面 2.4MB 的 PNG 走 WebP 管线（真源保留，运行时优先同名 webp）。
+    if (!this.textures.exists('menu-main-v1')) this.load.image('menu-main-v1', resolveImageUrl(menuBackgroundUrl));
   }
 
   create(): void {
@@ -97,6 +104,8 @@ export default class MenuScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.guide?.remove();
       this.guide = undefined;
+      this.album?.close();
+      this.album = undefined;
     });
   }
 
@@ -160,8 +169,11 @@ export default class MenuScene extends Phaser.Scene {
     modal.add(mask);
 
     const panel = this.add.container(BASE_WIDTH / 2, BASE_HEIGHT / 2);
+    // 面板背景必须先入容器：晚入会盖在按钮/文字上面（0.98 不透明→标签几乎看不见，
+    // 只有溢出板外的部分能露出来）。原来背景是最后与标题、关闭按钮一起 add 的。
     const bg = this.add
-      .rectangle(0, 0, 520, 340, 0x142b23, 0.98)
+      // 700 宽：说明文字从 x=100 起最长约 200px，520 宽时会被截在板外。
+      .rectangle(0, 0, 700, 400, 0x142b23, 0.98)
       .setStrokeStyle(2, 0xe4d19e, 0.85);
 
     const title = this.add
@@ -171,6 +183,8 @@ export default class MenuScene extends Phaser.Scene {
         color: '#fff3d2',
       })
       .setOrigin(0.5);
+
+    panel.add([bg, title]);
 
     const stages: Array<{ label: string; sceneKey: string; desc: string }> = [
       { label: '序章 · 剧情占位', sceneKey: 'intro', desc: '病床蒙太奇与相册入口待制作' },
@@ -207,8 +221,39 @@ export default class MenuScene extends Phaser.Scene {
       panel.add([btn, note]);
     });
 
+    // 相册入口：封面只画了 4 个按钮、没有空位，所以挂在快速选择面板里。
+    // 它不属于「关卡」，单独一行 + 收集进度，未开局也能看（章节未完成时显示为待收录）。
+    const albumY = 104;
+    const albumBtn = this.add
+      .text(-120, albumY, '【 相册 · 回忆收藏 】', {
+        fontFamily: 'sans-serif',
+        fontSize: '14px',
+        color: '#fff5d5',
+        backgroundColor: '#3a4a3c',
+        padding: { x: 14, y: 7 },
+      })
+      .setOrigin(0, 0.5)
+      .setInteractive({ useHandCursor: true });
+    albumBtn.on('pointerover', () => albumBtn.setBackgroundColor('#4e6a52'));
+    albumBtn.on('pointerout', () => albumBtn.setBackgroundColor('#3a4a3c'));
+    albumBtn.on('pointerdown', () => {
+      if (this.album) return;
+      this.album = showAlbumUI({
+        completed: completedChapters(),
+        onClose: () => { this.album = undefined; },
+      });
+    });
+    const albumNote = this.add
+      .text(100, albumY, `已收录 ${albumPhotoCount(completedChapters())} / 6 张`, {
+        fontFamily: 'sans-serif',
+        fontSize: '11px',
+        color: '#a8c2b3',
+      })
+      .setOrigin(0, 0.5);
+    panel.add([albumBtn, albumNote]);
+
     const closeBtn = this.add
-      .text(0, 130, '关闭返回', {
+      .text(0, 160, '关闭返回', {
         fontFamily: 'sans-serif',
         fontSize: '13px',
         color: '#dedede',
@@ -221,7 +266,7 @@ export default class MenuScene extends Phaser.Scene {
     closeBtn.on('pointerout', () => closeBtn.setBackgroundColor('#2e3532'));
     closeBtn.on('pointerdown', () => modal.destroy());
 
-    panel.add([bg, title, closeBtn]);
+    panel.add(closeBtn);
     modal.add(panel);
   }
 }
