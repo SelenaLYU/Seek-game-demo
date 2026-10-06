@@ -114,16 +114,21 @@ RUNTIME_IMAGES: tuple[str, ...] = (
     "assets/level2/night-v1/s02.png",
     "assets/level2/night-v1/teacher.png",
     "assets/level2/night-v1/w01.png",
-    # —— 第二关素材审查面板（AssetReviewOverlay 按需逐张打开；不在玩家进场关键路径）——
-    # 这 7 张由审查面板展示，统一走 resolveImageUrl；母版仍保留 PNG 真源。
-    # 原列在清单里的 5 张白昼骑楼（图集 4 + 宽幅底图 1）已于 2026-10-05 废弃并移除。
-    "assets/scenes/chapter2/chapter2-convenience-store-stocked-night-v3-style-corrected-1920x1080.png",
+    # —— 第二关：小卖部记忆之房（ChapterTwoRoomScene 的 ART 表，8 张）——
+    # 这批是 2026-10-05 队友整合（PR #23）带进 main 时新入库的一版美术，
+    # 之前没登记，房间与主菜单会直接拉 9.0MB 的 PNG/JPG；登记后走同名 webp，落到 ~1MB。
+    # 母版（PNG/JPG）不删，仍是美术真源；审查面板与房间共用这一份真源。
+    "assets/scenes/chapter2/chapter2-store-background-v5.png",
+    "assets/level2/convenience-store/interactive/shelf-front-v1.jpg",
     "assets/level2/convenience-store/interactive/story-props-master-v1.png",
-    "assets/level2/convenience-store/interactive/puzzle-goods-caps-master-v1.png",
-    "assets/level2/convenience-store/interactive/collection-and-snack-master-v1.png",
-    "assets/level2/convenience-store/optional/growth-marks-observation-master-v3-wonky-chalk-handwriting.png",
-    "assets/level2/convenience-store/optional/optional-observation-props-master-v1.png",
+    "assets/level2/convenience-store/interactive/puzzle-goods-caps-master-v2.jpg",
+    "assets/level2/convenience-store/interactive/collection-and-snack-master-v3.png",
+    "assets/level2/convenience-store/optional/growth-marks-observation-master-v6.png",
+    "assets/level2/convenience-store/optional/optional-observation-props-master-v2.jpg",
     "assets/level2/convenience-store/optional/lilei-shelf-hide-states-white-shirt-floral-shorts-v1.png",
+    # —— 主菜单与记忆之房纸面（MenuScene 封面 2.5MB、RoomPaperTheme 信纸）——
+    "assets/ui/menu-main-v1.png",
+    "assets/ui/room-letter-paper.jpg",
 )
 
 # 有透明通道的道具统一用更高的 q（alpha 边缘更容易被抹），背景/实拍用低一档即可。

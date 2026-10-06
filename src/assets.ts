@@ -40,14 +40,16 @@ const WEBP_BY_STEM: ReadonlyMap<string, string> = (() => {
 const VITE_HASH_SUFFIX = /-[A-Za-z0-9_-]{8}$/;
 
 /**
- * 选一个真正能被浏览器加载的 URL；找不到对应 WebP 时原样返回（走 PNG）。
+ * 选一个真正能被浏览器加载的 URL；找不到对应 WebP 时原样返回（走原 PNG/JPG）。
+ * 扩展名清单必须覆盖 jpg/jpeg：只剥 png/webp 时，`.jpg` 源永远命中不了同名 webp，
+ * 会安静拉原图（2026-10-05 实测：小卖部货架/商品母版 + 信纸共 4 张 JPG 仍在拉原图）。
  * 传进来的既可以是字面 `assets/…png`（dev / 插件拷贝路径），也可以是 Vite 产物 URL
  * （生产 `?url` import，形如 `/assets/foo-BRuNTh02.png`），两种都能按 stem 命中。
  */
 export function resolveImageUrl(assetPath: string): string {
   const clean = assetPath.split('?')[0];
   const file = clean.slice(clean.lastIndexOf('/') + 1);
-  const stem = file.replace(/\.(png|webp)$/i, '');
+  const stem = file.replace(/\.(png|jpg|jpeg|webp)$/i, '');
   const direct = WEBP_BY_STEM.get(stem);
   if (direct) return direct;
   const unHashed = stem.replace(VITE_HASH_SUFFIX, '');

@@ -108,18 +108,28 @@ test('runtime images are all WebP-backed, so no scene can silently ship PNGs', (
 test('asset-review panel resolves every review image to WebP', () => {
   const overlay = readFileSync(at('src/ui/AssetReviewOverlay.ts'), 'utf8');
   const room = readFileSync(at('src/scenes/ChapterTwoRoomScene.ts'), 'utf8');
-  const reviewPaths = [
-    ...room.matchAll(/path:\s*'(assets\/[^']+\.(?:png|jpg|jpeg))'/g),
-  ].map(m => m[1]);
-  const storeBg = room.match(/const STORE_BG_PATH = '(assets\/[^']+\.(?:png|jpg|jpeg))'/)?.[1];
-  assert.ok(storeBg, 'AssetReviewOverlay 的小卖部背景 path 应该能解析出来');
-  reviewPaths.push(storeBg);
-  // 2026-10-05：白昼骑楼 5 张（图集 4 + 宽幅底图 1）废弃移除，21 → 16。
-  assert.equal(reviewPaths.length, 16, `素材审查面板应列出 16 个资产，实际 ${reviewPaths.length}`);
+  // 2026-10-05 队友整合（PR #23）把小卖部房间换成 ART 表驱动：图片路径集中在 ART 里，
+  // 审查面板由 `Object.values(ART)` 生成。所以这里直接读 ART 块内的字面路径。
+  const artStart = room.indexOf('const ART = {');
+  assert.ok(artStart > 0, 'ChapterTwoRoomScene 里找不到 ART 表');
+  const artBlock = room.slice(artStart, room.indexOf('} as const;', artStart));
+  const reviewPaths = [...artBlock.matchAll(/'(assets\/[^']+\.(?:png|jpg|jpeg))'/g)].map(m => m[1]);
+  assert.equal(reviewPaths.length, 8, `小卖部（=审查面板）应列出 8 个资产，实际 ${reviewPaths.length}`);
+  assert.match(room, /TEAMMATE_ASSETS: readonly AssetReviewEntry\[\] = Object\.values\(ART\)/,
+    '审查面板的条目必须仍由 ART 表派生，否则面板会与实际加载的美术脱节');
   const missing = reviewPaths.filter(p => !existsSync(at(webpOf(p))));
   assert.deepEqual(missing, [], `审查面板图缺 WebP：\n  ${missing.join('\n  ')}`);
   assert.match(overlay, /image\.src\s*=\s*resolveImageUrl\(entry\.path\)/);
-  assert.match(room, /load\.image\(STORE_BG_KEY,\s*resolveImageUrl\(STORE_BG_PATH\)\)/);
+  assert.match(room, /load\.image\(key,\s*resolveImageUrl\(path\)\)/,
+    'ART 里的图必须经 resolveImageUrl 加载，否则运行时回落 PNG/JPG');
+});
+
+test('resolveImageUrl 能把 JPG 源也解析到同名 WebP', () => {
+  const assets = readFileSync(at('src/assets.ts'), 'utf8');
+  // 2026-10-05：只剥 png/webp 时，`.jpg` 源（小卖部货架/商品母版、记忆之房信纸）永远命中不了
+  // 同名 webp，会安静拉原图。这条锁住扩展名清单，别再退回。
+  assert.match(assets, /replace\(\/\.\(png|jpg|jpeg|webp\)\$\/i, ''\)/,
+    'resolveImageUrl 的扩展名清单必须覆盖 jpg/jpeg');
 });
 
 test('no WebP is older than its PNG source', () => {
