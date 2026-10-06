@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { fitCanvasDomOverlay } from './CanvasDomLayout';
-import { RADIO_PREVIEW_TEXT } from '../story/ChapterOneStory';
 import { resolveImageUrl } from '../assets';
 import radioUrl from '../../assets/environment/interactive-vintage-radio-384x256.png?url';
 
@@ -23,11 +22,11 @@ const MESSAGES = [
   '轻轻转动旋钮。',
   '……沙沙的杂音。',
   '……呼呼的风声。',
-  RADIO_PREVIEW_TEXT,
-  '音乐频道占位，正式音频待确认。',
+  '虫儿飞的旋律从录音机里传出来。',
 ];
 
-const CHANNEL_LABELS = ['', '杂音', '风声', '录音占位', '音乐占位'];
+const CHANNEL_LABELS = ['', '杂音', '风声', '虫儿飞'];
+const CHANNEL_COUNT = 3;
 
 function installStyle(): void {
   if (document.getElementById(STYLE_ID)) return;
@@ -106,7 +105,7 @@ function installStyle(): void {
   document.head.append(style);
 }
 
-/** Close-up radio with the real artwork and a four-position brass tuning knob. */
+/** Close-up radio with the real artwork and a three-position brass tuning knob. */
 export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptions): RadioPuzzleHandle {
   installStyle();
   const root = document.createElement('div');
@@ -124,8 +123,8 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
     <section class="recall-radio__panel">
       <h2 class="recall-radio__title">卧室里的录音机</h2>
       <p class="recall-radio__lead">轻轻转动旋钮，听听记忆里留下的声音。</p>
-      <div class="recall-radio__station"><span>频道</span><strong class="recall-radio__number">—</strong><span>/ 04</span><span class="recall-radio__station-name"></span></div>
-      <div class="recall-radio__ticks" aria-hidden="true"><i class="recall-radio__tick"></i><i class="recall-radio__tick"></i><i class="recall-radio__tick"></i><i class="recall-radio__tick"></i></div>
+      <div class="recall-radio__station"><span>频道</span><strong class="recall-radio__number">—</strong><span>/ 03</span><span class="recall-radio__station-name"></span></div>
+      <div class="recall-radio__ticks" aria-hidden="true"><i class="recall-radio__tick"></i><i class="recall-radio__tick"></i><i class="recall-radio__tick"></i></div>
       <p class="recall-radio__message" aria-live="polite">${MESSAGES[0]}</p>
       <p class="recall-radio__help">点击旋钮换台，也可以按住旋钮转动。</p>
       <button class="recall-radio__close" type="button" aria-label="关闭">×</button>
@@ -164,9 +163,9 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
       tick.classList.toggle('recall-radio__tick--active', index + 1 === channel);
     });
     options.onChannelChange(channel);
-    if (!allChannelsReported && visitedChannels.size === 4) {
+    if (!allChannelsReported && visitedChannels.size === CHANNEL_COUNT) {
       allChannelsReported = true;
-      message.textContent = '四个频道都听过了。录音机里弹出了一块照片拼图。';
+      message.textContent = '三个频道都听过了。录音机里弹出了一块照片拼图。';
       options.onAllChannelsVisited?.();
     }
   };
@@ -199,18 +198,18 @@ export function showRadioPuzzleUI(scene: Phaser.Scene, options: RadioPuzzleOptio
     if (delta > Math.PI) delta -= Math.PI * 2;
     if (delta < -Math.PI) delta += Math.PI * 2;
     const steps = Math.round(delta / (Math.PI / 2));
-    setChannel(((startChannel - 1 + steps + 8) % 4) + 1);
+    setChannel(((startChannel - 1 + steps + CHANNEL_COUNT * 2) % CHANNEL_COUNT) + 1);
   });
   knob.addEventListener('pointerup', event => {
-    if (!dragging) setChannel((channel % 4) + 1);
+    if (!dragging) setChannel((channel % CHANNEL_COUNT) + 1);
     if (knob.hasPointerCapture(event.pointerId)) knob.releasePointerCapture(event.pointerId);
     dragging = false;
   });
   knob.addEventListener('pointercancel', () => { dragging = false; });
   root.addEventListener('keydown', event => {
     if (event.key === 'Escape') close();
-    else if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') setChannel((channel % 4) + 1);
-    else if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') setChannel((((channel || 1) + 2) % 4) + 1);
+    else if (event.key === 'ArrowRight' || event.key.toLowerCase() === 'd') setChannel((channel % CHANNEL_COUNT) + 1);
+    else if (event.key === 'ArrowLeft' || event.key.toLowerCase() === 'a') setChannel((((channel || 1) + CHANNEL_COUNT - 2) % CHANNEL_COUNT) + 1);
     else return;
     event.preventDefault();
     event.stopPropagation();

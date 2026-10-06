@@ -10,8 +10,7 @@ import ChapterTwoChallengeScene from './scenes/ChapterTwoChallengeScene';
 import ChapterTwoRoomScene from './scenes/ChapterTwoRoomScene';
 import ChapterTwoMemoryScene from './scenes/ChapterTwoMemoryScene';
 import ChapterThreePreviewScene from './scenes/ChapterThreePreviewScene';
-import { playMenuRoomMusic } from './MenuRoomMusic';
-import { createMusicToggleUI } from './ui/MusicToggleUI';
+import { playMainTheme, playQilouRunMusic, playRoomPuzzleMusic } from './MenuRoomMusic';
 import { resolveImageUrl } from './assets';
 import level1BackgroundUrl from '../scene/level1-watercolor-game-background-v1-1900x540.png?url';
 import roomBackgroundUrl from '../scene/level1-memory-room-night-empty-v2-1920x1080.png?url';
@@ -40,9 +39,18 @@ class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    const menu = this.scene.get('menu');
+    menu.events.off(Phaser.Scenes.Events.CREATE, playMainTheme);
+    menu.events.on(Phaser.Scenes.Events.CREATE, playMainTheme);
     const room = this.scene.get('room');
-    room.events.off(Phaser.Scenes.Events.CREATE, playMenuRoomMusic);
-    room.events.on(Phaser.Scenes.Events.CREATE, playMenuRoomMusic);
+    room.events.off(Phaser.Scenes.Events.CREATE, playRoomPuzzleMusic);
+    room.events.on(Phaser.Scenes.Events.CREATE, playRoomPuzzleMusic);
+    const island = this.scene.get('island');
+    island.events.off(Phaser.Scenes.Events.CREATE, playMainTheme);
+    island.events.on(Phaser.Scenes.Events.CREATE, playMainTheme);
+    const chapterTwo = this.scene.get('chapter2');
+    chapterTwo.events.off(Phaser.Scenes.Events.CREATE, playQilouRunMusic);
+    chapterTwo.events.on(Phaser.Scenes.Events.CREATE, playQilouRunMusic);
     // 调试入口：?scene=room / ?scene=forest 直接进对应场景，跳过首页/开场/加载占位链
     const targetScene = new URLSearchParams(window.location.search).get('scene');
     const debugScenes = new Set(['room', 'forest', 'ending', 'island', 'chapter2', 'chapter2-room', 'chapter2-memory', 'chapter3-preview']);
@@ -75,8 +83,6 @@ const game = new Phaser.Game({
     ChapterTwoMemoryScene, ChapterThreePreviewScene, EndingScene,
   ],
 });
-
-createMusicToggleUI(game);
 
 /**
  * 挂到 window 上：验收工具（tools/test-e2e.mjs、tools/probe-load-perf.mjs）与线上问题排查
