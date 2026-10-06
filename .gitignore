@@ -15,3 +15,7 @@ screenshots/
 # 记忆之岛六栋建筑三视图与提示词：Gloria 明确「本地交付资料，暂不上传 GitHub」，
 # 仅供 Tripo 建模与 3D 接入时本地查阅。
 art/island/
+
+# 小咪交付的记忆之岛资产（六栋建筑三视图 + 全景概念图）：其 README 写明
+# 「本文件夹为本地交付资料，暂不上传 GitHub」，是交付方的明确决定，不入库。
+art/island-assets-by-xiaomi/

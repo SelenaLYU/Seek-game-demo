@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="2400" viewBox="0 0 2400 2400">
+<defs>
+ <clipPath id="mapClip"><rect x="90" y="230" width="1790" height="1790" rx="26"/></clipPath>
+ <filter id="cardShadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#223d46" flood-opacity=".27"/></filter>
+ <filter id="glow"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <style>text{font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif}.label{font-size:25px;font-weight:700;fill:#273e37}.small{font-size:19px;fill:#516960}.tiny{font-size:17px;fill:#516960}</style>
+</defs>
+<rect width="2400" height="2400" fill="#f2f0e6"/>
+<text x="110" y="100" font-size="27" letter-spacing="5" fill="#698179">SEEK · MEMORY ISLAND / WALKABILITY CONCEPT</text>
+<text x="110" y="177" font-size="58" font-weight="750" fill="#233f3b">记忆之岛｜俯视通行规划</text>
+<text x="110" y="218" font-size="23" fill="#58716b">参考概念图整理 · 俯视空间关系、入口接近区与步行主支路</text>
+
+<g clip-path="url(#mapClip)">
+ <image href="memory-island-concept-base-v01.png" x="90" y="230" width="1790" height="1790" preserveAspectRatio="xMidYMid slice"/>
+ <!-- suggested walk graph follows the concept's visible stone paths -->
+ <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+  <path d="M995 995 C900 1005 820 1080 730 1190 C655 1235 590 1315 563 1370" stroke="#fff7df" stroke-width="19" opacity=".9"/>
+  <path d="M995 995 C900 1005 820 1080 730 1190 C655 1235 590 1315 563 1370" stroke="#dcae5e" stroke-width="7" stroke-dasharray="2 17"/>
+  <path d="M978 975 C865 875 715 790 575 850" stroke="#fff7df" stroke-width="17" opacity=".9"/>
+  <path d="M978 975 C865 875 715 790 575 850" stroke="#dcae5e" stroke-width="6" stroke-dasharray="2 15"/>
+  <path d="M1015 960 C1010 860 1000 740 980 650" stroke="#fff7df" stroke-width="17" opacity=".9"/>
+  <path d="M1015 960 C1010 860 1000 740 980 650" stroke="#dcae5e" stroke-width="6" stroke-dasharray="2 15"/>
+  <path d="M1035 975 C1170 850 1300 660 1440 541" stroke="#fff7df" stroke-width="17" opacity=".9"/>
+  <path d="M1035 975 C1170 850 1300 660 1440 541" stroke="#dcae5e" stroke-width="6" stroke-dasharray="2 15"/>
+  <path d="M1050 1000 C1170 1010 1300 1060 1399 1090" stroke="#fff7df" stroke-width="17" opacity=".9"/>
+  <path d="M1050 1000 C1170 1010 1300 1060 1399 1090" stroke="#dcae5e" stroke-width="6" stroke-dasharray="2 15"/>
+  <path d="M1015 1025 C1100 1140 1210 1310 1330 1440" stroke="#fff7df" stroke-width="17" opacity=".9"/>
+  <path d="M1015 1025 C1100 1140 1210 1310 1330 1440" stroke="#dcae5e" stroke-width="6" stroke-dasharray="2 15"/>
+ </g>
+
+ <!-- plaza -->
+ <circle cx="1000" cy="995" r="82" fill="#fff5d9" fill-opacity=".38" stroke="#fff9e9" stroke-width="7" stroke-dasharray="9 9"/>
+ <circle cx="1000" cy="995" r="37" fill="#f6df9c" stroke="#8f754c" stroke-width="4" filter="url(#cardShadow)"/>
+ <text x="1000" y="1003" text-anchor="middle" font-size="20" font-weight="700" fill="#59492f">广场</text>
+
+ <!-- shell house icon -->
+ <g transform="translate(563 1290)" filter="url(#cardShadow)">
+  <circle r="77" fill="#fff2c8" fill-opacity=".46" stroke="#fff9eb" stroke-width="5" stroke-dasharray="8 7"/>
+  <path d="M-50 17 C-57 -17 -37 -47 -4 -55 C30 -62 55 -36 53 -3 C51 25 30 45 0 47 C-28 46 -46 36 -50 17Z" fill="#f3d6d6" stroke="#95675e" stroke-width="4"/>
+  <path d="M-39 15 Q-28 -20 -4 -49 M-22 37 Q-20 -9 -4 -49 M0 44V-51 M22 37 Q17 -12 -4 -49 M40 15 Q28 -22 -4 -49" fill="none" stroke="#d99ca3" stroke-width="4"/>
+  <circle cx="0" cy="28" r="7" fill="#754a37"/>
+ </g>
+ <g transform="translate(563 1185)"><rect x="-100" y="-22" width="200" height="44" rx="20" fill="#fffaf0" fill-opacity=".94"/><text class="label" text-anchor="middle" y="8">01 贝壳屋</text></g>
+ <circle cx="563" cy="1370" r="11" fill="#a3493c" stroke="#fff" stroke-width="4"/>
+
+ <!-- snack shop -->
+ <g transform="translate(575 795)" filter="url(#cardShadow)">
+  <circle r="72" fill="#fff2c8" fill-opacity=".42" stroke="#fff9eb" stroke-width="5" stroke-dasharray="8 7"/>
+  <path d="M-42 -30 L42 -30 L35 39 L-35 39Z" fill="#b7302c" stroke="#702b27" stroke-width="4"/>
+  <path d="M-37 -23 H37 M-31 31 H31" stroke="#edb644" stroke-width="5"/>
+  <path d="M-17 -31 L-18 -50 M0 -31 L2 -55 M17 -31 L20 -49" stroke="#ea852b" stroke-width="9" stroke-linecap="round"/>
+  <path d="M-18 -1 Q0 -19 18 -1 Q0 15 -18 -1Z" fill="#f3d897"/>
+  <circle cx="0" cy="28" r="6" fill="#754a37"/>
+ </g>
+ <g transform="translate(575 877)"><rect x="-133" y="-22" width="266" height="44" rx="20" fill="#fffaf0" fill-opacity=".94"/><text class="label" text-anchor="middle" y="8">02 辣条包装屋</text></g>
+ <circle cx="575" cy="850" r="11" fill="#a3493c" stroke="#fff" stroke-width="4"/>
+
+ <!-- studio -->
+ <g transform="translate(980 630)" filter="url(#cardShadow)">
+  <circle r="69" fill="#fff2c8" fill-opacity=".4" stroke="#fff9eb" stroke-width="5" stroke-dasharray="8 7"/>
+  <path d="M-48 -16 Q-33 -47 0 -47 Q33 -47 48 -16 V34 H-48Z" fill="#70685c" stroke="#473f38" stroke-width="4"/>
+  <path d="M-39 -11 Q0 6 39 -11 M-38 2 Q0 19 38 2 M-34 16 Q0 31 34 16" fill="none" stroke="#c4ae89" stroke-width="4"/>
+  <circle cx="0" cy="27" r="7" fill="#f1d9a9"/>
+  <circle cx="0" cy="-34" r="8" fill="#e9d7c3"/>
+ </g>
+ <g transform="translate(980 710)"><rect x="-141" y="-22" width="282" height="44" rx="20" fill="#fffaf0" fill-opacity=".94"/><text class="label" text-anchor="middle" y="8">03 画室狗窝屋</text></g>
+ <circle cx="980" cy="689" r="11" fill="#a3493c" stroke="#fff" stroke-width="4"/>
+
+ <!-- album -->
+ <g transform="translate(1440 495)" filter="url(#cardShadow)">
+  <circle r="72" fill="#fff2c8" fill-opacity=".4" stroke="#fff9eb" stroke-width="5" stroke-dasharray="8 7"/>
+  <path d="M-48 -37 Q-21 -45 0 -29 Q21 -45 48 -37 V37 Q21 29 0 43 Q-21 29 -48 37Z" fill="#304b6e" stroke="#1c304b" stroke-width="4"/>
+  <path d="M0 -29 V41 M-39 -21 Q-20 -26 -7 -16 M-39 -4 Q-20 -9 -7 1 M7 -16 Q20 -26 39 -21 M7 1 Q20 -9 39 -4" fill="none" stroke="#eadcb4" stroke-width="4"/>
+ </g>
+ <g transform="translate(1440 579)"><rect x="-126" y="-22" width="252" height="44" rx="20" fill="#fffaf0" fill-opacity=".94"/><text class="label" text-anchor="middle" y="8">06 相册书屋</text></g>
+ <circle cx="1440" cy="541" r="11" fill="#a3493c" stroke="#fff" stroke-width="4"/>
+
+ <!-- pink treehouse -->
+ <g transform="translate(1440 1050)" filter="url(#cardShadow)">
+  <circle r="93" fill="#fff2c8" fill-opacity=".34" stroke="#fff9eb" stroke-width="5" stroke-dasharray="8 7"/>
+  <g fill="#f1b5cd" stroke="#a86182" stroke-width="3"><circle cx="-43" cy="-25" r="27"/><circle cx="0" cy="-43" r="29"/><circle cx="43" cy="-22" r="27"/><circle cx="-43" cy="27" r="27"/><circle cx="0" cy="39" r="29"/><circle cx="44" cy="25" r="27"/></g>
+  <rect x="-28" y="-27" width="56" height="56" rx="9" fill="#8c624a" stroke="#583e31" stroke-width="4"/>
+  <path d="M0 29V56" stroke="#75513a" stroke-width="8"/>
+ </g>
+ <g transform="translate(1440 1156)"><rect x="-116" y="-22" width="232" height="44" rx="20" fill="#fffaf0" fill-opacity=".94"/><text class="label" text-anchor="middle" y="8">04 粉紫树屋</text></g>
+ <circle cx="1399" cy="1090" r="11" fill="#a3493c" stroke="#fff" stroke-width="4"/>
+
+ <!-- tent -->
+ <g transform="translate(1330 1390)" filter="url(#cardShadow)">
+  <circle r="78" fill="#fff2c8" fill-opacity=".38" stroke="#fff9eb" stroke-width="5" stroke-dasharray="8 7"/>
+  <path d="M-51 42 V-13 L0 -53 L51 -13 V42Z" fill="#e9ddc2" stroke="#78644e" stroke-width="4"/>
+  <path d="M0 -52 V42 M-39 4 H-5 M5 4 H39" stroke="#b29469" stroke-width="4"/>
+  <circle cx="0" cy="35" r="7" fill="#754a37"/>
+ </g>
+ <g transform="translate(1330 1480)"><rect x="-128" y="-22" width="256" height="44" rx="20" fill="#fffaf0" fill-opacity=".94"/><text class="label" text-anchor="middle" y="8">05 海边露营帐篷</text></g>
+ <circle cx="1330" cy="1440" r="11" fill="#a3493c" stroke="#fff" stroke-width="4"/>
+
+ <!-- entry dock, paths and unobstructed approaches -->
+ <g transform="translate(365 1645) rotate(-25)" filter="url(#cardShadow)"><rect x="-43" y="-50" width="86" height="170" rx="8" fill="#a9815e" stroke="#5f4e40" stroke-width="5"/><path d="M-37 -20H37 M-37 12H37 M-37 44H37 M-37 76H37" stroke="#dfbf92" stroke-width="6"/></g>
+ <g transform="translate(410 1605)"><rect x="-76" y="-20" width="152" height="40" rx="18" fill="#fffaf0" fill-opacity=".9"/><text text-anchor="middle" y="7" font-size="20" font-weight="700" fill="#554b3d">登岛码头</text></g>
+</g>
+<rect x="90" y="230" width="1790" height="1790" rx="26" fill="none" stroke="#fdf9e9" stroke-width="7"/>
+
+<!-- explanatory key -->
+<g>
+ <rect x="1920" y="260" width="370" height="1658" rx="26" fill="#e5e9dc" stroke="#bbcbb9" stroke-width="3"/>
+ <text x="1960" y="320" class="label">图例 / 规划说明</text>
+ <path d="M1965 372H2022" stroke="#fff8df" stroke-width="17" stroke-linecap="round"/><path d="M1965 372H2022" stroke="#dcae5e" stroke-width="6" stroke-dasharray="2 14" stroke-linecap="round"/><text x="2040" y="380" class="small">建议步行主支路</text>
+ <circle cx="1993" cy="432" r="21" fill="#fff2c8" fill-opacity=".42" stroke="#fff9eb" stroke-width="4" stroke-dasharray="6 4"/><text x="2040" y="440" class="small">门前接近空间（示意）</text>
+ <circle cx="1993" cy="492" r="9" fill="#a3493c" stroke="#fff" stroke-width="3"/><text x="2040" y="500" class="small">门前触发点</text>
+ <rect x="1969" y="530" width="48" height="28" rx="7" fill="#c58c70" stroke="#765343" stroke-width="3"/><text x="2040" y="553" class="small">建筑图标 / 造型占位</text>
+ <path d="M1960 590H2250" stroke="#bdcbbb" stroke-width="2"/>
+ <text x="1960" y="635" class="label">入口相对位置</text>
+ <text x="1960" y="682" class="small">01 贝壳屋 · 左下沿岸</text>
+ <text x="1960" y="724" class="small">02 辣条袋屋 · 左上</text>
+ <text x="1960" y="766" class="small">03 画室狗窝屋 · 上中</text>
+ <text x="1960" y="808" class="small">06 相册书屋 · 右上</text>
+ <text x="1960" y="850" class="small">04 粉紫树屋 · 右侧花林</text>
+ <text x="1960" y="892" class="small">05 海边帐篷 · 右下沙地</text>
+ <path d="M1960 928H2250" stroke="#bdcbbb" stroke-width="2"/>
+ <text x="1960" y="974" class="label">当前程序坐标 (x,z)</text>
+ <text x="1960" y="1018" class="tiny">01 (-15, 19)　02 (-15, -10)</text>
+ <text x="1960" y="1054" class="tiny">03 (-1, -5)　 04 (14, 0)</text>
+ <text x="1960" y="1090" class="tiny">05 (8, 19)　　06 (14, -19)</text>
+ <text x="1960" y="1140" class="tiny">参考概念图旋转视角：右为 +X、</text>
+ <text x="1960" y="1172" class="tiny">下为 +Z；图上方为 -Z。</text>
+ <path d="M1960 1204H2250" stroke="#bdcbbb" stroke-width="2"/>
+ <text x="1960" y="1250" class="label">通行验收关注</text>
+ <text x="1960" y="1294" class="tiny">保持中央广场到六处入口的</text>
+ <text x="1960" y="1326" class="tiny">接近空间连续、转弯处留宽。</text>
+ <text x="1960" y="1370" class="tiny">植被、岩石与码头立柱按底座</text>
+ <text x="1960" y="1402" class="tiny">占地确认碰撞，树冠不挡路。</text>
+ <text x="1960" y="1446" class="tiny">溪流上的木桥须实走核对；当前</text>
+ <text x="1960" y="1478" class="tiny">程序的溪流禁行带可能挡住桥面。</text>
+ <path d="M1960 1510H2250" stroke="#bdcbbb" stroke-width="2"/>
+ <text x="1960" y="1556" class="label">图纸用途</text>
+ <text x="1960" y="1600" class="tiny">概念空间规划与视觉占位参考。</text>
+ <text x="1960" y="1632" class="tiny">底图参考用户提供的概念图生成；</text>
+ <text x="1960" y="1664" class="tiny">路线按概念步道描绘，非导航网格。</text>
+ <text x="1960" y="1708" class="tiny">程序坐标/碰撞按最终模型复核后</text>
+ <text x="1960" y="1740" class="tiny">再落实，不在此图上改动现有关卡。</text>
+ <text x="1960" y="1825" class="tiny">概念底图与图层：同目录 SVG/PNG</text>
+</g>
+<text x="110" y="2080" class="small">规划图基于概念图呈现小岛关系；底图是绘制参考，所有交互、碰撞及实际通行仍须与当前 Three.js 场景复核。</text>
+<text x="110" y="2118" class="small">源码：src/island/MemoryIsland.ts · 当前坐标列于右侧；路径中心线按概念步道示意，不改变运行时道路。</text>
+</svg>
