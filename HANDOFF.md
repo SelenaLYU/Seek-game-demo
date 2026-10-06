@@ -190,3 +190,59 @@ npm run build               # tsc --noEmit + vite build
 - **待确认（光照素材授权）**：`public/env/sky-sunny.hdr` 已随光照改动一起入库，但**来源与授权没有记录**
   （文件内只剩 `#?RADIANCE` 头，无作者/软件注释；同目录 `/tmp/keep-1k.hdr` 是它的 1024×512 上游版本，
   也无线索）。观感像 Poly Haven 一类 CC0 户外 HDR，但无证据——需要 Simon 确认来源，或换成有明确出处的素材。
+
+## 10. 三维（记忆之岛）问题状态（2026-10-06）
+
+分三栏写清楚：**已修**才敢写「完成」，其余一律标注未解/未验证。上一轮把四个方向
+（地形破面 / 光照 HDR / 人物模型 / 体验性能）拆成四个并行 agent 跑，结果是
+**3 个死在 provider 503（`no_healthy_account`）、1 个被中止**，所以这一批基本没产出结论，
+只有地形那条摸到了根因并留下修复。这也解释了「为什么看起来没人解决」：不是没人查，
+是整批没跑完，而且唯一跑出来的改动当时没提交。
+
+### 10.1 已修（有实测数字）
+
+- **地形法线折痕（本轮修，提交 `696bf08`）**：地形每圈多一列重复顶点，几何上重合但把
+  邻接面劈成两半，两半法线不同 → 从**岛心到岸线一条笔直的光照折痕**，并产生零面积三角形。
+  改成真正闭合（索引收尾 `% terrainSegments` 回绕）。实测 `node tools/analyze-terrain-seam.mjs`：
+  零面积三角形 0 / 朝下 0；**闭合处法线夹角中位 1.472°、max 13.08°，普通相邻中位 1.254°、
+  max 19.41°** → 闭合处与普通相邻同量级，折痕消除。`npm test` 67/67、`npm run build` 通过。
+- **栈桥与岸线衔接**（提交 `c3944a2`，见 §9）。
+- **树/道具回避建筑 footprint、散布离岸距离**（随散布系统接入解决，见 §9）。
+
+### 10.2 未解（decisions 现场清单里剩下的）
+
+- **崖壁「塑料底座墙」+ 裙边接缝**。崖壁是 192 段按角度分段的直筒网格，颜色按
+  `segment % 4` 循环上色（`MemoryIsland.ts` 约 385-397 行），没有凹凸；隐藏上壳与裙边的接缝
+  修过一次（约 311 行注释），但整条边仍然读作「一圈塑料底座」。decisions 现场清单里
+  唯一完全没动过的几何项。
+- **建筑底座陷沙/悬空**。底座高度取 footprint 九采样点的**最高**地形（约 805-810 行
+  `baseGround = Math.max(...)`），坡地上必然一边埋掉模型自带的石基/灌木、另一边留缝。
+  修法方向明确（改用「footprint 内最低点 + 下沉裙边」或给每栋手工锚点），本轮没做。
+- **光照仍然偏平**。已量清**不是曝光问题**：`tools/probe-lighting-ab.mjs` 实测 exposure
+  1.15→1.50 只把均值从 0.360 抬到 0.411，**对比度 0.65/0.69 基本不变**；瓶颈是 HDR ambient
+  压过唯一那盏主光。被中止的 agent 最后一句正是「raise the key light so it actually dominates
+  the HDR ambient」，**该改动未落地**，当前 `environmentIntensity = 0.45` / 主光 2.8 仍是
+  §9 与 `decisions/2026-10-05-island-hdr-lighting.md` 里的原值。改这个要重跑 A/B 截图对照，
+  别只看单张截图就调。
+
+### 10.3 未验证（有可疑点，没有任何证据）
+
+- **角色贴地校正的漂移风险**。`MemoryIsland.ts` 约 1343-1347 行：每帧按 `feetError` 做一次
+  clamp 到 ±0.08 的**绝对**校正，并写成 `model.position.y = groundOffset + correction`；
+  同时 `if (Math.abs(feetError) > 0.08) player.position.y += feetError - correction`。
+  注释声称「Do not integrate corrections frame-to-frame，否则累积漂移」，但这个不变量
+  （缓坡、跳跃落点、四套动画 clip 切换瞬间是否真的不抖/不漂）**没人验过**。
+- **角色缩放 2.05 与灰化材质注入**（`onBeforeCompile` 注入 `uIslandGray`）是否让比例失真
+  或材质异常，同样未验证。
+- **性能**：`tick` 里角色贴地校正每帧 `updateMatrixWorld(true)` + `Box3.setFromObject`
+  （CPU 密集）、遮挡回退 raycast 每帧一次、散布材质 `material.clone` —— 都只是被列为
+  「重点怀疑」，**没有基线数字**（本机是软件渲染，绝对帧率无意义，要先有相对基线）。
+- **视觉确认缺失**：本轮所有 3D 结论都来自代码与数值探针，**没有做过人眼/截图确认**
+  （§9 提到的 `screenshots/` 对照图按 `.gitignore` 不入库）。
+
+### 10.4 未入库（待 Simon 处置）
+
+`assets/character/tripo-out/`（83MB）、`assets/characters/lilei/tripo-out/*/model.glb`（6×约 12MB）、
+`assets/character/han-meimei-*.png`、`public/island-models-candidates/`、`art/memory-island-*.{png}`、
+以及 `tools/analyze-*.mjs` 里除本轮入库 5 个之外的其余排查脚本。体积大或归属并发的第二/三关会话，
+一律没进本次提交。
