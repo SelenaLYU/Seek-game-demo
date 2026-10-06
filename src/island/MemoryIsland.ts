@@ -323,8 +323,12 @@ export function mountMemoryIsland(options: Options): () => void {
   // The hidden upper shell must meet the cliff skirt at both ends. Its old
   // top radius extended 1.4 units past the skirt and left exposed gaps along
   // the island edge; these radii match the skirt's inner/outer seam.
-  const shore = mesh(islandGeometry(27, 27.5, 1.8), mat('#ddcda8'));
-  shore.position.y = -1;
+  // 岩脚浅滩：原先这里是 (27, 27.5, 1.8) 贴在 y=-1，等于在水线上挂了一圈 1.8 高的
+  // 竖直浅色带，半径与崖壁几乎重合——贴地视角下「浅色带 + 灰墙」一起读成塑料底座盘。
+  // 现在按锥台压到水下（内径 coastline+0.4 / 外径 coastline+2.6），只当一处不入眼的岩脚；
+  // 水面不透明，正常机位看不到它，留着只是不想在崖壁脚下露出空隙。
+  const shore = mesh(islandGeometry(27.4, 29.6, 0.3), mat('#cfc3a4'));
+  shore.position.y = -2;
   const meadowCanvas = document.createElement('canvas'); meadowCanvas.width = 512; meadowCanvas.height = 512;
   const meadowContext = meadowCanvas.getContext('2d')!;
   meadowContext.fillStyle = '#f8f5e8'; meadowContext.fillRect(0, 0, 512, 512);
@@ -397,18 +401,48 @@ export function mountMemoryIsland(options: Options): () => void {
   const cliffRockMaterials = ['#828f86', '#a09b86', '#75877f', '#aaa28c'].map(color => mat(color));
   const cliffVertices: number[] = [], cliffColors: number[] = [], cliffIndices: number[] = [];
   const cliffPalette = ['#777f79', '#909184', '#687a75', '#a0967d'].map(color => new THREE.Color(color));
+  const cliffBrow = new THREE.Color('#d8c99f');
+  const cliffWet = new THREE.Color('#4e5b56');
   const cliffSegments = 192;
-  for (let segment = 0; segment <= cliffSegments; segment++) {
+  // 「塑料底座盘」的真正来源不是配色，是形状：原来剖面只有两行（地形边缘 → 水下脚），
+  // 等于一堵无起伏的直墙；而地形外缘的高度在整圈上是同一个值（terrainHeight 在
+  // coastline-0.45 处 edgeFade=0，恒为 1.15），于是檐口是一条完全水平的圆环。
+  // 直墙 + 水平檐口 + 完美圆 = 机切塑料件。
+  // 这里加两件事：① 四行剖面（地形边缘 → 外挑檐口 → 中段岩体 → 水下脚）；
+  // ② 按角度的确定性扰动（平滑三角函数，不是随机，保证每次截图可复现）。
+  const cliffJitter = (angle: number) =>
+    Math.sin(angle * 7.3) * 0.5 + Math.sin(angle * 13.7 + 1.1) * 0.3 + Math.sin(angle * 23.1 + 2.3) * 0.16;
+  // segment < cliffSegments（不是 <=）：与地形环同样的问题——重复末列会在法线接缝处
+  // 把法线劈成两份，从岸上看就是一条竖直硬边。焊合后每个顶点拿到整圈的邻接面。
+  for (let segment = 0; segment < cliffSegments; segment++) {
     const angle = segment / cliffSegments * Math.PI * 2;
-    const innerRadius = coastlineRadius(angle) - 0.45;
-    const outerRadius = coastlineRadius(angle) + 0.5;
+    const coast = coastlineRadius(angle);
+    const jitter = cliffJitter(angle);
+    const innerRadius = coast - 0.45;
     const innerX = Math.sin(angle) * innerRadius, innerZ = Math.cos(angle) * innerRadius;
-    const outerX = Math.sin(angle) * outerRadius, outerZ = Math.cos(angle) * outerRadius;
-    cliffVertices.push(innerX, terrainHeight(innerX, innerZ), innerZ, outerX, -1.88, outerZ);
-    const tint = cliffPalette[segment % cliffPalette.length];
-    cliffColors.push(tint.r, tint.g, tint.b, tint.r * 0.78, tint.g * 0.78, tint.b * 0.78);
-    if (segment < cliffSegments) {
-      const a = segment * 2, b = a + 1, c = a + 3, d = a + 2;
+    const top = terrainHeight(innerX, innerZ);
+    // 按角度在调色板里连续插值。原来 `segment % 4` 一圈下来是 48 组硬条纹，
+    // 四个颜色虽接近，贴地视角仍读成一圈圈竖纹。
+    const palette = segment / cliffSegments * cliffPalette.length;
+    const lower = cliffPalette[Math.floor(palette) % cliffPalette.length];
+    const upper = cliffPalette[(Math.floor(palette) + 1) % cliffPalette.length];
+    const rock = new THREE.Color().lerpColors(lower, upper, ease(palette - Math.floor(palette)));
+    const browDrop = 0.40 + 0.25 * (0.5 + 0.5 * Math.sin(angle * 5.1 + 0.7));
+    // 檐口必须低于地形唇线（约 1.15），否则会从岸上戳出来
+    const profile: [number, number, THREE.Color][] = [
+      [innerRadius, top, cliffBrow.clone().lerp(rock, 0.3)],
+      [coast + 0.06 + jitter * 0.22, top - browDrop, rock.clone().lerp(cliffBrow, 0.5)],
+      [coast + 0.30 + jitter * 0.55, -1.05 + jitter * 0.1, rock],
+      [coast + 0.46 + jitter * 0.75, -1.88, rock.clone().lerp(cliffWet, 0.72)],
+    ];
+    for (const [radius, y, color] of profile) {
+      cliffVertices.push(Math.sin(angle) * radius, y, Math.cos(angle) * radius);
+      cliffColors.push(color.r, color.g, color.b);
+    }
+    const next = (segment + 1) % cliffSegments;
+    for (let row = 0; row < profile.length - 1; row++) {
+      const a = segment * profile.length + row, b = a + 1;
+      const d = next * profile.length + row, c = d + 1;
       cliffIndices.push(a, b, c, a, c, d);
     }
   }
@@ -424,9 +458,12 @@ export function mountMemoryIsland(options: Options): () => void {
     // 旧实现把岩心放在绝对 y≈-0.62，高出海面 1.3 个单位，一圈 34 块全在空中飘着。
     const rockRadius = 0.42 + (i % 5) * 0.15;
     const rockScaleY = 0.58 + (i % 4) * 0.08;
-    const radius = coastlineRadius(angle) + 1.05 + Math.sin(i * 8.3) * 0.5;
+    // 礁石坐在岸脚上，不是浮在水面。原来在 coastline+1.05 处，而浅滩已经压到水下，
+    // 結果是十几块石头悬在水面上（贴地机位一眼就看出来）。现在收到岸脚半径、
+    // 坐得比水面低一点，半浸入岸脚与水的交界。
+    const radius = coastlineRadius(angle) + 0.55 + Math.sin(i * 8.3) * 0.45;
     const rock = mesh(new THREE.IcosahedronGeometry(rockRadius, 0), cliffRockMaterials[i % cliffRockMaterials.length]);
-    rock.position.set(Math.sin(angle) * radius, -1.92 + rockRadius * rockScaleY * 0.55, Math.cos(angle) * radius);
+    rock.position.set(Math.sin(angle) * radius, -1.86 + rockRadius * rockScaleY * 0.45, Math.cos(angle) * radius);
     rock.scale.set(0.72 + (i % 3) * 0.13, rockScaleY, 0.82 + (i % 2) * 0.18);
     rock.rotation.set((i % 3) * 0.18, angle + i * 0.24, (i % 4) * 0.11);
     rock.castShadow = rock.receiveShadow = false;
@@ -813,12 +850,18 @@ export function mountMemoryIsland(options: Options): () => void {
       // the model is parented, and use the highest terrain sample under the
       // footprint so a building on a slope never sinks into the hill.
       const seatedBounds = new THREE.Box3().setFromObject(model);
-      const halfSampleX = fittedSize.x / 2 * 0.9, halfSampleZ = fittedSize.z / 2 * 0.9;
+      // 坐落在 footprint 下**最低**的那块地形上，不是最高的那块。
+      // 取最高点时，下坡侧整个悬在空中：实测九点采样跨度 ch03 0.688 / ch04 0.608 /
+      // ch05 0.614 世界单位（ch01 0.077、ch02 0.138 基本是平地，看不出来）。
+      // 底座埋进坡里读作「房子坐在地上」，底座悬空读作 bug，所以取下限。
+      // 采样点也放到真正的四角（原先乘 0.9，最小值取的其实是内缩后的最小），
+      // 否则四角比采样点更低时还是会悬一点点。
+      const halfSampleX = fittedSize.x / 2, halfSampleZ = fittedSize.z / 2;
       const footprintGround: number[] = [];
       for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) {
         footprintGround.push(terrainHeight(site.x + sx * halfSampleX / mapScaleX, site.z + sz * halfSampleZ));
       }
-      const baseGround = Math.max(...footprintGround);
+      const baseGround = Math.min(...footprintGround);
       model.position.y += baseGround - seatedBounds.min.y;
       model.updateMatrixWorld(true);
       // Movement collision is a conservative ground footprint, not the full
