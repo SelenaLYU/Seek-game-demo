@@ -464,7 +464,7 @@ export function mountMemoryIsland(options: Options): () => void {
     pathContext.strokeStyle = 'rgba(153,132,98,0.24)'; pathContext.lineWidth = 2; pathContext.stroke();
   }
   const pathTexture = new THREE.CanvasTexture(pathCanvas); pathTexture.colorSpace = THREE.SRGBColorSpace;
-  const bridgeLevels: { x: number; z: number; y: number; yaw: number }[] = [];
+  const bridgeLevels: { x: number; z: number; y: number; yaw: number; surfaceAt?: (localZ: number) => number }[] = [];
   const walkwayPaths: [number, number][][] = [];
   function walkableHeight(x: number, z: number) {
     let height = terrainHeight(x, z);
@@ -476,7 +476,11 @@ export function mountMemoryIsland(options: Options): () => void {
       const outsideZ = Math.max(0, Math.abs(localZ) - 2.8);
       const outsideDistance = Math.hypot(outsideX, outsideZ);
       const ramp = 1 - ease(clamp01(outsideDistance / 2.1));
-      height = Math.max(height, THREE.MathUtils.lerp(terrainHeight(x, z), bridge.y, ramp));
+      if (ramp <= 0) continue;
+      // 桥面现在沿 z 随地形倾斜，所以走上去的高度也要按同一条曲线取，
+      // 不能再用桥中心那一处的固定高度（否则玩家会踩在看不见的平面上）。
+      const surface = bridge.surfaceAt ? bridge.surfaceAt(localZ) : bridge.y;
+      height = Math.max(height, THREE.MathUtils.lerp(terrainHeight(x, z), surface, ramp));
     }
     return height;
   }
@@ -542,28 +546,72 @@ export function mountMemoryIsland(options: Options): () => void {
     const water = mesh(geometry, material);
     water.castShadow = water.receiveShadow = false;
   }
+  // 桥面是块平板，但地形沿桥跨方向起伏（实测 ±0.7）。旧实现把整块板钉在桥中心
+  // 一处的高度上，于是两端一头埋进土里、一头悬在半空——决策文档里那条「栈桥桥面
+  // 在半空断掉」。现在桥面沿 z 逐段取两岸地形高度：桥头贴岸、桥中略微架高过溪，
+  // deck 用同样的分段高度摆放，走上去才不会出现「踩空/陷进坡里」。
   function footbridge(x: number, z: number, yaw: number) {
-    // 桥要坐在「未开溪」的原始地面高度上，与地形着色同一口径
-    const baseTerrainHeight = (px: number, pz: number) => terrainHeight(px, pz);
-    const group = new THREE.Group(); group.position.set(x, baseTerrainHeight(x, z) - 0.02, z); group.rotation.y = yaw; islandRoot.add(group);
-    bridgeLevels.push({ x, z, y: group.position.y + 0.162, yaw });
+    const halfLength = 2.8;
+    // 桥面沿 z 逐点贴地。不能只取两岸两个端点再线性插值：地形中间有溪流下切
+    // 和山头隆起，直线会插过地形（实测桥中悬空 0.38），所以沿桥跨密集采样取真实地形，
+    // 再在采样点之间线性插值——既贴合又保持桥面平滑。
+    const sampleAt = (localZ: number) => {
+      const px = x + Math.cos(yaw) * localZ, pz = z - Math.sin(yaw) * localZ;
+      return terrainHeight(px, pz);
+    };
+    const bridgeSamples = 12;
+    const profile = Array.from({ length: bridgeSamples + 1 }, (_, i) => {
+      const t = -halfLength + (i * halfLength * 2) / bridgeSamples;
+      return { z: t, y: sampleAt(t) };
+    });
+    const nearY = profile[0].y, farY = profile[profile.length - 1].y;
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    group.rotation.y = yaw;
+    islandRoot.add(group);
+    // deck 顶点按 localZ 线性插值两岸高度，比固定高度贴合得多
+    // 桥面顶相对地形的抬升：两岸压进地面一点（≤ MAX_SINK，让桥头与岸线严丝合缝、
+    // 不出现踩空台阶），跨溪中段抬到桥板厚度（桥要架在水面之上，这是对的）。
+    const surfaceAt = (localZ: number) => {
+      const u = THREE.MathUtils.clamp((localZ + halfLength) / (halfLength * 2), 0, 1);
+      const scaled = u * bridgeSamples;
+      const index = Math.min(Math.floor(scaled), bridgeSamples - 1);
+      const ground = THREE.MathUtils.lerp(profile[index].y, profile[index + 1].y, scaled - index);
+      // 15% 处开始抬：桥头 15% 压进岸里（严丝合缝），过了岸线才架起来
+      const lift = THREE.MathUtils.lerp(-0.06, 0.12, ease(clamp01((u - 0.15) / 0.2)) * ease(clamp01((0.85 - u) / 0.2)));
+      return ground + lift;
+    };
+    // 供 walkableHeight 复用同一条桥面曲线；bridge.y 仍作为无曲线时的兜底
+    bridgeLevels.push({ x, z, y: surfaceAt(0), yaw, surfaceAt });
     const wood = mat('#9a7353'), plankLight = mat('#bd9670'), rope = mat('#80664d');
-    const deck = mesh(new THREE.BoxGeometry(2.65, 0.12, 5.6), wood, group); deck.position.y = 0.06;
-    deck.castShadow = deck.receiveShadow = false;
-    for (let i = 0; i < 9; i++) {
-      const plank = mesh(new THREE.BoxGeometry(2.56, 0.055, 0.48), i % 2 ? plankLight : wood, group);
-      plank.position.set(0, 0.135, -2.48 + i * 0.62);
+    // 桥面拆成分段，每一段坐到自己那段地形上（而不是整块钉在桥中心的高度）
+    const segments = 9;
+    for (let i = 0; i < segments; i++) {
+      const z0 = -halfLength + (i * halfLength * 2 / segments);
+      const z1 = z0 + halfLength * 2 / segments;
+      const y0 = surfaceAt(z0), y1 = surfaceAt(z1);
+      const midZ = (z0 + z1) / 2;
+      const midY = (y0 + y1) / 2;
+      const span = Math.hypot(z1 - z0, y1 - y0);
+      const segment = mesh(new THREE.BoxGeometry(2.65, 0.12, span), wood, group);
+      segment.position.set(0, midY, midZ);
+      // 让每段绕 x 轴倾斜，贴合两岸高差（桥面沿 z 走，旋转轴是组本地 x）
+      segment.rotation.x = Math.atan2(y1 - y0, z1 - z0);
+      segment.castShadow = segment.receiveShadow = false;
+      const plank = mesh(new THREE.BoxGeometry(2.56, 0.055, span * 0.85), i % 2 ? plankLight : wood, group);
+      plank.position.set(0, midY + 0.035, midZ);
+      plank.rotation.x = segment.rotation.x;
       plank.castShadow = plank.receiveShadow = false;
     }
     for (const side of [-1, 1]) {
       for (const end of [-1, 1]) {
         const post = mesh(new THREE.CylinderGeometry(0.075, 0.105, 1, 7), rope, group);
-        post.position.set(side * 1.22, 0.73, end * 2.55);
+        post.position.set(side * 1.22, surfaceAt(end * 2.55) + 0.61, end * 2.55);
         post.castShadow = post.receiveShadow = false;
       }
       const railPath = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(side * 1.22, 0.95, -2.55), new THREE.Vector3(side * 1.22, 0.72, -1.25),
-        new THREE.Vector3(side * 1.22, 0.68, 0), new THREE.Vector3(side * 1.22, 0.72, 1.25), new THREE.Vector3(side * 1.22, 0.95, 2.55),
+        new THREE.Vector3(side * 1.22, surfaceAt(-2.55) + 0.83, -2.55), new THREE.Vector3(side * 1.22, surfaceAt(-1.25) + 0.60, -1.25),
+        new THREE.Vector3(side * 1.22, surfaceAt(0) + 0.56, 0), new THREE.Vector3(side * 1.22, surfaceAt(1.25) + 0.60, 1.25), new THREE.Vector3(side * 1.22, surfaceAt(2.55) + 0.83, 2.55),
       ]);
       const rail = mesh(new THREE.TubeGeometry(railPath, 24, 0.055, 6, false), rope, group);
       rail.castShadow = rail.receiveShadow = false;
