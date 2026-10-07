@@ -431,7 +431,7 @@ export function createGameHud(config: GameHudConfig): GameHudHandle {
       options.onStay?.();
     });
 
-    const homeBtn = scene.add.text(80, 0, '⌂ 返回主菜单', {
+    const homeBtn = scene.add.text(80, 0, '⌂ Back to Menu', {
       fontFamily: 'sans-serif', fontSize: '12px', color: '#b9ccbf',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     homeBtn.on('pointerover', () => homeBtn.setColor('#ffffff'));

@@ -9,7 +9,6 @@ import { characterGroundHeight } from './grounding';
 import { checkScatter, planScatter, type ScatterContext } from './scatter';
 import type { Placement } from './clipping';
 import { MAP_SCALE_X, coastlineRadius, distanceToPath, streamPaths, terrainHeight } from './terrain';
-import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
 
 type Options = { justCompleted?: number; completionSaved?: boolean; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
@@ -62,7 +61,7 @@ export function mountMemoryIsland(options: Options): () => void {
   </style><div class="hud"><header><div><div class="eyebrow">SEEK / MEMORY ISLAND</div><h1>记忆之岛<span class="island-en">Memory Island</span></h1><p class="subtitle">六段人生，慢慢找回。<span class="island-en">Six lives, recovered one by one.</span><span data-progress></span></p><span class="asset-status" data-assets aria-live="polite"></span></div><button data-home>Back</button></header>
   <aside class="chapter-picker panel" data-chapter-picker><strong>记忆入口<span class="island-en">Memory Entrances</span></strong><div class="chapter-list" data-chapter-list></div></aside>
   <div class="toast" role="status" hidden></div><div class="nearby panel" hidden><p></p><button class="primary" data-interact></button></div>
-  <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button data-album>相册</button><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
+  <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
   document.body.append(root);
   installIslandEnglishStyle();
   const get = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
@@ -530,7 +529,7 @@ export function mountMemoryIsland(options: Options): () => void {
   };
   const districtMaterials: { id: number; material: THREE.MeshStandardMaterial; color: THREE.Color; gray: THREE.Color }[] = [];
   function districtMaterial(id: number, color: string, gray = '#a4adaa') {
-    const material = mat(chapterState(id) === 'completed' && options.justCompleted !== id ? color : gray);
+    const material = mat(id === 1 || (chapterState(id) === 'completed' && options.justCompleted !== id) ? color : gray);
     districtMaterials.push({ id, material, color: new THREE.Color(color), gray: new THREE.Color(gray) });
     return material;
   }
@@ -820,7 +819,7 @@ export function mountMemoryIsland(options: Options): () => void {
           material.side = THREE.DoubleSide;
           material.needsUpdate = true;
           if (material instanceof THREE.MeshStandardMaterial) {
-            const grayUniform = { value: forceColorPreview || (chapterState(id) === 'completed' && options.justCompleted !== id) ? 0 : 1 };
+            const grayUniform = { value: id === 1 || forceColorPreview || (chapterState(id) === 'completed' && options.justCompleted !== id) ? 0 : 1 };
             material.onBeforeCompile = shader => {
               shader.uniforms.uIslandGray = grayUniform;
               shader.fragmentShader = shader.fragmentShader.replace(
@@ -1371,11 +1370,6 @@ export function mountMemoryIsland(options: Options): () => void {
     if (nearby.id <= 2) options.onChapter(nearby.id);
     else notify(bilingual(`第 ${nearby.id} 关入口已预留，冒险与房间内容尚未制作。`, `The entrance to Chapter ${nearby.id} is reserved; its adventure and rooms are not built yet.`));
   }
-  let album: AlbumHandle | undefined;
-  get('[data-album]').addEventListener('click', () => {
-    if (album) return;
-    album = showAlbumUI({ completed: completedChapters(), onClose: () => { album = undefined; } });
-  }, { signal });
   get('[data-home]').addEventListener('click', options.onHome, { signal });
   switchButton.addEventListener('click', () => setMode(mode === 'overview' ? 'explore' : 'overview'), { signal });
   interactButton.addEventListener('click', interact, { signal });
@@ -1597,7 +1591,7 @@ export function mountMemoryIsland(options: Options): () => void {
     }
     if (elapsed < 4) districtMaterials.filter(entry => entry.id === options.justCompleted).forEach(entry => entry.material.color.lerpColors(entry.gray, entry.color, Math.min(elapsed / 2.5, 1)));
     modelGrayUniforms.forEach(({ id, uniform }) => {
-      const target = forceColorPreview || chapterState(id) === 'completed' ? 0 : 1;
+      const target = id === 1 || forceColorPreview || chapterState(id) === 'completed' ? 0 : 1;
       uniform.value = id === options.justCompleted && elapsed < 4 ? 1 - Math.min(elapsed / 2.5, 1) : target;
     });
     if (elapsed > toastUntil) toast.hidden = true;

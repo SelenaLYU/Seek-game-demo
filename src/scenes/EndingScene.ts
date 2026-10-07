@@ -55,7 +55,7 @@ export default class EndingScene extends Phaser.Scene {
     root.setAttribute('aria-label', '第一章回忆');
     root.innerHTML = `
       <video class="seek-ending__video" src="${chapterOneVideoUrl}" playsinline preload="auto"></video>
-      <button class="seek-ending__skip" type="button">跳过 →</button>
+      <button class="seek-ending__skip" type="button">Skip Animation →</button>
       <button class="seek-ending__play" type="button">播放动画</button>
     `;
 
