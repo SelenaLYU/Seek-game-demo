@@ -9,8 +9,8 @@ const STYLE_ID = 'seek-chapter-one-ending-style';
  *
  * 这里已经换成 `assets/animation/chapter1.mp4` 正式动画；此前"正式动画到位前"的同风格
  * 分镜占位（海边大图推近 + 逐句字幕 + 照片显影定格）已删除。
- * 那段字幕的文案真源仍保留在 `src/story/ChapterOneStory.ts`，所以删掉分镜不会丢内容。
- *（相册功能已按要求整体下线，连同 AlbumUI 与那张家庭照片一起移除。）
+ * 那段字幕的文案真源仍保留在 `src/story/ChapterOneStory.ts`，相册第一格仍用同一张正式
+ * 家庭照片（见 AlbumUI），所以删掉分镜不会丢内容。
  *
  * 章节进度不在这里写：本场景只把 `completedChapter` 传给 IslandScene，由它调
  * `completeChapter()` 落盘（见 src/island/Progress.ts）。动画播完直接进岛，
@@ -55,8 +55,8 @@ export default class EndingScene extends Phaser.Scene {
     root.setAttribute('aria-label', '第一章回忆');
     root.innerHTML = `
       <video class="seek-ending__video" src="${chapterOneVideoUrl}" playsinline preload="auto"></video>
-      <button class="seek-ending__skip" type="button">Skip</button>
-      <button class="seek-ending__play" type="button">Play</button>
+      <button class="seek-ending__skip" type="button">跳过 →</button>
+      <button class="seek-ending__play" type="button">播放动画</button>
     `;
 
     const video = root.querySelector<HTMLVideoElement>('.seek-ending__video')!;

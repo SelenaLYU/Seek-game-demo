@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
+import { completedChapters } from '../island/Progress';
 import openingVideoUrl from '../../assets/animation/opening.mp4?url';
 
 /** 原文件直接播放，不受游戏相机或高清缓冲倍率影响。 */
@@ -40,9 +42,18 @@ export default class IntroScene extends Phaser.Scene {
       leaving = true;
       this.scene.start('loading');
     };
-    button('← Back', 'left:24px;top:22px', () => this.scene.start('menu'));
-    button('Skip', 'right:24px;bottom:24px', proceed);
-    const play = button('Play', 'left:50%;top:50%;transform:translate(-50%,-50%)', () => {
+    let album: AlbumHandle | undefined;
+    button('← 返回菜单', 'left:24px;top:22px', () => this.scene.start('menu'));
+    button('相册', 'left:24px;bottom:24px', () => {
+      if (album) return;
+      video.pause();
+      album = showAlbumUI({ completed: completedChapters(), onClose: () => {
+        album = undefined;
+        void video.play().catch(() => { play.hidden = false; });
+      } });
+    });
+    button('跳过动画 →', 'right:24px;bottom:24px', proceed);
+    const play = button('播放动画', 'left:50%;top:50%;transform:translate(-50%,-50%)', () => {
       void video.play().then(() => { play.hidden = true; }).catch(() => { play.hidden = false; });
     });
     play.hidden = true;
@@ -55,6 +66,7 @@ export default class IntroScene extends Phaser.Scene {
       video.removeAttribute('src');
       video.load();
       root.remove();
+      album?.close();
       window.removeEventListener('resize', sizeVideo);
       this.input.keyboard?.off('keydown-SPACE', proceed);
     });
