@@ -64,7 +64,7 @@ const WAVE_IMAGE_OFFSET = {
 };
 
 /**
- * 滚浪判决：浪是「限时移动平台」——踩上浪脊就起滚，滚到尽头开始消散；
+ * 滚浪判决：浪是「限时移动平台」——海浪持续自主前滚，滚到尽头开始消散；
  * 消散时浪体不再承重，没跳走的玩家会踩空落水。
  */
 const WAVE_RIDE = {
@@ -175,6 +175,7 @@ export type WaveSpec = {
 };
 
 type LayoutSpec = {
+  /** 背景左侧岩台的可站立区域；沿用 startBeach 字段名以兼容跳跃审计工具 */
   startBeach: { left: number; right: number; top: number };
   /** 礁石阵（standCenter 升序：复活点派生依赖该顺序） */
   reefs: readonly ReefSpec[];
@@ -190,7 +191,7 @@ type LayoutSpec = {
 /** 礁石阵：起步阶梯 → 海鸥起跳台 → 海心落脚礁 → 浪前准备段 → 浪后实体落脚面。
  *  浪后落脚礁刻意放到冲刺礁二段跳极限之外，让玩家先借滚浪向前，再跳上安全落点。 */
 const REEFS: readonly ReefPlacement[] = [
-  // 第一块下沉并左移：作为韩梅梅的直接出生平台。
+  // 第一块保留为离开背景岩台后的第一个跳台；角色不再直接出生在这里。
   { standCenter: 420, top: 430, scale: 0.14, label: '初级低礁', role: 'warmup-low' },
   { standCenter: 620, top: 320, scale: 0.165, label: '耸立高礁', role: 'warmup-tall' },
   // 按反馈略抬高第三、第四块，让上升节奏更连贯。
@@ -289,9 +290,9 @@ export const reefSpriteOrigin = (reef: ReefSpec): { x: number; y: number } => ({
   y: reef.top - standAnchorTop(reef.stand) * reef.scale,
 });
 
-/** 单朵滚浪：从冲刺礁前方开始，长距离向岸边推送后消散 */
+/** 单朵滚浪：先藏在冲刺礁后方，再从岩石后滚出并向岸边推送后消散 */
 const WAVES: readonly WaveSpec[] = [
-  { id: 'W1', ridgeCenter: 2000, top: 392, amplitude: 12, periodMs: 3200, rollSpeed: 56, rollDistance: 360 },
+  { id: 'W1', ridgeCenter: 2000, top: 340, amplitude: 12, periodMs: 3200, rollSpeed: 112, rollDistance: 470 },
 ];
 
 /**
@@ -302,7 +303,9 @@ const WAVES: readonly WaveSpec[] = [
  * 阶段 4：右岸大陆（2660..2930）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 落地走回石门进入记忆之房！
  */
 export const LAYOUT: LayoutSpec = {
-  startBeach: { left: 0, right: 280, top: 440 },
+  // 用户标注的左侧背景岩台：只补碰撞，不叠加新图片，避免遮住原画。
+  // 平台右缘停在第一块实体礁石之前，角色从岩台中心开始，再向右进入原有路线。
+  startBeach: { left: 155, right: 375, top: 378 },
   reefs: REEFS.map(placement => ({ ...placement, stand: reefStand(placement.role) })),
   gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
   waves: WAVES,
@@ -311,22 +314,22 @@ export const LAYOUT: LayoutSpec = {
   door: { openingCenterX: 2680 },
 };
 
-/** 第一块低礁是实际出生平台：韩梅梅从图中这块礁石上开始，而不是左侧沙滩。 */
-const START_REEF = LAYOUT.reefs.find(reef => reef.role === 'warmup-low');
-if (!START_REEF) throw new Error('LAYOUT 缺少起始低礁 warmup-low');
-const START_POINT = { x: START_REEF.standCenter, y: START_REEF.top - 45 };
+/** 出生点落在用户圈出的左侧背景岩台中央，悬在站立面上方供物理自然落地。 */
+const START_POINT = {
+  x: (LAYOUT.startBeach.left + LAYOUT.startBeach.right) / 2,
+  y: LAYOUT.startBeach.top - 45,
+};
 
 /** 复活点：standCenter 为触发用的站立中心 x（角色 x + 40 内即命中） */
 type RespawnPoint = { standCenter: number; x: number; y: number };
 
 /**
  * 落水后的安全复活点（由 LAYOUT 派生并按 standCenter 升序）：
- * 起始低礁 → 其他礁石（顶面上方 40px）；越靠右的落点越近，复活不倒退。
+ * 左侧背景岩台 → 其他礁石（顶面上方 40px）；越靠右的落点越近，复活不倒退。
  */
 const RESPAWN_POINTS: readonly RespawnPoint[] = [
   { standCenter: START_POINT.x, x: START_POINT.x, y: START_POINT.y },
   ...LAYOUT.reefs
-    .filter(r => r.role !== START_REEF.role)
     .map(r => ({ standCenter: r.standCenter, x: r.standCenter, y: r.top - 40 })),
 ].sort((a, b) => a.standCenter - b.standCenter);
 // 注：右岸大陆不作为复活点，避免复活时直接落入石门交互区；浪后落脚礁是浪区唯一的安全复活面。
@@ -381,7 +384,7 @@ const reefByRole = (role: ReefRole): ReefSpec => {
   return reef;
 };
 
-/** 滚浪四态：待机浮动 → 被踩上起滚 → 滚到尽头消散 → 散尽 */
+/** 滚浪四态：自动前滚 → 翻卷消散 → 间隔 → 再次前滚 */
 type WaveState = 'idle' | 'rolling' | 'dissolving' | 'gone';
 
 interface WaveEntity {
@@ -925,17 +928,16 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   /**
-   * 滚浪（限时移动平台）：idle 上下浮动 → 被踩上（collider）→ rolling 前移托人 → dissolving 消散 → gone。
+   * 滚浪（限时移动平台）：rolling 自动前移托人 → dissolving 翻卷消散 → gone → 下一轮。
    * 所有位置都从同一处写（setWavePosition），不再用 setData 存第二份真相。
    */
   private createWaves(): void {
     this.waves = LAYOUT.waves.map(spec => {
       const bodyLeft = spec.ridgeCenter - WAVE_BODY_WIDTH / 2;
-      const image = this.add
-        .image(bodyLeft - WAVE_IMAGE_OFFSET.x, spec.top - WAVE_IMAGE_OFFSET.y, ART.wave)
-        .setOrigin(0, 0)
-        .setScale(WAVE.scale)
-        .setDepth(-7);
+      // 保持原画轮廓，等待连续动画素材；不再把图片切片、剪切或压扁。
+      const image = this.add.image(bodyLeft - WAVE_IMAGE_OFFSET.x,
+        spec.top - WAVE_IMAGE_OFFSET.y, ART.wave)
+        .setOrigin(0, 0).setScale(WAVE.scale).setDepth(-9);
 
       const body = this.add
         .rectangle(bodyLeft, spec.top, WAVE_BODY_WIDTH, WAVE.bodyHeight, 0xffffff)
@@ -964,8 +966,8 @@ export default class ForestScene extends Phaser.Scene {
         periodMs: spec.periodMs,
         rollSpeed: spec.rollSpeed,
         rollDistance: spec.rollDistance,
-        state: 'idle',
-        rollStartedAt: 0,
+        state: 'rolling',
+        rollStartedAt: this.levelClockMs,
         rolled: 0,
         carryX: 0,
         dissolveStartedAt: 0,
@@ -983,39 +985,29 @@ export default class ForestScene extends Phaser.Scene {
     wave.ridgeBar.setPosition(x + wave.body.width / 2, y - RIDGE_BAR.height / 2);
   }
 
-  /** 踩上浪脊 → 起滚（从下方/侧面撞到不算） */
-  private onWaveContact(wave: WaveEntity): void {
-    if (wave.state !== 'idle') return;
-    const pBody = this.player.view.body as Phaser.Physics.Arcade.Body;
-    if (pBody.velocity.y < 0) return;
-    if (!pBody.blocked.down && !pBody.touching.down && !this.isPlayerStandingOn(wave)) return;
-    wave.state = 'rolling';
-    // 待机时浪面会上下浮动；一旦承载角色就锁住当前高度，防止物理落地状态和角色动画抖动。
-    wave.rollY = wave.body.y;
-    wave.rollStartedAt = this.levelClockMs;
-    wave.rolled = 0;
-    this.sfx.bounce();
-    Effects.dust(this, wave.body.x + wave.body.width / 2, wave.body.y, 6, 22);
-    this.setStatus('踩上滚浪！趁它散开之前跳到浪后落脚礁。');
+  /** 波浪自主运动，人物接触不改变周期。 */
+  private onWaveContact(_wave: WaveEntity): void {}
+
+  private animateWave(wave: WaveEntity, travel: number, breaking = 0): void {
+    // 碰到终点岩石后保持直立，由岩石遮挡并淡出，不下倒、不缩成薄片。
+    wave.image.setAlpha(Math.min(1, travel * 12) * (1 - breaking));
   }
 
   private updateWaves(): void {
     const now = this.levelClockMs;
     for (const wave of this.waves) {
-      if (wave.state === 'idle') {
-        const bob = Math.sin((now / wave.periodMs) * Math.PI * 2) * wave.amplitude;
-        this.setWavePosition(wave, wave.baseX, wave.baseY + bob);
-      } else if (wave.state === 'rolling') {
-        // 前移量由关卡时钟算（弹窗期间时钟不走）——不再每帧写 scale，免得吞掉消散 tween。
-        // y 使用接触时锁定的 rollY，不再带入 idle bob；角色和碰撞面保持同一高度，避免看似浮空/跳帧。
-        wave.rolled = Math.min(wave.rollDistance, ((now - wave.rollStartedAt) / 1000) * wave.rollSpeed);
+      if (wave.state === 'rolling') {
+        wave.rolled = Math.min(wave.rollDistance, (now - wave.rollStartedAt) / 1000 * wave.rollSpeed);
         this.setWavePosition(wave, wave.baseX + wave.rolled, wave.rollY);
+        this.animateWave(wave, wave.rolled / wave.rollDistance);
         if (wave.rolled >= wave.rollDistance) this.startWaveDissolve(wave);
       } else if (wave.state === 'dissolving') {
-        const progress = Phaser.Math.Clamp((now - wave.dissolveStartedAt) / WAVE_RIDE.dissolveMs, 0, 1);
-        wave.image.setAlpha(1 - progress);
-        wave.ridgeBar.setAlpha(RIDGE_BAR.alpha * (1 - progress));
-        if (progress >= 1) this.finishWaveDissolve(wave);
+        const t = Phaser.Math.Clamp((now - wave.dissolveStartedAt) / WAVE_RIDE.dissolveMs, 0, 1);
+        this.setWavePosition(wave, wave.baseX + wave.rollDistance, wave.rollY);
+        this.animateWave(wave, 1, t);
+        if (t >= 1) this.finishWaveDissolve(wave);
+      } else if (wave.state === 'idle' || now - wave.dissolveStartedAt >= WAVE_RIDE.dissolveMs + 450) {
+        this.resetWave(wave);
       }
     }
   }
@@ -1025,11 +1017,9 @@ export default class ForestScene extends Phaser.Scene {
     wave.state = 'dissolving';
     wave.dissolveStartedAt = this.levelClockMs;
     (wave.body.body as Phaser.Physics.Arcade.Body).enable = false;
-    const centerX = wave.body.x + wave.body.width / 2;
-    Effects.dust(this, centerX, wave.body.y, 14, 52);
-    Effects.ring(this, centerX, wave.body.y, 0xcbe9f5);
-    this.setStatus('浪滚到尽头散开了！没跳走的会被卷进海里。');
+    if (this.isPlayerStandingOn(wave)) this.setStatus('浪碰到礁石散开了，跳上礁石吧。');
   }
+
 
   private finishWaveDissolve(wave: WaveEntity): void {
     wave.state = 'gone';
@@ -1037,7 +1027,7 @@ export default class ForestScene extends Phaser.Scene {
     wave.ridgeBar.setVisible(false);
   }
 
-  /** 复位所有浪（重生/重开关卡共用）：tween、透明度、碰撞体启用、状态一起回 idle */
+  /** 复位所有浪（重生/重开关卡共用）：tween、透明度、碰撞体启用、状态一起开始新一轮 */
   private resetWaves(): void {
     for (const wave of this.waves) this.resetWave(wave);
   }
@@ -1045,25 +1035,21 @@ export default class ForestScene extends Phaser.Scene {
   private resetWave(wave: WaveEntity): void {
     this.tweens.killTweensOf(wave.image);
     this.tweens.killTweensOf(wave.ridgeBar);
-    wave.state = 'idle';
+    wave.state = 'rolling';
     wave.rolled = 0;
     wave.rollY = wave.baseY;
-    wave.rollStartedAt = 0;
+    wave.rollStartedAt = this.levelClockMs;
     wave.dissolveStartedAt = 0;
     wave.image.setVisible(true).setAlpha(1).setScale(WAVE.scale);
     wave.ridgeBar.setVisible(true).setAlpha(RIDGE_BAR.alpha);
     (wave.body.body as Phaser.Physics.Arcade.Body).enable = true;
     this.setWavePosition(wave, wave.baseX, wave.baseY);
     wave.carryX = 0;
+    this.animateWave(wave, 0);
   }
 
-  /** 浪散尽且玩家已回到它左后方 → 复位，避免必须过浪的路线被永久切断 */
-  private resetWavesLeftBehind(): void {
-    for (const wave of this.waves) {
-      if (wave.state !== 'gone') continue;
-      if (this.player.view.x < wave.baseX - 20) this.resetWave(wave);
-    }
-  }
+  /** 循环由 updateWaves 驱动。 */
+  private resetWavesLeftBehind(): void {}
 
   /** 角色是否站在浪脊上（脚底贴着顶面 + 水平有交集） */
   /** 角色是否正踩在这朵浪上（判定要宽一点：浪会上下浮动，脚底差几像素不应导致跟丢） */
@@ -1285,7 +1271,7 @@ export default class ForestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const line2 = this.add
-      .text(0, 13, this.touchMode ? '点按 ↑ 跳跃 · 空中再点一次二段跳' : '从这块礁石出发 · 轻按/长按跳跃 · 空中二段跳', {
+      .text(0, 13, this.touchMode ? '点按 ↑ 跳跃 · 空中再点一次二段跳' : '从左侧岩台出发 · 轻按/长按跳跃 · 空中二段跳', {
         fontFamily: 'sans-serif',
         fontSize: '10px',
         color: '#bed4c5',
@@ -1316,7 +1302,7 @@ export default class ForestScene extends Phaser.Scene {
 
     // 滚浪提示：文案与位置每帧跟随当前活动浪（见 update 里的三态切换）
     this.crestPrompt = this.add
-      .text(0, 0, '∿ 滚浪 · 踩上浪脊，浪会托着你前滚', {
+      .text(0, 0, '∿ 滚浪 · 等浪靠近，跳上浪脊向前', {
         fontFamily: 'sans-serif',
         fontSize: '12px',
         color: '#eef8ff',

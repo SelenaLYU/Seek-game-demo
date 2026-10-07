@@ -387,14 +387,14 @@ const jump = (i, strategy) => {
   );
 };
 
-test('出生点直接在第一块低礁上，韩梅梅不从沙滩起步', () => {
-  const firstReef = layout.reefs.find(r => r.role === 'warmup-low');
-  assert.ok(firstReef, '布局缺少第一块低礁');
-  assert.match(SOURCE, /const START_REEF = LAYOUT\.reefs\.find\(reef => reef\.role === 'warmup-low'\)/,
-    '出生点必须由第一块低礁真源派生，避免坐标漂移');
-  assert.match(SOURCE, /const START_POINT = \{ x: START_REEF\.standCenter, y: START_REEF\.top - 45 \}/,
-    '出生点应对齐礁石站立中心，并悬在顶面上方供物理落地');
-  assert.match(SOURCE, /从这块礁石出发/, '起点提示要与“出生在礁石上”一致');
+test('出生点在用户标注的左侧背景岩台上', () => {
+  assert.deepEqual(layout.startBeach, { left: 155, right: 375, top: 378 },
+    '背景岩台碰撞面必须对齐用户标注的平顶区域');
+  assert.match(SOURCE, /x:\s*\(LAYOUT\.startBeach\.left \+ LAYOUT\.startBeach\.right\) \/ 2/,
+    '出生 x 应由岩台左右边界派生，避免手写坐标漂移');
+  assert.match(SOURCE, /y:\s*LAYOUT\.startBeach\.top - 45/,
+    '出生 y 应悬在岩台顶面上方供物理自然落地');
+  assert.match(SOURCE, /从左侧岩台出发/, '起点提示要与新出生位置一致');
 });
 
 test('每一跳都存在"合理输入"能安全落地（不落海）', () => {
