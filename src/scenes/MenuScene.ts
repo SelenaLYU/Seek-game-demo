@@ -8,9 +8,6 @@ import {
 } from '../gameplay/ChapterOneRoomProgress';
 import menuBackgroundUrl from '../../assets/ui/menu-main-v1.png?url';
 import { resolveImageUrl } from '../assets';
-import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
-import { albumPhotoCount } from '../story/Album';
-import { completedChapters } from '../island/Progress';
 import { isMusicAudible, onMusicAudibleChange, setBackgroundMusicEnabled } from '../MenuRoomMusic';
 
 /**
@@ -56,13 +53,13 @@ const MUSIC_LABEL = {
 } as const;
 
 /**
- * DOM 覆盖层（玩法说明 / 快速选择 / 相册）此刻是否开着。
+ * DOM 覆盖层（玩法说明 / Stage Select）此刻是否开着。
  *
  * 为什么要专门问这一句：Phaser 3 的 `mouseup` 是挂在 **window** 上的，
  * 一次落在覆盖层上的点击同样会被场景里的热区收到 —— 详见 createMenuHitArea 的注释。
  */
 function overlayOpen(): boolean {
-  return !!document.querySelector('.seek-menu-guide, .seek-album');
+  return !!document.querySelector('.seek-menu-guide');
 }
 
 /** 统一水彩风格游戏主菜单：包含新游戏、继续游戏(读档)、关卡选择、重置存档 */
@@ -72,8 +69,6 @@ export default class MenuScene extends Phaser.Scene {
   private guide?: HTMLDivElement;
   /** 快速选择同样是 DOM 覆盖层，跟 guide 一样必须自己收掉 */
   private stageSelect?: HTMLDivElement;
-  /** 相册是挂在 body 上的 DOM 覆盖层：菜单离开时必须自己收掉，否则会跟到下一个场景 */
-  private album?: AlbumHandle;
 
   constructor() {
     super('menu');
@@ -301,13 +296,11 @@ export default class MenuScene extends Phaser.Scene {
       // 快速选择也是 DOM 覆盖层，不收掉会跟着进下一个场景。
       this.stageSelect?.remove();
       this.stageSelect = undefined;
-      this.album?.close();
-      this.album = undefined;
     });
   }
 
   /**
-   * 「玩法说明」与「关卡与阶段快速选择」共用同一套覆盖层样式 —— 两者视觉要完全一致，
+   * 「玩法说明 How to Play」与「Stage Select」共用同一套覆盖层样式 —— 两者视觉要完全一致，
    * 所以 CSS 只注入一次。差异全部收在 `.seek-menu-guide--select` 里：
    * 面板更宽（多了右侧说明列）、列表行本身可点。
    */
@@ -324,13 +317,20 @@ export default class MenuScene extends Phaser.Scene {
       .seek-menu-guide__panel { position:relative; width:min(520px,calc(100vw - 44px)); padding:38px 46px 34px;
         border:1px solid rgba(242,221,181,.68); border-radius:12px;
         background:linear-gradient(145deg,rgba(45,42,35,.94),rgba(24,27,25,.94));
-        box-shadow:0 22px 70px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.08); }
+        box-shadow:0 22px 70px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.08);
+        /* 英文正文比中文长，短窗口下可能撑出可视区，留个兜底滚动 */
+        max-height:calc(100vh - 36px); overflow:auto; }
       .seek-menu-guide h2 { margin:0 0 24px; text-align:center; font:500 25px/1.2 Georgia,"STSong",serif;
         letter-spacing:.18em; color:#fff0cf; }
       .seek-menu-guide ul { margin:0; padding:0; list-style:none; display:grid; gap:15px; }
       .seek-menu-guide li { padding:11px 14px; border-bottom:1px solid rgba(238,218,179,.16);
         color:rgba(249,237,211,.9); font-size:15px; line-height:1.65; }
-      .seek-menu-guide strong { display:inline-block; min-width:78px; color:#e9c98f; font-weight:600; }
+      /* 标签列：英文标签最长的是 "Collect Memories"（实测 124px）。
+         中文版是 78px，英文要放宽；再加 padding-right 保证**正文和标签之间始终有间隙** ——
+         只给 min-width 的话，标签一旦超过 min-width 就会和正文贴在一起（会出现
+         "Collect MemoriesRecover..." 这种连字）。min-width 取 130 让四行都对齐到同一条竖线。 */
+      .seek-menu-guide strong { display:inline-block; min-width:130px; padding-right:6px;
+        color:#e9c98f; font-weight:600; }
       .seek-menu-guide__close { display:block; margin:27px auto 0; min-width:150px; padding:10px 22px;
         border:1px solid rgba(244,222,181,.62); border-radius:7px; color:#f8eaca;
         background:rgba(86,96,88,.42); font:16px/1.2 Georgia,"STSong",serif; letter-spacing:.15em; cursor:pointer; }
@@ -339,22 +339,25 @@ export default class MenuScene extends Phaser.Scene {
       /* 快速选择：同一套外观，只是每行是一颗可点的按钮。
          面板宽度**故意不覆盖** —— 保持与玩法说明一模一样。
          （注意 width 是 content-box，520 的内容宽 + 左右 46 内边距 + 1 边框 = 614 实际外宽。）
-         行内容宽 = 520 - 左右 14 = 492，留给标签列 170 + 间距 14，说明列还有 308px，
-         最长的一条「错落礁石、飞鸥摆荡、限时滚浪、门楣钥匙」约 247px，放得下不折行。 */
-      .seek-menu-guide--select .seek-menu-guide__panel { max-height:calc(100vh - 36px); overflow:auto; }
+         行内容宽 = 520 - 左右 14 = 492。
+         中文版这里是「标签列 + 说明列」并排（中文说明最长才 247px，放得下）；
+         英文说明长到 60+ 字符（约 460px），并排必然挤 —— 实测 flex 会直接把说明挤到
+         下一行，还会把 "Chapter Hub · Memory Island" 断成 "Memory / Island"。
+         所以改成**刻意堆叠**：标签独占一行、说明在下一行吃满 492px。
+         标签因此永远不折行，说明也不必为了塞进窄列而删减内容。 */
       .seek-menu-guide--select ul { gap:0; }
       /* li 在这里只当行容器，内边距与下边框交给里面的按钮，避免与玩法说明的行样式叠加。 */
       .seek-menu-guide--select li { padding:0; border-bottom:0; }
-      .seek-menu-guide__row { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
+      .seek-menu-guide__row { display:block;
         width:100%; padding:11px 14px; border:0; border-bottom:1px solid rgba(238,218,179,.16);
         background:transparent; color:rgba(249,237,211,.9);
         font:inherit; font-size:15px; line-height:1.65; text-align:left; cursor:pointer;
         transition:background .16s; }
       .seek-menu-guide__row:hover { background:rgba(104,125,116,.3); }
-      .seek-menu-guide__row strong { flex:0 0 170px; min-width:0; }
-      /* 说明列不再单独调字号/颜色 —— 直接沿用玩法说明正文的 15px 暖白，
-         这样两块面板的排版语言完全一致，只差「标签 + 说明」这个两列结构。 */
-      .seek-menu-guide__row span { flex:1 1 auto; min-width:0; }
+      .seek-menu-guide__row strong { display:block; min-width:0; padding-right:0; }
+      /* 说明沿用玩法说明正文的 15px 暖白 —— 两块面板的排版语言保持一致，
+         差别只在「标签 + 说明」这一行的堆叠方式。 */
+      .seek-menu-guide__row span { display:block; min-width:0; }
     `;
     document.head.append(style);
   }
@@ -367,15 +370,15 @@ export default class MenuScene extends Phaser.Scene {
     root.className = 'seek-menu-guide';
     root.innerHTML = `
       <div class="seek-menu-guide__blur" data-close></div>
-      <section class="seek-menu-guide__panel" aria-label="玩法说明">
-        <h2>玩法说明</h2>
+      <section class="seek-menu-guide__panel" aria-label="How to Play">
+        <h2>How to Play</h2>
         <ul>
-          <li><strong>移动探索</strong>使用 A / D 或方向键移动，空格键跳跃。</li>
-          <li><strong>寻找线索</strong>点击场景里的物品，观察文字与画面提示。</li>
-          <li><strong>完成谜题</strong>拖拽、旋转或描画物件，让记忆重新完整。</li>
-          <li><strong>收集回忆</strong>找回记忆碎片，解锁新的房间和故事。</li>
+          <li><strong>Move</strong>A / D or the arrow keys to walk, Space to jump.</li>
+          <li><strong>Look for Clues</strong>Click objects in the scene and watch for hints.</li>
+          <li><strong>Solve Puzzles</strong>Drag, rotate, or trace objects to restore the memory.</li>
+          <li><strong>Collect Memories</strong>Recover memory fragments to unlock new rooms.</li>
         </ul>
-        <button class="seek-menu-guide__close" type="button" data-close>返回</button>
+        <button class="seek-menu-guide__close" type="button" data-close>Back</button>
       </section>`;
     const close = () => { root.remove(); if (this.guide === root) this.guide = undefined; };
     root.querySelectorAll<HTMLElement>('[data-close]').forEach(element => element.addEventListener('click', close));
@@ -384,42 +387,41 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   /**
-   * 关卡与阶段快速选择：直达任意游玩阶段。
+   * Stage Select：直达任意游玩阶段。
    *
    * 外观与「玩法说明」**完全一致** —— 同一个 `.seek-menu-guide` 覆盖层（模糊底 + 渐变板 +
-   * 衬线标题 + 带下边框的列表行 + 同一颗返回按钮），只加 `--select` 修饰类把面板放宽、
-   * 让每行可点。原来这里是 Phaser 容器拼的绿色方板，和玩法说明是两套视觉。
+   * 衬线标题 + 带下边框的列表行 + 同一颗返回按钮），只加 `--select` 修饰类把每行变成
+   * 可点按钮（面板宽度**保持不变**）。原来这里是 Phaser 容器拼的绿色方板，和玩法说明是两套视觉。
    *
    * 改成 DOM 还有个附带好处：文字是浏览器渲染的，天然锐利，
    * 不受 Phaser 文本纹理被相机 zoom 放大发糊的影响。
+   *
+   * 列表**只留三个可玩阶段**：序章（`intro`，剧情占位）和相册入口都已按要求移除。
+   * 相册并没有失联 —— 序章场景和记忆之岛底栏各自都还有入口。
    */
   private openStageSelectModal(): void {
     if (this.stageSelect) return;
     this.ensureMenuOverlayStyle();
 
     const stages: Array<{ label: string; sceneKey: string; desc: string }> = [
-      { label: '序章 · 剧情占位', sceneKey: 'intro', desc: '病床蒙太奇与相册入口待制作' },
-      { label: '第一章 · 海边跑酷探索', sceneKey: 'forest', desc: '错落礁石、飞鸥摆荡、限时滚浪、门楣钥匙' },
-      { label: '第一章 · 记忆之房解谜', sceneKey: 'room', desc: '照片拼图、收音机调频、光影小船三笔风' },
-      { label: '章节枢纽 · 3D 记忆之岛', sceneKey: 'island', desc: '三维程序化岛屿、记忆街区点亮演出' },
+      { label: 'Chapter 1 · Seaside Run', sceneKey: 'forest', desc: 'Scattered reefs, swinging gulls, timed surf, a key above the door' },
+      { label: 'Chapter 1 · Memory Room', sceneKey: 'room', desc: 'Photo puzzle, radio tuning, a three-stroke light-and-shadow boat' },
+      { label: 'Chapter Hub · Memory Island', sceneKey: 'island', desc: 'A procedural 3D island where the memory districts light up' },
     ];
 
     const root = document.createElement('div');
     root.className = 'seek-menu-guide seek-menu-guide--select';
     root.innerHTML = `
       <div class="seek-menu-guide__blur" data-close></div>
-      <section class="seek-menu-guide__panel" aria-label="关卡与阶段快速选择">
-        <h2>关卡与阶段快速选择</h2>
+      <section class="seek-menu-guide__panel" aria-label="Stage Select">
+        <h2>Stage Select</h2>
         <ul>
           ${stages.map(st => `
             <li><button class="seek-menu-guide__row" type="button" data-scene="${st.sceneKey}">
               <strong>${st.label}</strong><span>${st.desc}</span>
             </button></li>`).join('')}
-          <li><button class="seek-menu-guide__row" type="button" data-album>
-            <strong>相册 · 回忆收藏</strong><span>已收录 ${albumPhotoCount(completedChapters())} / 6 张</span>
-          </button></li>
         </ul>
-        <button class="seek-menu-guide__close" type="button" data-close>关闭返回</button>
+        <button class="seek-menu-guide__close" type="button" data-close>Back</button>
       </section>`;
 
     const close = () => {
@@ -434,16 +436,6 @@ export default class MenuScene extends Phaser.Scene {
         // 先收掉覆盖层：scene.start 会触发 SHUTDOWN，但显式关闭更稳妥。
         close();
         this.scene.start(sceneKey);
-      });
-    });
-    // 相册入口：封面只画了 4 个按钮、没有空位，所以挂在快速选择面板里。
-    // 它不属于「关卡」，单独一行 + 收集进度，未开局也能看（章节未完成时显示为待收录）。
-    // 相册自身 z-index 远高于 2100，会正常盖在本面板之上。
-    root.querySelector<HTMLElement>('[data-album]')?.addEventListener('click', () => {
-      if (this.album) return;
-      this.album = showAlbumUI({
-        completed: completedChapters(),
-        onClose: () => { this.album = undefined; },
       });
     });
 

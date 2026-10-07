@@ -20,7 +20,7 @@ export default class ChapterThreePreviewScene extends Phaser.Scene {
     this.add.text(480, 470, '新的街区仍在前方，下一段记忆即将展开。', { fontSize: '18px', color: '#f1e8d4' }).setOrigin(.5);
     this.tweens.add({ targets: [child, friend], x: '+=18', yoyo: true, repeat: -1, duration: 800, ease: 'Sine.inOut' });
     const finish = () => this.scene.start('island');
-    const skip = this.add.text(868, 34, '跳过预告', { fontSize: '14px', color: '#efe5cd', backgroundColor: '#596f60', padding: { x: 12, y: 8 } }).setOrigin(.5).setInteractive({ useHandCursor: true });
+    const skip = this.add.text(868, 34, 'Skip', { fontSize: '14px', color: '#efe5cd', backgroundColor: '#596f60', padding: { x: 12, y: 8 } }).setOrigin(.5).setInteractive({ useHandCursor: true });
     skip.on('pointerdown', finish);
     this.time.delayedCall(3000, finish);
   }
