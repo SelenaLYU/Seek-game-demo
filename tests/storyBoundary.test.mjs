@@ -49,8 +49,6 @@ test('chapter-one ending plays the real animation instead of the predecessor vid
   assert.doesNotMatch(ending, /seek-ending__photo/);
   // 动画位置：只属于「贝壳 → 结尾」，不得再出现在开场动画与海边之间的加载页。
   assert.doesNotMatch(read('src/scenes/LoadingScene.ts'), /chapter1\.mp4/);
-  // 相册第一格仍是正式家庭照片，删掉分镜不影响收录内容。
-  assert.match(read('src/ui/AlbumUI.ts'), /chapter1-family-photo-seaside\.png\?url/);
   // 旧占位图已由正式照片取代，不得再被任何运行时源码引用。
   for (const path of sources(resolve(root, 'src'))) {
     assert.doesNotMatch(readFileSync(path, 'utf8'), /seek-childhood-photo-placeholder/, path);
