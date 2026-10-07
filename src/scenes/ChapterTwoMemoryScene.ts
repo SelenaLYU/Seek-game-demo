@@ -51,7 +51,7 @@ export default class ChapterTwoMemoryScene extends Phaser.Scene {
     root.setAttribute('aria-label', '第二段记忆');
     root.innerHTML = `
       <video class="seek-chapter-two-memory__video" src="${chapterTwoVideoUrl}" playsinline preload="auto"></video>
-      <button class="seek-chapter-two-memory__skip" type="button">跳过 →</button>
+      <button class="seek-chapter-two-memory__skip" type="button">Skip Animation →</button>
       <button class="seek-chapter-two-memory__play" type="button">播放动画</button>
     `;
 

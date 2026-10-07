@@ -8,8 +8,6 @@ import {
 } from '../gameplay/ChapterOneRoomProgress';
 import menuBackgroundUrl from '../../assets/ui/menu-main-v1.png?url';
 import { resolveImageUrl } from '../assets';
-import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
-import { albumPhotoCount } from '../story/Album';
 import { completedChapters } from '../island/Progress';
 import { isMusicAudible, onMusicAudibleChange, setBackgroundMusicEnabled } from '../MenuRoomMusic';
 
@@ -56,13 +54,13 @@ const MUSIC_LABEL = {
 } as const;
 
 /**
- * DOM 覆盖层（玩法说明 / 快速选择 / 相册）此刻是否开着。
+ * DOM 覆盖层（玩法说明 / 快速选择）此刻是否开着。
  *
  * 为什么要专门问这一句：Phaser 3 的 `mouseup` 是挂在 **window** 上的，
  * 一次落在覆盖层上的点击同样会被场景里的热区收到 —— 详见 createMenuHitArea 的注释。
  */
 function overlayOpen(): boolean {
-  return !!document.querySelector('.seek-menu-guide, .seek-album');
+  return !!document.querySelector('.seek-menu-guide');
 }
 
 /** 统一水彩风格游戏主菜单：包含新游戏、继续游戏(读档)、关卡选择、重置存档 */
@@ -72,8 +70,6 @@ export default class MenuScene extends Phaser.Scene {
   private guide?: HTMLDivElement;
   /** 快速选择同样是 DOM 覆盖层，跟 guide 一样必须自己收掉 */
   private stageSelect?: HTMLDivElement;
-  /** 相册是挂在 body 上的 DOM 覆盖层：菜单离开时必须自己收掉，否则会跟到下一个场景 */
-  private album?: AlbumHandle;
 
   constructor() {
     super('menu');
@@ -301,8 +297,6 @@ export default class MenuScene extends Phaser.Scene {
       // 快速选择也是 DOM 覆盖层，不收掉会跟着进下一个场景。
       this.stageSelect?.remove();
       this.stageSelect = undefined;
-      this.album?.close();
-      this.album = undefined;
     });
   }
 
@@ -415,9 +409,6 @@ export default class MenuScene extends Phaser.Scene {
             <li><button class="seek-menu-guide__row" type="button" data-scene="${st.sceneKey}">
               <strong>${st.label}</strong><span>${st.desc}</span>
             </button></li>`).join('')}
-          <li><button class="seek-menu-guide__row" type="button" data-album>
-            <strong>Album · Memory Collection</strong><span>${albumPhotoCount(completedChapters())} / 6 photos collected</span>
-          </button></li>
         </ul>
         <button class="seek-menu-guide__close" type="button" data-close>Back</button>
       </section>`;
@@ -436,17 +427,6 @@ export default class MenuScene extends Phaser.Scene {
         this.scene.start(sceneKey);
       });
     });
-    // 相册入口：封面只画了 4 个按钮、没有空位，所以挂在快速选择面板里。
-    // 它不属于「关卡」，单独一行 + 收集进度，未开局也能看（章节未完成时显示为待收录）。
-    // 相册自身 z-index 远高于 2100，会正常盖在本面板之上。
-    root.querySelector<HTMLElement>('[data-album]')?.addEventListener('click', () => {
-      if (this.album) return;
-      this.album = showAlbumUI({
-        completed: completedChapters(),
-        onClose: () => { this.album = undefined; },
-      });
-    });
-
     document.body.append(root);
     this.stageSelect = root;
   }

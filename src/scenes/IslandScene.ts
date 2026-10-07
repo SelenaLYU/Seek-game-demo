@@ -27,7 +27,7 @@ export default class IslandScene extends Phaser.Scene {
     const label = document.createElement('p');
     label.innerHTML = bilingual('正在准备记忆之岛…', 'Preparing Memory Island…');
     const back = document.createElement('button');
-    back.textContent = '返回首页';
+    back.textContent = 'Back to Home';
     back.onclick = () => this.scene.start('menu');
     message.append(label, back);
     document.body.append(message);
@@ -56,7 +56,7 @@ export default class IslandScene extends Phaser.Scene {
       if (!alive) return;
       console.error(error);
       label.innerHTML = bilingual(
-        '3D场景未能启动，请确认浏览器支持 WebGL，或返回首页重试。',
+        'The 3D scene could not start. Please check WebGL support and try again from the home screen.',
         'The 3D scene could not start. Check that your browser supports WebGL, or go back and try again.',
       );
     });
