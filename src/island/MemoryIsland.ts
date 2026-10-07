@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { chapterState, completedChapters } from './Progress';
+import { bilingual, installIslandEnglishStyle } from '../ui/IslandEnglish';
 import { characterGroundHeight } from './grounding';
 import { checkScatter, planScatter, type ScatterContext } from './scatter';
 import type { Placement } from './clipping';
@@ -35,7 +36,9 @@ export function mountMemoryIsland(options: Options): () => void {
     .memory-island .instructions{font-size:13px;line-height:1.9;margin:6px 0 0;color:#587068}
     .memory-island .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .memory-island .chapter-picker{position:absolute;right:28px;top:112px;width:286px;pointer-events:auto}
-    .memory-island .asset-status{position:absolute;left:28px;top:157px;color:#c7d6ff;font-size:11px;letter-spacing:.03em;text-shadow:0 1px 10px #081037}
+    /* 原来是 position:absolute + top:157px —— 那个值是按「标题区固定两行」量出来的。
+   加上英文行之后标题区变高，绝对定位就压到副标题上了，所以改成跟在副标题后面自然排版。 */
+.memory-island .asset-status{display:block;margin-top:7px;color:#c7d6ff;font-size:11px;letter-spacing:.03em;text-shadow:0 1px 10px #081037}
     .memory-island .chapter-picker strong{color:#31493f}
     .memory-island .chapter-entry{background:#f7f5eadd;border-color:#c7b998aa;box-shadow:0 4px 14px #163b3d18}
     .memory-island .chapter-entry:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 7px 18px #163b3d26}
@@ -55,11 +58,12 @@ export function mountMemoryIsland(options: Options): () => void {
     .memory-island [hidden]{display:none!important}
     .memory-island .toast{position:absolute;left:50%;top:120px;transform:translateX(-50%);background:#264d43ed;color:#fff;padding:14px 24px;border-radius:28px;text-align:center;max-width:80%;font-size:14px}
     @media(max-width:650px){.memory-island .hud{padding:15px}.memory-island h1{font-size:24px}.memory-island footer{align-items:stretch;flex-direction:column;gap:10px}.memory-island .panel{padding:12px 16px}.memory-island .nearby{bottom:205px}.memory-island button{padding:10px 14px}.memory-island .subtitle{max-width:210px}.memory-island .chapter-picker{right:15px;top:118px;width:245px}}
-  </style><div class="hud"><header><div><div class="eyebrow">SEEK / MEMORY ISLAND</div><h1>记忆之岛</h1><p class="subtitle">六段人生，慢慢找回。<br><span data-progress></span></p></div><button data-home>Back</button></header>
-  <span class="asset-status" data-assets aria-live="polite"></span><aside class="chapter-picker panel" data-chapter-picker><strong>记忆入口</strong><div class="chapter-list" data-chapter-list></div></aside>
+  </style><div class="hud"><header><div><div class="eyebrow">SEEK / MEMORY ISLAND</div><h1>记忆之岛<span class="island-en">Memory Island</span></h1><p class="subtitle">六段人生，慢慢找回。<span class="island-en">Six lives, recovered one by one.</span><span data-progress></span></p><span class="asset-status" data-assets aria-live="polite"></span></div><button data-home>Back</button></header>
+  <aside class="chapter-picker panel" data-chapter-picker><strong>记忆入口<span class="island-en">Memory Entrances</span></strong><div class="chapter-list" data-chapter-list></div></aside>
   <div class="toast" role="status" hidden></div><div class="nearby panel" hidden><p></p><button class="primary" data-interact></button></div>
   <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
   document.body.append(root);
+  installIslandEnglishStyle();
   const get = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const switchButton = get<HTMLButtonElement>('[data-switch]');
   const assetStatus = get<HTMLElement>('[data-assets]');
@@ -492,6 +496,12 @@ export function mountMemoryIsland(options: Options): () => void {
   if (chapterFiveCandidate) modelPaths.push('/island-models-candidates/ch05-tent/ch05-tent-p2-clean.glb');
   const chapterNames = ['贝壳屋', '辣条包装屋', '江南画室', '粉紫树屋', '海边帐篷', '相册书屋'];
   const chapterThemes = ['童年的贝壳记忆', '学生时代的辣条记忆', '成年后的画室记忆', '树屋里的成长记忆', '海边露营的记忆', '写进相册的人生记忆'];
+  // 建筑挂牌（3D 精灵贴图）和「走近建筑」面板共用这两条英文，保持同一处真源。
+  const chapterNamesEn = ['Shell House', 'Spicy Strip House', 'Jiangnan Art Studio', 'Blossom Treehouse', 'Seaside Tent', 'Album House'];
+  const chapterThemesEn = [
+    'A childhood memory of shells', 'A school-days memory of spicy strips', 'A grown-up memory of the art studio',
+    'A memory of growing up in the treehouse', 'A memory of camping by the sea', 'A life written into the album',
+  ];
   // Per-asset fitting is intentionally explicit: generated objects have very
   // different authored proportions, but must not dominate or spill from the
   // reviewed landmark footprints.
@@ -512,7 +522,11 @@ export function mountMemoryIsland(options: Options): () => void {
     { scale: 0.94, width: 7.6, depth: 6.4, height: 5.2, yaw: -Math.PI / 2 },
     { scale: 0.92, width: 8.8, depth: 7, height: 8.8, yaw: -Math.PI / 2 },
   ];
-  const updateAssetStatus = () => { assetStatus.textContent = `3D 模型 ${assetsSettled}/${modelCount + 5} 已载入${forceColorPreview ? ' · 彩色美术预览' : ''}${assetsFailed ? ` · ${assetsFailed} 个失败` : ''}`; };
+  const updateAssetStatus = () => {
+    const zhTail = `${forceColorPreview ? ' · 彩色美术预览' : ''}${assetsFailed ? ` · ${assetsFailed} 个失败` : ''}`;
+    const enTail = `${forceColorPreview ? ' · colour art preview' : ''}${assetsFailed ? ` · ${assetsFailed} failed` : ''}`;
+    assetStatus.innerHTML = bilingual(`3D 模型 ${assetsSettled}/${modelCount + 5} 已载入${zhTail}`, `${assetsSettled}/${modelCount + 5} 3D models loaded${enTail}`);
+  };
   const districtMaterials: { id: number; material: THREE.MeshStandardMaterial; color: THREE.Color; gray: THREE.Color }[] = [];
   function districtMaterial(id: number, color: string, gray = '#a4adaa') {
     const material = mat(chapterState(id) === 'completed' && options.justCompleted !== id ? color : gray);
@@ -902,14 +916,14 @@ export function mountMemoryIsland(options: Options): () => void {
       group.visible = false;
       const candidateToggle = document.createElement('button');
       candidateToggle.type = 'button';
-      candidateToggle.textContent = 'CH05 候选';
+      candidateToggle.innerHTML = bilingual('CH05 候选', 'CH05 candidate');
       candidateToggle.style.cssText = 'position:fixed;left:28px;top:205px;z-index:2;pointer-events:auto;display:none';
       if (chapterFiveCandidate) {
         get('.hud').append(candidateToggle);
-        candidateToggle.addEventListener('click', () => { group.visible = !group.visible; candidateToggle.textContent = group.visible ? '隐藏候选' : '显示候选'; }, { signal });
+        candidateToggle.addEventListener('click', () => { group.visible = !group.visible; candidateToggle.innerHTML = group.visible ? bilingual('隐藏候选', 'Hide candidate') : bilingual('显示候选', 'Show candidate'); }, { signal });
         const previewCandidate = new URLSearchParams(window.location.search).get('ch05Show') === '1';
         group.visible = previewCandidate;
-        candidateToggle.textContent = previewCandidate ? '隐藏候选' : '显示候选';
+        candidateToggle.innerHTML = previewCandidate ? bilingual('隐藏候选', 'Hide candidate') : bilingual('显示候选', 'Show candidate');
         candidateToggle.style.display = 'block';
       }
     }
@@ -920,17 +934,26 @@ export function mountMemoryIsland(options: Options): () => void {
     obstacles.push(box);
     buildings.push({ id, door: doorPosition, box, materials, colors: [new THREE.Color(palette[i]), new THREE.Color('#677f75')] });
     collisionMeshes.push(walls, roof);
-    const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 160;
+    // 挂牌做成双语：中文名 + 英文名 + 中文状态 + 英文状态，四行。
+    // 画布从 640×160 加高到 640×240 —— **只加高、不加宽**，因为文字在 3D 里的
+    // 实际高度 = 字号 × (精灵宽 / 画布宽)，只跟画布宽有关；宽度不变，四行字的
+    // 大小就和原来两行完全一致，不需要重新调字号。
+    const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 240;
     const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#f4f6edde'; ctx.beginPath(); ctx.roundRect(0, 0, 640, 160, 35); ctx.fill();
+    ctx.fillStyle = '#f4f6edde'; ctx.beginPath(); ctx.roundRect(0, 0, 640, 240, 35); ctx.fill();
     ctx.textAlign = 'center'; ctx.fillStyle = '#2f4b43'; ctx.font = 'bold 40px sans-serif';
-    ctx.fillText(`${String(id).padStart(2, '0')}  ${chapterNames[i]}`, 320, 65);
-    ctx.font = '29px sans-serif';
-    ctx.fillText(completed ? '记忆已点亮' : chapterState(id) === 'available' ? chapterThemes[i] : '等待前一段记忆', 320, 118);
+    ctx.fillText(`${String(id).padStart(2, '0')}  ${chapterNames[i]}`, 320, 58);
+    ctx.font = '26px Georgia, serif';
+    ctx.fillText(chapterNamesEn[i], 320, 96);
+    ctx.font = '27px sans-serif';
+    ctx.fillText(completed ? '记忆已点亮' : chapterState(id) === 'available' ? chapterThemes[i] : '等待前一段记忆', 320, 154);
+    ctx.font = '22px Georgia, serif';
+    ctx.fillText(completed ? 'Memory restored' : chapterState(id) === 'available' ? chapterThemesEn[i] : 'Waiting for the previous memory', 320, 196);
     const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
     const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
     if (!isCandidate) {
-      label.position.copy(center).add(new THREE.Vector3(0, height + 2.8, 0)); label.scale.set(6.4 / mapScaleX, 1.6, 1); islandRoot.add(label); labels.push(label);
+      // 精灵高宽比必须跟着画布走（640:240），否则四行字会被压扁。
+      label.position.copy(center).add(new THREE.Vector3(0, height + 2.8, 0)); label.scale.set(6.4 / mapScaleX, 2.4, 1); islandRoot.add(label); labels.push(label);
     }
   }
   // Scenery is now placed by the clipping-aware planner instead of hand-tuned
@@ -1255,13 +1278,15 @@ export function mountMemoryIsland(options: Options): () => void {
   const followFocus = new THREE.Vector3();
   const desired = new THREE.Vector3();
   const direction = new THREE.Vector3();
-  function notify(message: string) { toast.textContent = message; toast.hidden = false; toastUntil = elapsed + 4; }
+  // message 是双语 HTML（调用方一律传 bilingual(...)），所以这里用 innerHTML。
+  function notify(message: string) { toast.innerHTML = message; toast.hidden = false; toastUntil = elapsed + 4; }
   for (const chapter of [1, 2, 3]) {
     const state = chapterState(chapter);
     const button = document.createElement('button');
     button.className = 'chapter-entry';
     button.disabled = state === 'locked';
     const title = chapter === 1 ? '童年冒险' : chapter === 2 ? '学生时代 · 骑楼街逃课' : '第三关 · 待闯关';
+    const titleEn = chapter === 1 ? 'Childhood Adventure' : chapter === 2 ? 'School Days · Skipping Class on Qilou Street' : 'Chapter Three · Not Playable Yet';
     const stateCopy = state === 'locked'
       ? '完成上一段记忆后解锁'
       : state === 'completed'
@@ -1271,15 +1296,24 @@ export function mountMemoryIsland(options: Options): () => void {
           : chapter === 3
             ? '第三关已解锁 · 等待闯关'
             : '第一关已解锁 · 点击进入';
-    button.innerHTML = `<span>${String(chapter).padStart(2, '0')}</span><span><b>${title}</b><small>${stateCopy}</small></span>`;
+    const stateCopyEn = state === 'locked'
+      ? 'Unlocks after the previous memory'
+      : state === 'completed'
+        ? 'Memory restored · you can enter again'
+        : chapter === 2
+          ? 'Chapter Two unlocked · click to enter'
+          : chapter === 3
+            ? 'Chapter Three unlocked · waiting to be built'
+            : 'Chapter One unlocked · click to enter';
+    button.innerHTML = `<span>${String(chapter).padStart(2, '0')}</span><span><b>${title}${bilingual('', titleEn)}</b><small>${stateCopy}${bilingual('', stateCopyEn)}</small></span>`;
     button.addEventListener('click', () => {
       if (chapter !== 3) { options.onChapter(chapter); return; }
-      notify('第三关：未完待续');
+      notify(bilingual('第三关：未完待续', 'Chapter Three: to be continued'));
       window.setTimeout(() => {
         if (signal.aborted) return;
         nearbyPanel.hidden = false;
-        nearbyPanel.querySelector('p')!.textContent = '是否查看后续关卡预告？';
-        interactButton.textContent = '查看后续关卡预告';
+        nearbyPanel.querySelector('p')!.innerHTML = bilingual('是否查看后续关卡预告？', 'View the preview for the next chapter?');
+        interactButton.innerHTML = bilingual('查看后续关卡预告', 'View the next chapter preview');
         interactButton.onclick = () => options.onChapter(3);
       }, 650);
     }, { signal });
@@ -1295,17 +1329,19 @@ export function mountMemoryIsland(options: Options): () => void {
     }
     mode = next; nearby = undefined; nearbyPanel.hidden = true;
     chapterPicker.hidden = mode !== 'overview';
-    get('[data-mode]').textContent = mode === 'overview' ? '岛屿总览' : '第三人称探索';
-    instruction.textContent = mode === 'overview' ? '拖动画面旋转 · 滚轮缩放。进入岛屿后，在建筑之间走走。' : 'W A S D 移动 · 空格跳跃 · 按住鼠标拖动转视角 · Shift 奔跑 · E 进入建筑';
-    switchButton.textContent = mode === 'overview' ? '进入岛屿' : '查看岛屿';
+    get('[data-mode]').innerHTML = mode === 'overview' ? bilingual('岛屿总览', 'Island Overview') : bilingual('第三人称探索', 'Third-Person Explore');
+    instruction.innerHTML = mode === 'overview'
+      ? bilingual('拖动画面旋转 · 滚轮缩放。进入岛屿后，在建筑之间走走。', 'Drag to rotate · scroll to zoom. Once inside, walk between the buildings.')
+      : bilingual('W A S D 移动 · 空格跳跃 · 按住鼠标拖动转视角 · Shift 奔跑 · E 进入建筑', 'W A S D to move · Space to jump · hold and drag to look around · Shift to run · E to enter');
+    switchButton.innerHTML = mode === 'overview' ? bilingual('进入岛屿', 'Enter the Island') : bilingual('查看岛屿', 'View the Island');
     for (const label of labels) label.visible = mode === 'overview';
     if (mode === 'explore') updateCamera(1);
   }
   function interact() {
     if (mode !== 'explore' || !nearby) return;
-    if (chapterState(nearby.id) === 'locked') { notify('先找回前一段记忆，再来这里。'); return; }
+    if (chapterState(nearby.id) === 'locked') { notify(bilingual('先找回前一段记忆，再来这里。', 'Find the previous memory first, then come back here.')); return; }
     if (nearby.id <= 2) options.onChapter(nearby.id);
-    else notify(`第 ${nearby.id} 关入口已预留，冒险与房间内容尚未制作。`);
+    else notify(bilingual(`第 ${nearby.id} 关入口已预留，冒险与房间内容尚未制作。`, `The entrance to Chapter ${nearby.id} is reserved; its adventure and rooms are not built yet.`));
   }
   get('[data-home]').addEventListener('click', options.onHome, { signal });
   switchButton.addEventListener('click', () => setMode(mode === 'overview' ? 'explore' : 'overview'), { signal });
@@ -1377,15 +1413,21 @@ export function mountMemoryIsland(options: Options): () => void {
     controls.update();
     overviewPosition.copy(camera.position); overviewTarget.copy(controls.target);
   }, { signal, passive: false });
-  get('[data-progress]').textContent = `${completedChapters().length} / 6 段记忆已点亮 · 灰色建筑等待找回`;
+  get('[data-progress]').innerHTML = bilingual(
+    `${completedChapters().length} / 6 段记忆已点亮 · 灰色建筑等待找回`,
+    `${completedChapters().length} / 6 memories restored · grey buildings still waiting`,
+  );
   setMode('overview');
   if (options.justCompleted) {
     if (options.completionSaved === false) {
-      notify(`第 ${options.justCompleted} 段记忆已点亮，但浏览器无法保存；刷新后可能需要重新完成。`);
+      notify(bilingual(
+        `第 ${options.justCompleted} 段记忆已点亮，但浏览器无法保存；刷新后可能需要重新完成。`,
+        `Memory ${options.justCompleted} is restored, but this browser could not save it; you may need to do it again after a refresh.`,
+      ));
     } else {
       notify(options.justCompleted === 1
-        ? '第一段记忆回来了。童年的街区正在恢复颜色。'
-        : `第 ${options.justCompleted} 段记忆回来了。新的街区正在恢复颜色。`);
+        ? bilingual('第一段记忆回来了。童年的街区正在恢复颜色。', 'The first memory is back. The childhood district is regaining its colour.')
+        : bilingual(`第 ${options.justCompleted} 段记忆回来了。新的街区正在恢复颜色。`, `Memory ${options.justCompleted} is back. A new district is regaining its colour.`));
     }
   }
   const resize = () => {
@@ -1493,19 +1535,22 @@ export function mountMemoryIsland(options: Options): () => void {
       if (nearby) {
         const state = chapterState(nearby.id);
         const name = chapterNames[nearby.id - 1];
-        nearbyPanel.querySelector('p')!.textContent = `${name} · ${state === 'completed' ? '记忆已点亮' : state === 'available' ? '新的记忆在等你' : '尚未解锁'}`;
+        nearbyPanel.querySelector('p')!.innerHTML = bilingual(
+          `${name} · ${state === 'completed' ? '记忆已点亮' : state === 'available' ? '新的记忆在等你' : '尚未解锁'}`,
+          `${chapterNamesEn[nearby.id - 1]} · ${state === 'completed' ? 'Memory restored' : state === 'available' ? 'A new memory is waiting' : 'Not unlocked yet'}`,
+        );
         const oldDetail = nearbyPanel.querySelector('small');
         if (oldDetail) oldDetail.remove();
         const detail = document.createElement('small');
-        detail.textContent = chapterThemes[nearby.id - 1];
+        detail.innerHTML = bilingual(chapterThemes[nearby.id - 1], chapterThemesEn[nearby.id - 1]);
         nearbyPanel.querySelector('p')!.after(detail);
-        interactButton.textContent = state === 'locked'
-          ? '查看解锁条件'
+        interactButton.innerHTML = state === 'locked'
+          ? bilingual('查看解锁条件', 'See unlock requirements')
           : nearby.id === 1
-            ? 'E · 进入童年冒险'
+            ? bilingual('E · 进入童年冒险', 'E · Enter the childhood adventure')
             : nearby.id === 2
-              ? 'E · 进入学生时代冒险'
-              : 'E · 查看下一段旅程';
+              ? bilingual('E · 进入学生时代冒险', 'E · Enter the school-days adventure')
+              : bilingual('E · 查看下一段旅程', 'E · See the next journey');
       }
     }
     if (elapsed < 4) districtMaterials.filter(entry => entry.id === options.justCompleted).forEach(entry => entry.material.color.lerpColors(entry.gray, entry.color, Math.min(elapsed / 2.5, 1)));
