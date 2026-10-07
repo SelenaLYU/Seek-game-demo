@@ -9,6 +9,7 @@ import { characterGroundHeight } from './grounding';
 import { checkScatter, planScatter, type ScatterContext } from './scatter';
 import type { Placement } from './clipping';
 import { MAP_SCALE_X, coastlineRadius, distanceToPath, streamPaths, terrainHeight } from './terrain';
+import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
 
 type Options = { justCompleted?: number; completionSaved?: boolean; onHome: () => void; onChapter: (chapter: number) => void };
 type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: THREE.MeshStandardMaterial[]; colors: THREE.Color[] };
