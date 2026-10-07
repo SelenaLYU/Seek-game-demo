@@ -103,7 +103,7 @@ test('room navigation has no HUD bypass and the memory orb requires all fragment
 
 test('island is a chapter hub, not an ending label', () => {
   assert.doesNotMatch(read('src/scenes/MenuScene.ts'), /终章|激浪蹦床|高空钥匙/);
-  assert.match(read('src/scenes/MenuScene.ts'), /章节枢纽/);
+  assert.match(read('src/scenes/MenuScene.ts'), /Chapter Hub/);
 });
 
 test('room background is imported through Vite so production includes it', () => {

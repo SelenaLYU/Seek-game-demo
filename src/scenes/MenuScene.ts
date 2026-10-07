@@ -307,7 +307,7 @@ export default class MenuScene extends Phaser.Scene {
   }
 
   /**
-   * 「玩法说明」与「关卡与阶段快速选择」共用同一套覆盖层样式 —— 两者视觉要完全一致，
+   * “How to Play” 与 “Stage Select” 共用同一套覆盖层样式。
    * 所以 CSS 只注入一次。差异全部收在 `.seek-menu-guide--select` 里：
    * 面板更宽（多了右侧说明列）、列表行本身可点。
    */
@@ -324,13 +324,14 @@ export default class MenuScene extends Phaser.Scene {
       .seek-menu-guide__panel { position:relative; width:min(520px,calc(100vw - 44px)); padding:38px 46px 34px;
         border:1px solid rgba(242,221,181,.68); border-radius:12px;
         background:linear-gradient(145deg,rgba(45,42,35,.94),rgba(24,27,25,.94));
-        box-shadow:0 22px 70px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.08); }
+        box-shadow:0 22px 70px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.08);
+        max-height:calc(100vh - 36px); overflow:auto; }
       .seek-menu-guide h2 { margin:0 0 24px; text-align:center; font:500 25px/1.2 Georgia,"STSong",serif;
         letter-spacing:.18em; color:#fff0cf; }
       .seek-menu-guide ul { margin:0; padding:0; list-style:none; display:grid; gap:15px; }
       .seek-menu-guide li { padding:11px 14px; border-bottom:1px solid rgba(238,218,179,.16);
         color:rgba(249,237,211,.9); font-size:15px; line-height:1.65; }
-      .seek-menu-guide strong { display:inline-block; min-width:78px; color:#e9c98f; font-weight:600; }
+      .seek-menu-guide strong { display:inline-block; min-width:130px; padding-right:6px; color:#e9c98f; font-weight:600; }
       .seek-menu-guide__close { display:block; margin:27px auto 0; min-width:150px; padding:10px 22px;
         border:1px solid rgba(244,222,181,.62); border-radius:7px; color:#f8eaca;
         background:rgba(86,96,88,.42); font:16px/1.2 Georgia,"STSong",serif; letter-spacing:.15em; cursor:pointer; }
@@ -341,20 +342,19 @@ export default class MenuScene extends Phaser.Scene {
          （注意 width 是 content-box，520 的内容宽 + 左右 46 内边距 + 1 边框 = 614 实际外宽。）
          行内容宽 = 520 - 左右 14 = 492，留给标签列 170 + 间距 14，说明列还有 308px，
          最长的一条「错落礁石、飞鸥摆荡、限时滚浪、门楣钥匙」约 247px，放得下不折行。 */
-      .seek-menu-guide--select .seek-menu-guide__panel { max-height:calc(100vh - 36px); overflow:auto; }
       .seek-menu-guide--select ul { gap:0; }
       /* li 在这里只当行容器，内边距与下边框交给里面的按钮，避免与玩法说明的行样式叠加。 */
       .seek-menu-guide--select li { padding:0; border-bottom:0; }
-      .seek-menu-guide__row { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px;
+      .seek-menu-guide__row { display:block;
         width:100%; padding:11px 14px; border:0; border-bottom:1px solid rgba(238,218,179,.16);
         background:transparent; color:rgba(249,237,211,.9);
         font:inherit; font-size:15px; line-height:1.65; text-align:left; cursor:pointer;
         transition:background .16s; }
       .seek-menu-guide__row:hover { background:rgba(104,125,116,.3); }
-      .seek-menu-guide__row strong { flex:0 0 170px; min-width:0; }
+      .seek-menu-guide__row strong { display:block; min-width:0; padding-right:0; }
       /* 说明列不再单独调字号/颜色 —— 直接沿用玩法说明正文的 15px 暖白，
          这样两块面板的排版语言完全一致，只差「标签 + 说明」这个两列结构。 */
-      .seek-menu-guide__row span { flex:1 1 auto; min-width:0; }
+      .seek-menu-guide__row span { display:block; min-width:0; }
     `;
     document.head.append(style);
   }
@@ -367,15 +367,15 @@ export default class MenuScene extends Phaser.Scene {
     root.className = 'seek-menu-guide';
     root.innerHTML = `
       <div class="seek-menu-guide__blur" data-close></div>
-      <section class="seek-menu-guide__panel" aria-label="玩法说明">
-        <h2>玩法说明</h2>
+      <section class="seek-menu-guide__panel" aria-label="How to Play">
+        <h2>How to Play</h2>
         <ul>
-          <li><strong>移动探索</strong>使用 A / D 或方向键移动，空格键跳跃。</li>
-          <li><strong>寻找线索</strong>点击场景里的物品，观察文字与画面提示。</li>
-          <li><strong>完成谜题</strong>拖拽、旋转或描画物件，让记忆重新完整。</li>
-          <li><strong>收集回忆</strong>找回记忆碎片，解锁新的房间和故事。</li>
+          <li><strong>Move</strong>A / D or the arrow keys to walk, Space to jump.</li>
+          <li><strong>Look for Clues</strong>Click objects in the scene and watch for hints.</li>
+          <li><strong>Solve Puzzles</strong>Drag, rotate, or trace objects to restore the memory.</li>
+          <li><strong>Collect Memories</strong>Recover memory fragments to unlock new rooms.</li>
         </ul>
-        <button class="seek-menu-guide__close" type="button" data-close>返回</button>
+        <button class="seek-menu-guide__close" type="button" data-close>Back</button>
       </section>`;
     const close = () => { root.remove(); if (this.guide === root) this.guide = undefined; };
     root.querySelectorAll<HTMLElement>('[data-close]').forEach(element => element.addEventListener('click', close));
@@ -398,28 +398,28 @@ export default class MenuScene extends Phaser.Scene {
     this.ensureMenuOverlayStyle();
 
     const stages: Array<{ label: string; sceneKey: string; desc: string }> = [
-      { label: '序章 · 剧情占位', sceneKey: 'intro', desc: '病床蒙太奇与相册入口待制作' },
-      { label: '第一章 · 海边跑酷探索', sceneKey: 'forest', desc: '错落礁石、飞鸥摆荡、限时滚浪、门楣钥匙' },
-      { label: '第一章 · 记忆之房解谜', sceneKey: 'room', desc: '照片拼图、收音机调频、光影小船三笔风' },
-      { label: '章节枢纽 · 3D 记忆之岛', sceneKey: 'island', desc: '三维程序化岛屿、记忆街区点亮演出' },
+      { label: 'Prologue · Story', sceneKey: 'intro', desc: 'Hospital montage and the opening of the memory journey' },
+      { label: 'Chapter 1 · Seaside Run', sceneKey: 'forest', desc: 'Scattered reefs, swinging gulls, timed surf, and a key above the door' },
+      { label: 'Chapter 1 · Memory Room', sceneKey: 'room', desc: 'Photo puzzle, radio tuning, and a three-stroke light-and-shadow boat' },
+      { label: 'Chapter Hub · Memory Island', sceneKey: 'island', desc: 'A procedural 3D island where the memory districts light up' },
     ];
 
     const root = document.createElement('div');
     root.className = 'seek-menu-guide seek-menu-guide--select';
     root.innerHTML = `
       <div class="seek-menu-guide__blur" data-close></div>
-      <section class="seek-menu-guide__panel" aria-label="关卡与阶段快速选择">
-        <h2>关卡与阶段快速选择</h2>
+      <section class="seek-menu-guide__panel" aria-label="Stage Select">
+        <h2>Stage Select</h2>
         <ul>
           ${stages.map(st => `
             <li><button class="seek-menu-guide__row" type="button" data-scene="${st.sceneKey}">
               <strong>${st.label}</strong><span>${st.desc}</span>
             </button></li>`).join('')}
           <li><button class="seek-menu-guide__row" type="button" data-album>
-            <strong>相册 · 回忆收藏</strong><span>已收录 ${albumPhotoCount(completedChapters())} / 6 张</span>
+            <strong>Album · Memory Collection</strong><span>${albumPhotoCount(completedChapters())} / 6 photos collected</span>
           </button></li>
         </ul>
-        <button class="seek-menu-guide__close" type="button" data-close>关闭返回</button>
+        <button class="seek-menu-guide__close" type="button" data-close>Back</button>
       </section>`;
 
     const close = () => {
