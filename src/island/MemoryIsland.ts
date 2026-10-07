@@ -15,6 +15,7 @@ type Building = { id: number; door: THREE.Vector3; box: THREE.Box3; materials: T
 
 /** Self-contained Three.js view. The returned cleanup also releases all GPU resources. */
 export function mountMemoryIsland(options: Options): () => void {
+  const islandAsset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`;
   const root = document.createElement('section');
   root.className = 'memory-island';
   root.innerHTML = `<style>
@@ -484,16 +485,16 @@ export function mountMemoryIsland(options: Options): () => void {
   // 不挂这个解码器，所有模型都会静默加载失败，岛上只剩灰盒方块。
   gltfLoader.setMeshoptDecoder(MeshoptDecoder);
   const modelPaths = [
-    '/island-models/ch01-shell-house.glb',
-    '/island-models/ch02-snack-shop.glb',
-    '/island-models/ch03-dog-studio.glb',
-    '/island-models/ch04-purple-treehouse.glb',
-    '/island-models/ch05-beach-tent.glb',
-    '/island-models/ch06-album-house.glb',
+    islandAsset('/island-models/ch01-shell-house.glb'),
+    islandAsset('/island-models/ch02-snack-shop.glb'),
+    islandAsset('/island-models/ch03-dog-studio.glb'),
+    islandAsset('/island-models/ch04-purple-treehouse.glb'),
+    islandAsset('/island-models/ch05-beach-tent.glb'),
+    islandAsset('/island-models/ch06-album-house.glb'),
   ];
   const chapterFiveCandidate = new URLSearchParams(window.location.search).get('ch05Candidate') === '1';
   const modelCount = modelPaths.length + (chapterFiveCandidate ? 1 : 0);
-  if (chapterFiveCandidate) modelPaths.push('/island-models-candidates/ch05-tent/ch05-tent-p2-clean.glb');
+  if (chapterFiveCandidate) modelPaths.push(islandAsset('/island-models-candidates/ch05-tent/ch05-tent-p2-clean.glb'));
   const chapterNames = ['贝壳屋', '辣条包装屋', '江南画室', '粉紫树屋', '海边帐篷', '相册书屋'];
   const chapterThemes = ['童年的贝壳记忆', '学生时代的辣条记忆', '成年后的画室记忆', '树屋里的成长记忆', '海边露营的记忆', '写进相册的人生记忆'];
   // 建筑挂牌（3D 精灵贴图）和「走近建筑」面板共用这两条英文，保持同一处真源。
@@ -1159,7 +1160,7 @@ export function mountMemoryIsland(options: Options): () => void {
   // Load each prop once and instance it at its planned spots, so eight assets
   // cover ~36 placements without paying the load cost 36 times.
   Promise.all(propAssets.map(async asset => {
-    const url = `/island-models/props/${asset.file}.glb`;
+    const url = islandAsset(`/island-models/props/${asset.file}.glb`);
     const gltf = await gltfLoader.loadAsync(url);
     if (signal.aborted) { disposeGltf(gltf.scene); return; }
     gltf.scene.updateMatrixWorld(true);
@@ -1190,10 +1191,10 @@ export function mountMemoryIsland(options: Options): () => void {
   }).catch(error => console.error('[MemoryIsland] 散布道具加载失败', error));
 
   const characterAnimationPaths = {
-    idle: '/island-models/character-han-meimei-reviewed-idle.glb',
-    walk: '/island-models/character-han-meimei-reviewed-walk.glb',
-    run: '/island-models/character-han-meimei-reviewed-run.glb',
-    jump: '/island-models/character-han-meimei-reviewed-jump.glb',
+    idle: islandAsset('/island-models/character-han-meimei-reviewed-idle.glb'),
+    walk: islandAsset('/island-models/character-han-meimei-reviewed-walk.glb'),
+    run: islandAsset('/island-models/character-han-meimei-reviewed-run.glb'),
+    jump: islandAsset('/island-models/character-han-meimei-reviewed-jump.glb'),
   } as const;
   type CharacterMotion = keyof typeof characterAnimationPaths;
   const characterActions = new Map<CharacterMotion, THREE.AnimationAction>();
@@ -1221,7 +1222,7 @@ export function mountMemoryIsland(options: Options): () => void {
     characterActions.set(name, action);
     if (name === characterMotion) setCharacterMotion(characterMotion);
   }
-  gltfLoader.load('/island-models/character-han-meimei-reviewed.glb', gltf => {
+  gltfLoader.load(islandAsset('/island-models/character-han-meimei-reviewed.glb'), gltf => {
     if (signal.aborted) { disposeGltf(gltf.scene); return; }
     const model = gltf.scene;
     const bounds = new THREE.Box3().setFromObject(model);
