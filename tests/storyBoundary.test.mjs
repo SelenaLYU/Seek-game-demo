@@ -42,15 +42,16 @@ test('chapter-one ending plays the real animation instead of the predecessor vid
   assert.doesNotMatch(ending, /ending\.mp4/);
   // 正式第一章动画到货，结尾由同风格分镜占位换成 assets/animation/chapter1.mp4。
   assert.match(ending, /assets\/animation\/chapter1\.mp4\?url/);
-  assert.match(ending, /跳过/);
+  // 跳过按钮已英文化（所有过场动画统一用 "Skip"）。只断言按钮文案本身 ——
+  // 源码注释里仍然会出现「跳过」这个词，扫全文会误报。
+  assert.match(ending, /class="seek-ending__skip"[^>]*>Skip</);
+  assert.doesNotMatch(ending, />\s*跳过/);
   // 分镜占位已删除：逐句字幕 / 照片显影那套时间线不得再回来。
   assert.doesNotMatch(ending, /CHAPTER_ONE_MEMORY_TEXT/);
   assert.doesNotMatch(ending, /seek-ending__beat/);
   assert.doesNotMatch(ending, /seek-ending__photo/);
   // 动画位置：只属于「贝壳 → 结尾」，不得再出现在开场动画与海边之间的加载页。
   assert.doesNotMatch(read('src/scenes/LoadingScene.ts'), /chapter1\.mp4/);
-  // 相册第一格仍是正式家庭照片，删掉分镜不影响收录内容。
-  assert.match(read('src/ui/AlbumUI.ts'), /chapter1-family-photo-seaside\.png\?url/);
   // 旧占位图已由正式照片取代，不得再被任何运行时源码引用。
   for (const path of sources(resolve(root, 'src'))) {
     assert.doesNotMatch(readFileSync(path, 'utf8'), /seek-childhood-photo-placeholder/, path);
@@ -102,8 +103,10 @@ test('room navigation has no HUD bypass and the memory orb requires all fragment
 });
 
 test('island is a chapter hub, not an ending label', () => {
-  assert.doesNotMatch(read('src/scenes/MenuScene.ts'), /终章|激浪蹦床|高空钥匙/);
-  assert.match(read('src/scenes/MenuScene.ts'), /章节枢纽/);
+  const menu = read('src/scenes/MenuScene.ts');
+  assert.doesNotMatch(menu, /终章|激浪蹦床|高空钥匙/);
+  // 快速选择面板已英文化，枢纽那一行从「章节枢纽」改成 "Chapter Hub"。
+  assert.match(menu, /Chapter Hub/);
 });
 
 test('room background is imported through Vite so production includes it', () => {

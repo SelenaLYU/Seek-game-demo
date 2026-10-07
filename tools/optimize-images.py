@@ -39,8 +39,6 @@ RUNTIME_IMAGES: tuple[str, ...] = (
     "assets/level1/level1-jump-wave-crest-v2.png",
     "assets/level1/level1-golden-jasmine-key-v1.png",
     "assets/level1/level1-memory-room-stone-door-v3.png",
-    # —— 第一关：回忆结尾（序章→海边→记忆之房→贝壳回忆）——
-    "assets/story/chapter1-family-photo-seaside.png",
     # —— 第一关：记忆之房 ——
     "scene/level1-memory-room-night-empty-v2-1920x1080.png",
     "assets/environment/room-vintage-cassette-recorder-perspective-v1.png",

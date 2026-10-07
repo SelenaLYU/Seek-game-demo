@@ -3,6 +3,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { chapterState, completedChapters } from './Progress';
+import { characterGroundHeight } from './grounding';
+import { checkScatter, planScatter, type ScatterContext } from './scatter';
+import type { Placement } from './clipping';
+import { MAP_SCALE_X, coastlineRadius, distanceToPath, streamPaths, terrainHeight } from './terrain';
 import { showAlbumUI, type AlbumHandle } from '../ui/AlbumUI';
 import { buildingGroundFill, foundationTerrainHeight, groundIslandBuilding, type BuildingFoundation } from './buildingGrounding';
 
@@ -44,16 +48,20 @@ export function mountMemoryIsland(options: Options): () => void {
     .memory-island [hidden]{display:none!important}
     .memory-island .toast{position:absolute;left:50%;top:120px;transform:translateX(-50%);background:#264d43ed;color:#fff;padding:14px 24px;border-radius:28px;text-align:center;max-width:80%;font-size:14px}
     @media(max-width:650px){.memory-island .hud{padding:15px}.memory-island h1{font-size:24px}.memory-island footer{align-items:stretch;flex-direction:column;gap:10px}.memory-island .panel{padding:12px 16px}.memory-island .nearby{bottom:205px}.memory-island button{padding:10px 14px}.memory-island .subtitle{max-width:210px}.memory-island .chapter-picker{right:15px;top:118px;width:245px}}
+  </style><div class="hud"><header><div><div class="eyebrow">SEEK / MEMORY ISLAND</div><h1>记忆之岛</h1><p class="subtitle">六段人生，慢慢找回。<br><span data-progress></span></p></div><button data-home>Back</button></header>
   </style><div class="hud"><div class="sky-haze" aria-hidden="true"></div><header><div><div class="eyebrow">SEEK / MEMORY ISLAND</div><h1>记忆之岛</h1><p class="subtitle">六段人生，慢慢找回。<br><span data-progress></span></p></div><button data-home>返回首页</button></header>
   <span class="asset-status" data-assets aria-live="polite"></span><aside class="chapter-picker panel" data-chapter-picker><strong>记忆入口</strong><div class="chapter-list" data-chapter-list></div></aside>
   <div class="toast" role="status" hidden></div><div class="nearby panel" hidden><p></p><button class="primary" data-interact></button></div>
-  <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button data-album>相册</button><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
+  <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
   document.body.append(root);
   const get = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const switchButton = get<HTMLButtonElement>('[data-switch]');
   const assetStatus = get<HTMLElement>('[data-assets]');
   // Art-review mode reveals the source materials without changing chapter progress.
   const forceColorPreview = new URLSearchParams(window.location.search).get('artPreview') === 'color';
+  const polishedPreview = new URLSearchParams(window.location.search).get('islandPreview') === '1';
+  const terrainReview = new URLSearchParams(window.location.search).get('terrainReview') === '1';
+  root.classList.toggle('is-art-preview', forceColorPreview || polishedPreview || terrainReview);
   root.classList.toggle('is-art-preview', forceColorPreview);
   let assetsSettled = 0;
   let assetsFailed = 0;
@@ -76,6 +84,13 @@ export function mountMemoryIsland(options: Options): () => void {
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   root.prepend(renderer.domElement);
+  const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 1000);
+  camera.position.set(0, 69, 94);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 3, -2);
+  const overviewDirection = camera.position.clone().sub(controls.target).normalize();
+  const overviewDistance = camera.position.distanceTo(controls.target);
+  let overviewZoomScale = 1;
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 180);
   camera.position.set(40, 39, 47);
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -195,7 +210,7 @@ export function mountMemoryIsland(options: Options): () => void {
     meadowContext.fillStyle = ['rgba(230,217,167,0.15)','rgba(114,158,126,0.18)','rgba(247,232,190,0.2)'][i % 3]; meadowContext.fill();
   }
   const meadowTexture = new THREE.CanvasTexture(meadowCanvas); meadowTexture.colorSpace = THREE.SRGBColorSpace;
-  const terrainSegments = 192, terrainRings = 64;
+  const terrainSegments = 256, terrainRings = 112;
   const terrainVertices: number[] = [], terrainColors: number[] = [], terrainUvs: number[] = [], terrainIndices: number[] = [];
   const lowland = new THREE.Color('#c0d39f'), hillside = new THREE.Color('#9eb98c'), highland = new THREE.Color('#849c83');
   for (let ring = 0; ring <= terrainRings; ring++) for (let segment = 0; segment <= terrainSegments; segment++) {
@@ -240,6 +255,15 @@ export function mountMemoryIsland(options: Options): () => void {
       item.object.position.y = terrainHeight(item.x, item.z) + item.offset;
     }
   }
+  const cliffGeometry = new THREE.BufferGeometry();
+  cliffGeometry.setAttribute('position', new THREE.Float32BufferAttribute(cliffVertices, 3));
+  cliffGeometry.setAttribute('color', new THREE.Float32BufferAttribute(cliffColors, 3));
+  cliffGeometry.setIndex(cliffIndices); cliffGeometry.computeVertexNormals(); cliffGeometry.computeBoundingSphere();
+  const islandCliff = mesh(cliffGeometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }));
+  islandCliff.castShadow = islandCliff.receiveShadow = true;
+  // 独立地形审阅：保留海、灯光与岛体，后续道具仍保留在正常游戏里。
+  const terrainObjects = new Set(islandRoot.children);
+  const terrainSceneObjects = new Set(scene.children);
   const foamMaterial = new THREE.MeshBasicMaterial({ color: '#e7f6e9', transparent: true, opacity: 0.72, depthWrite: false });
   for (const [offset, y, radius] of [[1.75, -1.08, 0.09], [2.5, -1.12, 0.045]] as const) {
     const points: THREE.Vector3[] = [];
@@ -648,11 +672,6 @@ export function mountMemoryIsland(options: Options): () => void {
     if (nearby.id <= 2) options.onChapter(nearby.id);
     else notify(`第 ${nearby.id} 关入口已预留，冒险与房间内容尚未制作。`);
   }
-  let album: AlbumHandle | undefined;
-  get('[data-album]').addEventListener('click', () => {
-    if (album) return;
-    album = showAlbumUI({ completed: completedChapters(), onClose: () => { album = undefined; } });
-  }, { signal });
   get('[data-home]').addEventListener('click', options.onHome, { signal });
   switchButton.addEventListener('click', () => setMode(mode === 'overview' ? 'explore' : 'overview'), { signal });
   interactButton.addEventListener('click', interact, { signal });
@@ -713,6 +732,42 @@ export function mountMemoryIsland(options: Options): () => void {
         : `第 ${options.justCompleted} 段记忆回来了。新的街区正在恢复颜色。`);
     }
   }
+  const resize = () => {
+    const { width, height } = root.getBoundingClientRect();
+    camera.aspect = width / Math.max(height, 1);
+    camera.updateProjectionMatrix(); renderer.setSize(width, height);
+    if (!overviewFramed) {
+      const portraitScale = camera.aspect < 1.15 ? 1 + 1.36 * (1 - camera.aspect) : 1;
+      controls.target.set(0, 3, -2);
+      camera.position.copy(controls.target).addScaledVector(overviewDirection, overviewDistance * portraitScale * overviewZoomScale);
+      if (Number.isInteger(focusChapter) && focusChapter >= 1 && focusChapter <= 6) {
+        const site = sites[focusChapter - 1];
+        controls.target.set(site.x * mapScaleX, site.height * 0.45, site.z);
+        if (focusFromDoor) {
+          const outwardX = Math.sin(site.yaw), outwardZ = Math.cos(site.yaw);
+          const away = site.depth / 2 + 1.5 + focusDistance;
+          const doorX = site.x + outwardX * away, doorZ = site.z + outwardZ * away;
+          camera.position.set(
+            doorX * mapScaleX,
+            terrainHeight(doorX, doorZ) + site.height * 0.42,
+            doorZ,
+          );
+        } else {
+          camera.position.copy(controls.target).add(new THREE.Vector3(9, 7.5, 11));
+        }
+        controls.update();
+      }
+      controls.update();
+      overviewPosition.copy(camera.position); overviewTarget.copy(controls.target);
+      overviewFramed = true;
+    }
+  };
+  // Review hook: ?debugView=1 exposes the scene/camera so probes can place a custom
+  // camera (e.g. a low angle along the shoreline) without the UI fighting it.
+  // Off by default so nothing else in the shipped scene depends on it.
+  if (new URLSearchParams(window.location.search).get('debugView') === '1') {
+    (window as unknown as { __islandView?: unknown }).__islandView = { scene, camera, renderer, controls };
+  }
   const resize = () => { const { width, height } = root.getBoundingClientRect(); camera.aspect = width / Math.max(height, 1); camera.updateProjectionMatrix(); renderer.setSize(width, height); };
   window.addEventListener('resize', resize, { signal }); resize();
   let frame = 0, last = performance.now(), disposed = false;
@@ -765,6 +820,10 @@ export function mountMemoryIsland(options: Options): () => void {
       uniform.value = id === options.justCompleted && elapsed < 4 ? 1 - Math.min(elapsed / 2.5, 1) : target;
     });
     if (elapsed > toastUntil) toast.hidden = true;
+    if (terrainReview) {
+      islandRoot.children.forEach(object => { object.visible = terrainObjects.has(object); });
+      scene.children.forEach(object => { object.visible = terrainSceneObjects.has(object); });
+    }
     renderer.render(scene, camera); frame = requestAnimationFrame(tick);
   }
   frame = requestAnimationFrame(tick);
