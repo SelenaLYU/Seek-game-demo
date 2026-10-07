@@ -1182,15 +1182,17 @@ export function mountMemoryIsland(options: Options): () => void {
   }).catch(error => console.error('[MemoryIsland] 散布道具加载失败', error));
 
   const characterAnimationPaths = {
-    idle: '/island-models/character-han-meimei-idle.glb',
-    walk: '/island-models/character-han-meimei-walk.glb',
-    run: '/island-models/character-han-meimei-run.glb',
-    jump: '/island-models/character-han-meimei-jump.glb',
+    idle: '/island-models/character-han-meimei-reviewed-idle.glb',
+    walk: '/island-models/character-han-meimei-reviewed-walk.glb',
+    run: '/island-models/character-han-meimei-reviewed-run.glb',
+    jump: '/island-models/character-han-meimei-reviewed-jump.glb',
   } as const;
   type CharacterMotion = keyof typeof characterAnimationPaths;
   const characterActions = new Map<CharacterMotion, THREE.AnimationAction>();
   const pendingCharacterClips = new Map<CharacterMotion, THREE.AnimationClip>();
   let characterMixer: THREE.AnimationMixer | undefined;
+  const soleAnchors: THREE.Object3D[] = [];
+  const solePosition = new THREE.Vector3();
   let activeCharacterAction: THREE.AnimationAction | undefined;
   let characterMotion: CharacterMotion = 'idle';
   let jumpPlaying = false;
@@ -1210,7 +1212,7 @@ export function mountMemoryIsland(options: Options): () => void {
     characterActions.set(name, action);
     if (name === characterMotion) setCharacterMotion(characterMotion);
   }
-  gltfLoader.load('/island-models/character-han-meimei-h31.glb', gltf => {
+  gltfLoader.load('/island-models/character-han-meimei-reviewed.glb', gltf => {
     if (signal.aborted) { disposeGltf(gltf.scene); return; }
     const model = gltf.scene;
     const bounds = new THREE.Box3().setFromObject(model);
@@ -1223,11 +1225,8 @@ export function mountMemoryIsland(options: Options): () => void {
     // Align the model's actual lowest vertex to the player's ground anchor. The
     // source GLB may have a non-zero origin and the animated rig can bob above it.
     model.position.set(-(scaledBounds.min.x + scaledBounds.max.x) / 2, -scaledBounds.min.y, -(scaledBounds.min.z + scaledBounds.max.z) / 2);
-    model.rotation.y = -Math.PI / 2;
-    // 作者朝向是 +X（与六栋建筑同一套 Tripo 流程）：`player.rotation.y` 已把
-    // 「移动方向」写成组本地 +Z，所以模型只需再转 -π/2 把 +X 摆到 +Z。
-    // 原来的 π 让角色始终侧身横走：探针罗盘在 270° 格看得到正脸，
-    // 岛内按 W/S 实走时却只看到左右侧脸，两者结合才能定下来。
+    model.rotation.y = 0;
+    // Reviewed Blender export faces +Z, matching the player movement axis.
     // Preserve this bind-pose offset. Animation clips may animate root nodes, so
     // per-frame corrections must be measured against the original ground anchor.
     model.updateMatrixWorld(true);
@@ -1239,11 +1238,22 @@ export function mountMemoryIsland(options: Options): () => void {
     model.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } });
     model.userData.isHanMeimeiModel = true;
     player.add(model);
+    model.updateWorldMatrix(true, true);
+    const soleY = new THREE.Box3().setFromObject(model).min.y;
+    model.traverse(object => {
+      if (!(object instanceof THREE.Bone) || !/^(foot|toe)[._]?[LR]$/.test(object.name)) return;
+      const point = object.getWorldPosition(new THREE.Vector3());
+      point.y = soleY;
+      const anchor = new THREE.Object3D();
+      anchor.position.copy(object.worldToLocal(point));
+      object.add(anchor);
+      soleAnchors.push(anchor);
+    });
     characterMixer = new THREE.AnimationMixer(model);
     pendingCharacterClips.forEach((clip, name) => registerCharacterClip(name, clip));
     setCharacterMotion(characterMotion);
     blockoutPlayer.visible = false;
-    console.info('[MemoryIsland] Loaded Han Meimei H3.1 character model', { size: size.toArray() });
+    console.info('[MemoryIsland] Loaded reviewed Han Meimei rig', { size: size.toArray(), soleAnchors: soleAnchors.length });
     assetsSettled++; updateAssetStatus();
   }, undefined, error => { assetsSettled++; assetsFailed++; updateAssetStatus(); console.error('[MemoryIsland] Could not load Han Meimei character model', error); });
   for (const name of ['idle', 'walk', 'run', 'jump'] as const) {
@@ -1478,37 +1488,6 @@ export function mountMemoryIsland(options: Options): () => void {
     if (disposed) return;
     const dt = Math.min((now - last) / 1000, 0.05); last = now; elapsed += dt;
     characterMixer?.update(dt);
-    if (characterMixer) {
-      // Imported clips can animate the rig root vertically. Restore its bind-pose
-      // ground offset after each mixer tick so feet remain planted on the terrain.
-      const model = player.children.find(child => child.userData.isHanMeimeiModel);
-      if (model) {
-        player.updateMatrixWorld(true);
-        model.position.y = Number(model.userData.groundOffset ?? 0);
-        model.updateMatrixWorld(true);
-        const bounds = new THREE.Box3().setFromObject(model);
-        const feetY = bounds.min.y;
-        const terrainY = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight)
-          + pavingLift(player.position.x / mapScaleX, player.position.z);
-        const feetError = terrainY - feetY;
-        // Apply one absolute correction to the stored bind-pose offset. Do not
-        // integrate corrections frame-to-frame; that would accumulate drift.
-        const correction = THREE.MathUtils.clamp(feetError, -0.08, 0.08);
-        model.position.y = Number(model.userData.groundOffset ?? 0) + correction;
-        if (Math.abs(feetError) > 0.08) player.position.y += feetError - correction;
-        // 接触影子跟着脚走，并按脚下坡度贴住地面：采样前后左右各 0.6 个单位算法线，
-        // 否则平铺的贴图在上坡侧会扎进地形、下坡侧悬空。
-        const slopeX = THREE.MathUtils.clamp((walkableHeight((player.position.x + 0.6) / mapScaleX, player.position.z)
-          - walkableHeight((player.position.x - 0.6) / mapScaleX, player.position.z)) / 1.2, -0.35, 0.35);
-        const slopeZ = THREE.MathUtils.clamp((walkableHeight(player.position.x / mapScaleX, player.position.z + 0.6)
-          - walkableHeight(player.position.x / mapScaleX, player.position.z - 0.6)) / 1.2, -0.35, 0.35);
-        blobShadow.quaternion.setFromUnitVectors(UP_AXIS, new THREE.Vector3(-slopeX, 1, -slopeZ).normalize());
-        // terrainY 已经包含 pavingLift，等于「脚踩的那个面」（裸地形或路面），blob 只需贴住它。
-        // 早先给 0.05 完全看不见，是因为那时 terrainY 还在路面之下 0.12（pavingLift 补上之前）。
-        blobShadow.position.set(player.position.x, terrainY + 0.04, player.position.z);
-        blobShadow.visible = mode !== 'overview';
-      }
-    }
     if (jumpPlaying && elapsed >= jumpUntil) {
       jumpPlaying = false;
       setCharacterMotion(characterMotion);
@@ -1557,6 +1536,37 @@ export function mountMemoryIsland(options: Options): () => void {
             : nearby.id === 2
               ? bilingual('E · 进入学生时代冒险', 'E · Enter the school-days adventure')
               : bilingual('E · 查看下一段旅程', 'E · See the next journey');
+      }
+    }
+    if (characterMixer) {
+      // Imported clips can animate the rig root vertically. Restore its bind-pose
+      // ground offset after each mixer tick so feet remain planted on the terrain.
+      const model = player.children.find(child => child.userData.isHanMeimeiModel);
+      if (model) {
+        player.updateMatrixWorld(true);
+        model.position.y = Number(model.userData.groundOffset ?? 0);
+        model.updateMatrixWorld(true);
+        const terrainY = characterGroundHeight(player.position.x / mapScaleX, player.position.z, walkableHeight)
+          + pavingLift(player.position.x / mapScaleX, player.position.z);
+        let correction = -Infinity;
+        for (const anchor of soleAnchors) {
+          anchor.getWorldPosition(solePosition);
+          const x = solePosition.x / mapScaleX;
+          const floor = walkableHeight(x, solePosition.z) + pavingLift(x, solePosition.z);
+          correction = Math.max(correction, floor + 0.012 - solePosition.y);
+        }
+        if (Number.isFinite(correction)) model.position.y += correction;
+        // 接触影子跟着脚走，并按脚下坡度贴住地面：采样前后左右各 0.6 个单位算法线，
+        // 否则平铺的贴图在上坡侧会扎进地形、下坡侧悬空。
+        const slopeX = THREE.MathUtils.clamp((walkableHeight((player.position.x + 0.6) / mapScaleX, player.position.z)
+          - walkableHeight((player.position.x - 0.6) / mapScaleX, player.position.z)) / 1.2, -0.35, 0.35);
+        const slopeZ = THREE.MathUtils.clamp((walkableHeight(player.position.x / mapScaleX, player.position.z + 0.6)
+          - walkableHeight(player.position.x / mapScaleX, player.position.z - 0.6)) / 1.2, -0.35, 0.35);
+        blobShadow.quaternion.setFromUnitVectors(UP_AXIS, new THREE.Vector3(-slopeX, 1, -slopeZ).normalize());
+        // terrainY 已经包含 pavingLift，等于「脚踩的那个面」（裸地形或路面），blob 只需贴住它。
+        // 早先给 0.05 完全看不见，是因为那时 terrainY 还在路面之下 0.12（pavingLift 补上之前）。
+        blobShadow.position.set(player.position.x, terrainY + 0.04, player.position.z);
+        blobShadow.visible = mode !== 'overview';
       }
     }
     if (elapsed < 4) districtMaterials.filter(entry => entry.id === options.justCompleted).forEach(entry => entry.material.color.lerpColors(entry.gray, entry.color, Math.min(elapsed / 2.5, 1)));
