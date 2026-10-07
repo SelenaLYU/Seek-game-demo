@@ -747,6 +747,7 @@ export function mountMemoryIsland(options: Options): () => void {
   }
   const palette = ['#dcb995', '#91afb0', '#acb999', '#d4afa4', '#b5aac6', '#c5be96'];
   const labels: THREE.Sprite[] = [];
+  const deferredBuildingLoads: (() => void)[] = [];
   for (let i = 0; i < modelPaths.length; i++) {
     const isCandidate = i >= 6;
     const buildingIndex = isCandidate ? 4 : i;
@@ -776,7 +777,7 @@ export function mountMemoryIsland(options: Options): () => void {
     walls.userData.isBlockout = true;
     roof.userData.isBlockout = true;
     door.userData.isBlockout = true;
-    gltfLoader.load(modelPaths[i], gltf => {
+    const loadBuilding = () => gltfLoader.load(modelPaths[i], gltf => {
       if (signal.aborted) { disposeGltf(gltf.scene); return; }
       const model = gltf.scene;
       const rawBounds = new THREE.Box3().setFromObject(model);
@@ -912,6 +913,8 @@ export function mountMemoryIsland(options: Options): () => void {
       });
       assetsSettled++; updateAssetStatus();
     }, undefined, error => { assetsSettled++; assetsFailed++; updateAssetStatus(); console.error(`[MemoryIsland] Could not load chapter ${id} model`, error); });
+    if (i < 2) loadBuilding();
+    else deferredBuildingLoads.push(loadBuilding);
     if (isCandidate) {
       group.visible = false;
       const candidateToggle = document.createElement('button');
@@ -956,6 +959,12 @@ export function mountMemoryIsland(options: Options): () => void {
       label.position.copy(center).add(new THREE.Vector3(0, height + 2.8, 0)); label.scale.set(6.4 / mapScaleX, 2.4, 1); islandRoot.add(label); labels.push(label);
     }
   }
+  // Keep the first view responsive: shell house, snack shop and the player
+  // start downloading first. The remaining landmarks begin after the browser
+  // has had a short window to establish the initial scene.
+  window.setTimeout(() => {
+    deferredBuildingLoads.forEach((load, index) => window.setTimeout(load, index * 180));
+  }, 900);
   // Scenery is now placed by the clipping-aware planner instead of hand-tuned
   // loops. Every candidate point goes through `canPlace`; a rejected point is
   // dropped (never nudged), which is what keeps the "no clipping" rule true by
