@@ -27,7 +27,7 @@ export default class IslandScene extends Phaser.Scene {
     const label = document.createElement('p');
     label.innerHTML = bilingual('正在准备记忆之岛…', 'Preparing Memory Island…');
     const back = document.createElement('button');
-    back.textContent = 'Back';
+    back.textContent = '返回首页';
     back.onclick = () => this.scene.start('menu');
     message.append(label, back);
     document.body.append(message);

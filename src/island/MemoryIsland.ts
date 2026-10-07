@@ -61,7 +61,7 @@ export function mountMemoryIsland(options: Options): () => void {
   </style><div class="hud"><header><div><div class="eyebrow">SEEK / MEMORY ISLAND</div><h1>记忆之岛<span class="island-en">Memory Island</span></h1><p class="subtitle">六段人生，慢慢找回。<span class="island-en">Six lives, recovered one by one.</span><span data-progress></span></p><span class="asset-status" data-assets aria-live="polite"></span></div><button data-home>Back</button></header>
   <aside class="chapter-picker panel" data-chapter-picker><strong>记忆入口<span class="island-en">Memory Entrances</span></strong><div class="chapter-list" data-chapter-list></div></aside>
   <div class="toast" role="status" hidden></div><div class="nearby panel" hidden><p></p><button class="primary" data-interact></button></div>
-  <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
+  <footer><div class="panel"><strong data-mode>岛屿总览</strong><p class="instructions"></p></div><div class="actions"><button data-album>相册</button><button class="primary" data-switch>进入岛屿</button></div></footer></div>`;
   document.body.append(root);
   installIslandEnglishStyle();
   const get = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
@@ -342,7 +342,7 @@ export function mountMemoryIsland(options: Options): () => void {
     meadowContext.fillStyle = ['rgba(230,217,167,0.15)','rgba(114,158,126,0.18)','rgba(247,232,190,0.2)'][i % 3]; meadowContext.fill();
   }
   const meadowTexture = new THREE.CanvasTexture(meadowCanvas); meadowTexture.colorSpace = THREE.SRGBColorSpace;
-  const terrainSegments = 256, terrainRings = 112;
+  const terrainSegments = 192, terrainRings = 64;
   const terrainVertices: number[] = [], terrainColors: number[] = [], terrainUvs: number[] = [], terrainIndices: number[] = [];
   const lowland = new THREE.Color('#a5c47f'), hillside = new THREE.Color('#7da67b'), highland = new THREE.Color('#557d74'), exposedRock = new THREE.Color('#827967'), beachSand = new THREE.Color('#ddbf86');
   function addTerrainVertex(x: number, z: number) {
@@ -1343,6 +1343,11 @@ export function mountMemoryIsland(options: Options): () => void {
     if (nearby.id <= 2) options.onChapter(nearby.id);
     else notify(bilingual(`第 ${nearby.id} 关入口已预留，冒险与房间内容尚未制作。`, `The entrance to Chapter ${nearby.id} is reserved; its adventure and rooms are not built yet.`));
   }
+  let album: AlbumHandle | undefined;
+  get('[data-album]').addEventListener('click', () => {
+    if (album) return;
+    album = showAlbumUI({ completed: completedChapters(), onClose: () => { album = undefined; } });
+  }, { signal });
   get('[data-home]').addEventListener('click', options.onHome, { signal });
   switchButton.addEventListener('click', () => setMode(mode === 'overview' ? 'explore' : 'overview'), { signal });
   interactButton.addEventListener('click', interact, { signal });
@@ -1559,10 +1564,6 @@ export function mountMemoryIsland(options: Options): () => void {
       uniform.value = id === options.justCompleted && elapsed < 4 ? 1 - Math.min(elapsed / 2.5, 1) : target;
     });
     if (elapsed > toastUntil) toast.hidden = true;
-    if (terrainReview) {
-      islandRoot.children.forEach(object => { object.visible = terrainObjects.has(object); });
-      scene.children.forEach(object => { object.visible = terrainSceneObjects.has(object); });
-    }
     renderer.render(scene, camera); frame = requestAnimationFrame(tick);
   }
   frame = requestAnimationFrame(tick);
