@@ -1192,6 +1192,7 @@ export function mountMemoryIsland(options: Options): () => void {
   const pendingCharacterClips = new Map<CharacterMotion, THREE.AnimationClip>();
   let characterMixer: THREE.AnimationMixer | undefined;
   const soleAnchors: THREE.Object3D[] = [];
+  const soleVertices: { mesh: THREE.SkinnedMesh; indices: number[] }[] = [];
   const solePosition = new THREE.Vector3();
   let activeCharacterAction: THREE.AnimationAction | undefined;
   let characterMotion: CharacterMotion = 'idle';
@@ -1233,13 +1234,29 @@ export function mountMemoryIsland(options: Options): () => void {
     const groundedBounds = new THREE.Box3().setFromObject(model);
     const modelGroundOffset = -groundedBounds.min.y;
     model.position.y += modelGroundOffset;
-    model.userData.groundOffset = modelGroundOffset;
+    model.userData.groundOffset = model.position.y;
     model.updateMatrixWorld(true);
     model.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } });
     model.userData.isHanMeimeiModel = true;
     player.add(model);
     model.updateWorldMatrix(true, true);
     const soleY = new THREE.Box3().setFromObject(model).min.y;
+    model.traverse(object => {
+      if (!(object instanceof THREE.SkinnedMesh)) return;
+      object.skeleton.update();
+      // Sample the actual sole surface, including the toe/heel edges, rather
+      // than assuming that a point beneath a bone matches the skinned foot.
+      const cells = new Map<string, { index: number; y: number }>();
+      const position = object.geometry.getAttribute('position');
+      for (let index = 0; index < position.count; index++) {
+        object.getVertexPosition(index, solePosition).applyMatrix4(object.matrixWorld);
+        if (solePosition.y > soleY + 0.14) continue;
+        const key = `${Math.floor(solePosition.x / 0.025)},${Math.floor(solePosition.z / 0.025)}`;
+        const old = cells.get(key);
+        if (!old || solePosition.y < old.y) cells.set(key, { index, y: solePosition.y });
+      }
+      soleVertices.push({ mesh: object, indices: [...cells.values()].map(cell => cell.index) });
+    });
     model.traverse(object => {
       if (!(object instanceof THREE.Bone) || !/^(foot|toe)[._]?[LR]$/.test(object.name)) return;
       const point = object.getWorldPosition(new THREE.Vector3());
@@ -1554,6 +1571,15 @@ export function mountMemoryIsland(options: Options): () => void {
           const x = solePosition.x / mapScaleX;
           const floor = walkableHeight(x, solePosition.z) + pavingLift(x, solePosition.z);
           correction = Math.max(correction, floor + 0.012 - solePosition.y);
+        }
+        for (const sample of soleVertices) {
+          sample.mesh.skeleton.update();
+          for (const index of sample.indices) {
+            sample.mesh.getVertexPosition(index, solePosition).applyMatrix4(sample.mesh.matrixWorld);
+            const x = solePosition.x / mapScaleX;
+            const floor = walkableHeight(x, solePosition.z) + pavingLift(x, solePosition.z);
+            correction = Math.max(correction, floor + 0.025 - solePosition.y);
+          }
         }
         if (Number.isFinite(correction)) model.position.y += correction;
         // 接触影子跟着脚走，并按脚下坡度贴住地面：采样前后左右各 0.6 个单位算法线，
