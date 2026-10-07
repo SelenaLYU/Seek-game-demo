@@ -1245,7 +1245,12 @@ export function mountMemoryIsland(options: Options): () => void {
     model.position.y += modelGroundOffset;
     model.userData.groundOffset = model.position.y;
     model.updateMatrixWorld(true);
-    model.traverse(object => { if (object instanceof THREE.Mesh) { object.castShadow = true; object.receiveShadow = true; } });
+    model.traverse(object => {
+      if (object instanceof THREE.Mesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+      }
+    });
     model.userData.isHanMeimeiModel = true;
     player.add(model);
     model.updateWorldMatrix(true, true);
