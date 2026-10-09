@@ -396,6 +396,7 @@ export default class MenuScene extends Phaser.Scene {
       { label: 'Chapter 1 · Seaside Run', sceneKey: 'forest', desc: 'Scattered reefs, swinging gulls, timed surf, and a key above the door' },
       { label: 'Chapter 1 · Memory Room', sceneKey: 'room', desc: 'Photo puzzle, radio tuning, and a three-stroke light-and-shadow boat' },
       { label: 'Chapter Hub · Memory Island', sceneKey: 'island', desc: 'A procedural 3D island where the memory districts light up' },
+      { label: 'Chapter 3 · Office Escape', sceneKey: 'chapter3', desc: 'Playable greybox: rush hour, a paper storm, folder flight and a rope descent' },
     ];
 
     const root = document.createElement('div');

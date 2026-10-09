@@ -1327,8 +1327,8 @@ export function mountMemoryIsland(options: Options): () => void {
     const button = document.createElement('button');
     button.className = 'chapter-entry';
     button.disabled = state === 'locked';
-    const title = chapter === 1 ? '童年冒险' : chapter === 2 ? '学生时代 · 骑楼街逃课' : '第三关 · 待闯关';
-    const titleEn = chapter === 1 ? 'Childhood Adventure' : chapter === 2 ? 'School Days · Skipping Class on Qilou Street' : 'Chapter Three · Not Playable Yet';
+    const title = chapter === 1 ? '童年冒险' : chapter === 2 ? '学生时代 · 骑楼街逃课' : '第三关 · 办公室逃逸（灰盒）';
+    const titleEn = chapter === 1 ? 'Childhood Adventure' : chapter === 2 ? 'School Days · Skipping Class on Qilou Street' : 'Chapter Three · Office Escape (Greybox)';
     const stateCopy = state === 'locked'
       ? '完成上一段记忆后解锁'
       : state === 'completed'
@@ -1336,7 +1336,7 @@ export function mountMemoryIsland(options: Options): () => void {
         : chapter === 2
           ? '第二关已解锁 · 点击进入'
           : chapter === 3
-            ? '第三关已解锁 · 等待闯关'
+            ? '第三关灰盒已开放 · 点击试玩'
             : '第一关已解锁 · 点击进入';
     const stateCopyEn = state === 'locked'
       ? 'Unlocks after the previous memory'
@@ -1345,19 +1345,11 @@ export function mountMemoryIsland(options: Options): () => void {
         : chapter === 2
           ? 'Chapter Two unlocked · click to enter'
           : chapter === 3
-            ? 'Chapter Three unlocked · waiting to be built'
+            ? 'Chapter Three greybox · click to play'
             : 'Chapter One unlocked · click to enter';
     button.innerHTML = `<span>${String(chapter).padStart(2, '0')}</span><span><b>${title}${bilingual('', titleEn)}</b><small>${stateCopy}${bilingual('', stateCopyEn)}</small></span>`;
     button.addEventListener('click', () => {
-      if (chapter !== 3) { options.onChapter(chapter); return; }
-      notify(bilingual('第三关：未完待续', 'Chapter Three: to be continued'));
-      window.setTimeout(() => {
-        if (signal.aborted) return;
-        nearbyPanel.hidden = false;
-        nearbyPanel.querySelector('p')!.innerHTML = bilingual('是否查看后续关卡预告？', 'View the preview for the next chapter?');
-        interactButton.innerHTML = bilingual('查看后续关卡预告', 'View the next chapter preview');
-        interactButton.onclick = () => options.onChapter(3);
-      }, 650);
+      options.onChapter(chapter);
     }, { signal });
     chapterList.append(button);
   }
@@ -1382,7 +1374,7 @@ export function mountMemoryIsland(options: Options): () => void {
   function interact() {
     if (mode !== 'explore' || !nearby) return;
     if (chapterState(nearby.id) === 'locked') { notify(bilingual('先找回前一段记忆，再来这里。', 'Find the previous memory first, then come back here.')); return; }
-    if (nearby.id <= 2) options.onChapter(nearby.id);
+    if (nearby.id <= 3) options.onChapter(nearby.id);
     else notify(bilingual(`第 ${nearby.id} 关入口已预留，冒险与房间内容尚未制作。`, `The entrance to Chapter ${nearby.id} is reserved; its adventure and rooms are not built yet.`));
   }
   get('[data-home]').addEventListener('click', options.onHome, { signal });
@@ -1561,7 +1553,9 @@ export function mountMemoryIsland(options: Options): () => void {
             ? bilingual('E · 进入童年冒险', 'E · Enter the childhood adventure')
             : nearby.id === 2
               ? bilingual('E · 进入学生时代冒险', 'E · Enter the school-days adventure')
-              : bilingual('E · 查看下一段旅程', 'E · See the next journey');
+              : nearby.id === 3
+                ? bilingual('E · 进入办公室灰盒', 'E · Enter the office greybox')
+                : bilingual('E · 查看下一段旅程', 'E · See the next journey');
       }
     }
     if (characterMixer) {

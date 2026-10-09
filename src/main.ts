@@ -10,6 +10,8 @@ import ChapterTwoChallengeScene from './scenes/ChapterTwoChallengeScene';
 import ChapterTwoRoomScene from './scenes/ChapterTwoRoomScene';
 import ChapterTwoMemoryScene from './scenes/ChapterTwoMemoryScene';
 import ChapterThreePreviewScene from './scenes/ChapterThreePreviewScene';
+import ChapterThreeOfficeScene from './scenes/ChapterThreeOfficeScene';
+import ChapterThreePaintingScene from './scenes/ChapterThreePaintingScene';
 import { playMainTheme, playQilouRunMusic, playRoomPuzzleMusic, playStorePuzzleMusic } from './MenuRoomMusic';
 import { resolveImageUrl } from './assets';
 import level1BackgroundUrl from '../scene/level1-watercolor-game-background-v1-1900x540.png?url';
@@ -56,7 +58,7 @@ class BootScene extends Phaser.Scene {
     chapterTwoRoom.events.on(Phaser.Scenes.Events.CREATE, playStorePuzzleMusic);
     // 调试入口：?scene=room / ?scene=forest 直接进对应场景，跳过首页/开场/加载占位链
     const targetScene = new URLSearchParams(window.location.search).get('scene');
-    const debugScenes = new Set(['loading', 'room', 'forest', 'ending', 'island', 'chapter2', 'chapter2-room', 'chapter2-memory', 'chapter3-preview']);
+    const debugScenes = new Set(['loading', 'room', 'forest', 'ending', 'island', 'chapter2', 'chapter2-room', 'chapter2-memory', 'chapter3-preview', 'chapter3', 'chapter3-painting']);
     this.scene.start(targetScene && debugScenes.has(targetScene) ? targetScene : 'menu');
   }
 }
@@ -83,7 +85,7 @@ const game = new Phaser.Game({
   scene: [
     BootScene, MenuScene, IntroScene, LoadingScene, ForestScene, RoomScene,
     IslandScene, ChapterTwoChallengeScene, ChapterTwoRoomScene,
-    ChapterTwoMemoryScene, ChapterThreePreviewScene, EndingScene,
+    ChapterTwoMemoryScene, ChapterThreePreviewScene, ChapterThreeOfficeScene, ChapterThreePaintingScene, EndingScene,
   ],
 });
 
