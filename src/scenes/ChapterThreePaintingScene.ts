@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import paintingWorldBackgroundUrl from '../../Chapter 3 资产/painting-world/painting-world-background-v1-1920x1080.png';
 
 /** A single, reversible painting puzzle: erase a patch, then borrow the blank as a bridge. */
 export default class ChapterThreePaintingScene extends Phaser.Scene {
@@ -20,6 +21,9 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
   private readonly source = { x: 245, y: 236, width: 132, height: 88 };
 
   constructor() { super('chapter3-painting'); }
+  preload() {
+    this.load.image('chapter3-painting-background', paintingWorldBackgroundUrl);
+  }
   create() {
     this.phase = 'erase'; this.erased.clear(); this.held.clear();
     this.rubbing = this.dragging = false; this.px = 150; this.destination = null; this.elapsed = 0;
@@ -49,28 +53,12 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
     return this.add.text(x, y, value, { fontFamily: 'Georgia, Microsoft YaHei, serif', fontSize: `${size}px`, color, align: 'center', lineSpacing: 6 }).setOrigin(.5);
   }
   private drawPainting() {
+    // The painting is a 1920×1080 asset authored for this 960×540 greybox.
+    // Compress it vertically by 10 logical pixels so the painted ledge tops
+    // coincide with the existing y=397 collision surfaces; interaction layers
+    // remain separate and retain their original hit areas.
+    this.add.image(0, 0, 'chapter3-painting-background').setOrigin(0, 0).setDisplaySize(960, 530);
     const g = this.add.graphics();
-    g.fillStyle(0xf5f0e5); g.fillRoundedRect(18, 18, 924, 504, 10);
-    g.lineStyle(2, 0xbaab91); g.strokeRoundedRect(28, 28, 904, 484, 8);
-    g.fillStyle(0xcbdfe0); g.fillRect(44, 98, 872, 377);
-    g.fillStyle(0xe1e8dc, .55); g.fillEllipse(530, 230, 820, 220);
-    g.fillStyle(0xf2dba6); g.fillCircle(735, 165, 39);
-    // Loose translucent brush marks keep this prototype visibly inside a painting.
-    for (let i = 0; i < 34; i++) {
-      g.lineStyle(2 + i % 4, i % 2 ? 0xffffff : 0x89acb1, .14);
-      const x = 58 + (i * 137) % 825, y = 120 + (i * 43) % 290;
-      g.lineBetween(x, y, Math.min(908, x + 50 + i % 45), y - 6);
-    }
-    for (const [x,y] of [[490,170],[790,240],[110,150]]) {
-      g.fillStyle(0xfaf7ed,.7); g.fillEllipse(x,y,95,25); g.fillEllipse(x-20,y-9,43,27);
-    }
-    for (const [left,right] of [[55,360],[600,905]]) {
-      g.fillStyle(0x899c91); g.fillTriangle(left,410,right,410,(left+right)/2,488);
-      g.fillStyle(0xb4bea3); g.fillRoundedRect(left,397,right-left,22,8);
-      g.lineStyle(3,0xf6edcf); g.lineBetween(left+4,403,right-4,403);
-      g.lineStyle(1,0x667f79,.45);
-      for(let x=left+20;x<right;x+=27)g.lineBetween(x,423,x-10,450);
-    }
     // The wall contains the painted area that can be erased and lifted away.
     g.fillStyle(0xa98a7c); g.fillRoundedRect(164,184,164,145,7);
     g.fillStyle(0xc5aaa0); g.fillRect(179,192,132,88);
