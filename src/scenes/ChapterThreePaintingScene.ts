@@ -1,8 +1,18 @@
 import Phaser from 'phaser';
+<<<<<<< Updated upstream
 import paintingWorldBackgroundUrl from '../../Chapter 3 资产/painting-world/painting-world-background-v1-1920x1080.png';
+=======
+import landscapeUrl from '../../art/chapter3/painting-world/phase1/environment-aligned.png?url';
+import { warpLandscape, PAINTING_REST as REST, PAINTING_START as START, PAINTING_MARK as MARK, PAINTING_WIDTH as W, PAINTING_HEIGHT as H, type Point } from '../gameplay/paintingPerspective';
+>>>>>>> Stashed changes
 
-/** A single, reversible painting puzzle: erase a patch, then borrow the blank as a bridge. */
+const KEY = 'chapter3-environment-painting';
+const SURFACE = 'chapter3-deformed-painting';
+const COLS = 36, ROWS = 24;
+
+/** All puzzle contours belong to the painted terrain and use its one continuous mesh. */
 export default class ChapterThreePaintingScene extends Phaser.Scene {
+<<<<<<< Updated upstream
   private phase: 'erase' | 'paper' | 'bridge' | 'done' = 'erase';
   private erased = new Set<number>();
   private rubbing = false; private dragging = false;
@@ -83,96 +93,141 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
     this.text(480,72,'借 一 片 空 白  /  BORROW A BLANK',23,'#596c68');
   }
   private makeHud() {
+=======
+  private corner:Point={...START};
+  private dragging=false; private solved=false; private collected=false; private elapsed=0;
+  private art!:Phaser.GameObjects.Graphics;
+  private surface!:Phaser.Textures.CanvasTexture;
+  private picture!:CanvasImageSource;
+  private pictureWidth=1; private pictureHeight=1;
+  private lastX=NaN; private lastY=NaN;
+  private readyAt=Infinity;
+  private dragOffset:Point={x:0,y:0};
+  private hud!:HTMLDivElement; private hint!:HTMLElement;
+  private hintValue='';
+  constructor(){super('chapter3-painting');}
+  preload(){if(!this.textures.exists(KEY))this.load.image(KEY,landscapeUrl);}
+  create(){
+    this.corner={...START};this.dragging=this.solved=this.collected=false;
+    this.elapsed=0;this.lastX=this.lastY=NaN;this.readyAt=Infinity;this.hintValue='';
+    this.cameras.main.resetFX();
+    this.cameras.main.setBackgroundColor('#d9d6c3');
+    // Contain the puzzle so its handle and landscape remain accessible on narrow screens.
+    const fit=()=>{const {width,height}=this.scale.gameSize;this.cameras.main.setSize(width,height).setZoom(Math.min(width/W,height/H)).centerOn(W/2,H/2);};
+    fit();this.scale.on(Phaser.Scale.Events.RESIZE,fit);
+    this.picture=this.textures.get(KEY).getSourceImage() as HTMLImageElement;
+    this.pictureWidth=(this.picture as HTMLImageElement).width;
+    this.pictureHeight=(this.picture as HTMLImageElement).height;
+    this.surface=this.textures.createCanvas(SURFACE,1586,992)!;
+    this.add.image(W/2,H/2,SURFACE).setDisplaySize(W,H);
+    this.art=this.add.graphics();
+>>>>>>> Stashed changes
     this.hud=document.createElement('div');
-    this.hud.style.cssText='position:fixed;inset:0;z-index:50;pointer-events:none;font:14px/1.5 Arial,"Microsoft YaHei",sans-serif;color:#425b58';
-    this.hud.innerHTML='<div style="position:absolute;left:20px;bottom:20px;background:#f7f2e7ec;padding:10px 16px;border-radius:5px;max-width:70%" data-hint></div><div style="position:absolute;right:16px;top:16px;display:flex;gap:8px;pointer-events:auto"><button data-reset>重新试 / Reset</button><button data-home>首页 / Home</button></div><div style="position:absolute;right:20px;bottom:20px;display:flex;gap:8px;pointer-events:auto"><button data-left>←</button><button data-right>→</button><button data-enter>进入 / E</button></div>';
-    this.hud.querySelectorAll('button').forEach(b=>b.style.cssText='background:#f8f2e6;color:#425b58;border:1px solid #b3ad96;border-radius:5px;padding:10px 14px;cursor:pointer;touch-action:none');
-    this.hint=this.hud.querySelector('[data-hint]')!;
+    this.hud.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:50;color:#304a43;font:14px/1.6 Georgia,"Microsoft YaHei",serif';
+    this.hud.innerHTML='<button data-reset style="position:absolute;right:22px;top:22px;border:1px solid #a79976;border-radius:6px;background:#f6eddae8;color:#435d60;padding:8px 12px;pointer-events:auto;cursor:pointer">重试 / Reset</button><div data-hint style="position:absolute;bottom:4%;left:12%;right:12%;text-align:center;text-shadow:0 1px 4px #fff5de;background:#f6eddaaa;border-radius:8px;padding:5px"></div>';
+    document.body.append(this.hud);this.hint=this.hud.querySelector('[data-hint]')!;
     this.hud.querySelector('[data-reset]')!.addEventListener('click',()=>this.scene.restart());
-    this.hud.querySelector('[data-home]')!.addEventListener('click',()=>this.scene.start('menu'));
-    this.hud.querySelector('[data-enter]')!.addEventListener('click',()=>this.tryExit());
-    for(const direction of ['left','right']) {
-      const button=this.hud.querySelector<HTMLButtonElement>(`[data-${direction}]`)!;
-      button.addEventListener('pointerdown',e=>{button.setPointerCapture(e.pointerId);this.held.add(direction);});
-      for(const event of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(event,()=>this.held.delete(direction));
-    }
-    document.body.append(this.hud);
+    this.input.on('pointerdown',this.down,this);this.input.on('pointermove',this.move,this);
+    this.input.on('pointerup',this.up,this);this.input.on('pointerupoutside',this.up,this);
+    const blur=()=>{this.dragging=false;};window.addEventListener('blur',blur);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN,()=>{
+      this.hud.remove();this.scale.off(Phaser.Scale.Events.RESIZE,fit);window.removeEventListener('blur',blur);
+      this.input.off('pointerdown',this.down,this);this.input.off('pointermove',this.move,this);
+      this.input.off('pointerup',this.up,this);this.input.off('pointerupoutside',this.up,this);
+      this.textures.remove(SURFACE);
+    });
+    this.renderLandscape();
   }
-  private point(pointer: Phaser.Input.Pointer) { return this.cameras.main.getWorldPoint(pointer.x,pointer.y); }
-  private pointerDown(pointer: Phaser.Input.Pointer) {
-    const p=this.point(pointer);
-    if(this.phase==='erase' && Math.abs(p.x-this.source.x)<80 && Math.abs(p.y-this.source.y)<65) {
-      this.rubbing=true;this.eraseAt(p.x,p.y);return;
+  private down(p:Phaser.Input.Pointer){
+    const q=this.cameras.main.getWorldPoint(p.x,p.y);
+    if(this.solved){
+      if(!this.collected&&this.elapsed>=this.readyAt&&Math.hypot(q.x-MARK.x,q.y-MARK.y)<55){
+        this.collected=true;this.cameras.main.fadeOut(500,235,239,216);
+        this.time.delayedCall(500,()=>this.scene.start('chapter3-colors'));
+      }
+      return;
     }
-    if(this.phase==='paper' && Math.abs(p.x-this.paper.x)<80 && Math.abs(p.y-this.paper.y)<65) {
-      this.tweens.killTweensOf(this.paper);
-      this.dragging=true;return;
+    if(Math.hypot(q.x-this.corner.x,q.y-this.corner.y)<45){
+      this.dragging=true;this.dragOffset={x:this.corner.x-q.x,y:this.corner.y-q.y};
     }
-    if(this.phase==='bridge' && p.x>360 && p.x<600 && Math.abs(p.y-402)<25 && (this.px<345 || this.px>615)) {
-      this.phase='paper';this.bridge.clear();this.paper.setPosition(p.x,p.y).setVisible(true);this.dragging=true;this.destination=null;return;
-    }
-    if(p.y>335 && p.y<470){this.destination=Phaser.Math.Clamp(p.x,75,880);if(p.x>795 && this.px>790)this.tryExit();}
   }
-  private pointerMove(pointer: Phaser.Input.Pointer) {
-    const p=this.point(pointer);
-    if(this.rubbing)this.eraseAt(p.x,p.y);
-    if(this.dragging)this.paper.setPosition(Phaser.Math.Clamp(p.x,85,875),Phaser.Math.Clamp(p.y,125,440));
-  }
-  private pointerUp() {
-    this.rubbing=false;
+  private move(p:Phaser.Input.Pointer){
     if(!this.dragging)return;
-    this.dragging=false;
-    if(Math.abs(this.paper.x-480)<125 && Math.abs(this.paper.y-399)<65) {
-      this.phase='bridge';this.paper.setVisible(false);
-      this.bridge.fillStyle(0xfffcf0);this.bridge.fillPoints([{x:352,y:403},{x:605,y:398},{x:609,y:415},{x:356,y:420}],true);
-      this.bridge.lineStyle(2,0xd8c9ab);this.bridge.lineBetween(357,418,604,413);
-      this.paperLabel.setText('空白变成了一条路\nThe blank became a path');
-    } else {
-      this.tweens.add({targets:this.paper,x:245,y:230,duration:240,ease:'Sine.Out'});
+    const q=this.cameras.main.getWorldPoint(p.x,p.y);
+    this.corner.x=Phaser.Math.Clamp(q.x+this.dragOffset.x,330,820);
+    this.corner.y=Phaser.Math.Clamp(q.y+this.dragOffset.y,235,470);
+  }
+  private up(){
+    if(!this.dragging)return;this.dragging=false;
+    if(Math.hypot(this.corner.x-REST.x,this.corner.y-REST.y)<23){
+      this.solved=true;this.readyAt=this.elapsed+.55;
+      this.tweens.add({targets:this.corner,x:REST.x,y:REST.y,duration:450,ease:'Sine.Out'});
     }
   }
-  private eraseAt(x:number,y:number) {
-    if(this.phase!=='erase')return;
-    for(let row=0;row<4;row++)for(let col=0;col<6;col++) {
-      const cx=190+col*22,cy=203+row*22;
-      if(Math.hypot(x-cx,y-cy)>30)continue;
-      const id=row*6+col;if(this.erased.has(id))continue;
-      this.erased.add(id);this.scratch.fillStyle(0xfffcf0);this.scratch.fillRoundedRect(cx-11,cy-11,22,22,3);
+  private warp(p:Point){return warpLandscape(p,this.corner);}
+
+  /** Affine triangles share vertices; a subpixel overlap covers rasterization seams.
+   * This is continuous texture deformation, not image crossfading or moving clue overlays.
+   */
+  private renderLandscape(){
+    if(this.lastX===this.corner.x&&this.lastY===this.corner.y)return;
+    this.lastX=this.corner.x;this.lastY=this.corner.y;
+    const ctx=this.surface.context, width=this.surface.width,height=this.surface.height;
+    ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,width,height);
+    ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+    const source:Point[]=[],dest:Point[]=[];
+    for(let row=0;row<=ROWS;row++)for(let col=0;col<=COLS;col++){
+      source.push({x:col/COLS*this.pictureWidth,y:row/ROWS*this.pictureHeight});
+      const p=this.warp({x:col/COLS*W,y:row/ROWS*H});
+      dest.push({x:p.x/W*width,y:p.y/H*height});
     }
-    if(this.erased.size>=18){
-      this.phase='paper';this.rubbing=false;
-      this.scratch.fillStyle(0x667777);this.scratch.fillRect(179,192,132,88);
-      this.paper.setVisible(true);this.paperLabel.setText('把空白拖到断开的路上\nDrag the blank into the gap');
+    const triangle=(ia:number,ib:number,ic:number)=>{
+      const a=source[ia],b=source[ib],c=source[ic],p=dest[ia],q=dest[ib],r=dest[ic];
+      const bx=b.x-a.x,by=b.y-a.y,cx=c.x-a.x,cy=c.y-a.y,det=bx*cy-by*cx;
+      const aa=((q.x-p.x)*cy-(r.x-p.x)*by)/det;
+      const cc=((r.x-p.x)*bx-(q.x-p.x)*cx)/det;
+      const bb=((q.y-p.y)*cy-(r.y-p.y)*by)/det;
+      const dd=((r.y-p.y)*bx-(q.y-p.y)*cx)/det;
+      const center={x:(p.x+q.x+r.x)/3,y:(p.y+q.y+r.y)/3};
+      ctx.save();ctx.beginPath();
+      [p,q,r].forEach((v,i)=>{
+        const length=Math.hypot(v.x-center.x,v.y-center.y);
+        const x=v.x+(v.x-center.x)/length*.65,y=v.y+(v.y-center.y)/length*.65;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      });
+      ctx.closePath();ctx.clip();
+      ctx.setTransform(aa,bb,cc,dd,p.x-aa*a.x-cc*a.y,p.y-bb*a.x-dd*a.y);
+      ctx.drawImage(this.picture,0,0);ctx.restore();
+    };
+    for(let row=0;row<ROWS;row++)for(let col=0;col<COLS;col++){
+      const a=row*(COLS+1)+col,b=a+1,c=a+COLS+1,d=c+1;
+      triangle(a,b,d);triangle(a,d,c);
     }
+    this.surface.refresh();
   }
-  update(_time:number,delta:number) {
-    if(!this.actor)return;
-    const dt=Math.min(delta/1000,.033);this.elapsed+=dt;
-    const axis=Number(this.keys.D.isDown||this.keys.RIGHT.isDown||this.held.has('right'))-Number(this.keys.A.isDown||this.keys.LEFT.isDown||this.held.has('left'));
-    let direction=axis;
-    if(axis)this.destination=null;
-    else if(this.destination!==null){direction=Math.sign(this.destination-this.px);if(Math.abs(this.destination-this.px)<4){this.destination=null;direction=0;}}
-    if(this.phase==='done')direction=0;
-    let next=Phaser.Math.Clamp(this.px+direction*155*dt,75,880);
-    if(this.phase!=='bridge' && this.phase!=='done')next=this.px<480?Math.min(next,345):Math.max(next,615);
-    this.px=next;this.actor.setPosition(this.px,400);
-    const g=this.body;g.clear();const stride=direction?Math.sin(this.elapsed*12)*5:0;
-    g.fillStyle(0x705246);g.fillCircle(0,-46,10);g.fillStyle(0xe9cca4);g.fillCircle(1,-44,7);
-    g.fillStyle(0xf2e5cb);g.fillRoundedRect(-10,-34,20,23,4);g.fillStyle(0x789395);g.fillRect(-10,-16,20,9);
-    g.lineStyle(4,0xddbc98);g.lineBetween(-5,-8,-7+stride,0);g.lineBetween(5,-8,7-stride,0);
-    g.lineStyle(3,0xb68b51);g.lineBetween(12,-21,21,-39);
-    this.target.clear();
-    if(this.phase==='paper') {this.target.lineStyle(2,0xfffae8,.5+Math.sin(this.elapsed*3)*.2);for(let x=366;x<600;x+=24)this.target.lineBetween(x,404,x+13,404);}
-    const hints={erase:'按住鼠标或手指，在墙上的色块来回擦拭 / Hold and rub the painted patch.',paper:'拖动白纸，放到两块陆地之间 / Drag the blank between the islands.',bridge:'A D / ← → 行走，也可以点击地面；走到门前按 E / Walk to the door, then press E.',done:'这一小段试玩完成 / Prototype complete'};
-    this.hint.textContent=hints[this.phase];
-    if(Phaser.Input.Keyboard.JustDown(this.keys.E))this.tryExit();
-  }
-  private tryExit() {
-    if(this.phase!=='bridge'||this.px<790)return;
-    this.phase='done';this.destination=null;
-    const panel=document.createElement('div');
-    panel.style.cssText='position:absolute;inset:28% 23%;padding:26px;background:#faf5e9f5;border:1px solid #b9b298;border-radius:8px;display:grid;place-content:center;gap:18px;text-align:center;pointer-events:auto';
-    panel.innerHTML='<h2 style="margin:0">空白，也可以是一条路。</h2><div>A blank can become a path.</div><div>画中世界 · 第一种玩法试玩完成<br>Painting world · First puzzle prototype complete</div><button>再试一次 / Try again</button>';
-    panel.querySelector('button')!.addEventListener('click',()=>this.scene.restart());this.hud.append(panel);
+  update(_t:number,delta:number){
+    this.elapsed+=Math.min(delta,50)/1000;if(!this.art)return;
+    this.renderLandscape();
+    const g=this.art,c=this.corner;g.clear();
+    if(!this.solved){
+      g.fillStyle(0xffe7a6,.12+.04*Math.sin(this.elapsed*2));g.fillCircle(c.x,c.y,23);
+      g.lineStyle(2,0xb49255,.95);g.beginPath();
+      for(let i=0;i<=60;i++){
+        const t=i/60*Math.PI*2,x=c.x+13*Math.sin(t),y=c.y+9*Math.sin(t)*Math.cos(t);
+        if(i===0)g.moveTo(x,y);else g.lineTo(x,y);
+      }
+      g.strokePath();
+      g.lineBetween(c.x-2,c.y+3,c.x-7,c.y+26);
+      g.lineBetween(c.x+3,c.y+3,c.x+9,c.y+22);
+    }else if(!this.collected&&this.elapsed>=this.readyAt){
+      const alpha=Math.min(1,(this.elapsed-this.readyAt)*3);
+      g.fillStyle(0xffdc87,(.12+.04*Math.sin(this.elapsed*2))*alpha);g.fillCircle(MARK.x,MARK.y,42);
+      g.lineStyle(4,0xb88d42,alpha);
+      g.strokePoints([{x:MARK.x-20,y:MARK.y-20},{x:MARK.x+12,y:MARK.y-28},{x:MARK.x+26,y:MARK.y},{x:MARK.x+9,y:MARK.y+25},{x:MARK.x-24,y:MARK.y+16}],false);
+      g.lineStyle(3,0xffefb6,alpha);
+      g.strokePoints([{x:MARK.x-13,y:MARK.y+6},{x:MARK.x+1,y:MARK.y-12},{x:MARK.x+13,y:MARK.y+3},{x:MARK.x-3,y:MARK.y+16}],false);
+    }
+    const message=this.collected?'印记正在打开另一处画境……<br>The mark is opening another painted world…':this.solved?'景物之间出现了印记，触碰它继续。<br>Touch the mark to continue.':this.dragging?'让树枝、岩壁与溪岸的弧度相接。<br>Bring the branch, rock and riverbank into alignment.':'拉动风中的金色线结，观察景物之间的形状。<br>Pull the golden knot and watch the shapes between the landscape.';
+    if(message!==this.hintValue){this.hint.innerHTML=message;this.hintValue=message;}
   }
 }
