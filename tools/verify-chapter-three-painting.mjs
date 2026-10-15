@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {START,REST,PAINTING_MARK as MARK} from '../src/gameplay/paintingPerspective.ts';
 import assert from 'node:assert/strict';
 const tabs=await(await fetch('http://127.0.0.1:9335/json/list')).json();
 const ws=new WebSocket(tabs.find(t=>t.type==='page').webSocketDebuggerUrl);
@@ -18,13 +19,15 @@ try{
  await send('Page.navigate',{url:(process.env.SEEK_PREVIEW_URL || 'http://127.0.0.1:5176/')+'?scene=chapter3-painting'});
  for(let i=0;i<100;i++){if(await read("!!window.__game?.scene.getScene('chapter3-painting')?.art"))break;await wait(100);}
  assert.equal(await read(s+'.solved'),false);
- await mouse('mousePressed',785,440);await mouse('mouseMoved',550,410);await mouse('mouseReleased',550,410);
- assert.equal(await read(s+'.solved'),false,'horizontal alignment alone cannot solve the shape');
- const warped=await read(s+'.warp({x:632,y:310})');assert.ok(Math.abs(warped.y-310)>20,'paint deforms with wall');
- await mouse('mousePressed',550,410);await mouse('mouseMoved',550,340);await mouse('mouseReleased',550,340);await wait(600);
- assert.equal(await read(s+'.solved'),true);
+ await mouse('mousePressed',START.x,START.y);
+ await mouse('mouseMoved',REST.x,START.y);await mouse('mouseReleased',REST.x,START.y);
+ assert.equal(await read(s+'.solved'),false,'horizontal alignment alone is not sufficient');
+ await mouse('mousePressed',REST.x,START.y);
+ await mouse('mouseMoved',REST.x,REST.y);await mouse('mouseReleased',REST.x,REST.y);
+ assert.equal(await read(s+'.solved'),true,'one shared perspective control aligns the landscape');
+ for(let i=0;i<100;i++){if(await read(s+'.elapsed > '+s+'.readyAt + .25'))break;await wait(100);}
  assert.equal(await read(s+'.collected'),false,'must inspect revealed clue');
- await mouse('mousePressed',550,310);await mouse('mouseReleased',550,310);
+ await mouse('mousePressed',MARK.x,MARK.y);await mouse('mouseReleased',MARK.x,MARK.y);
  assert.equal(await read(s+'.collected'),true);
  await wait(1300);
  assert.equal(await read("window.__game.scene.isActive('chapter3-colors')"),true,'seal starts the colour puzzle');
@@ -33,5 +36,5 @@ try{
  fs.mkdirSync('node_modules/.cache/chapter3-review',{recursive:true});
  const shot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync('node_modules/.cache/chapter3-review/room-deformation.png',Buffer.from(shot.data,'base64'));
  assert.equal(errors.length,0,JSON.stringify(errors));
- console.log('PASS: direct corner drag, wall-bound deformation, incorrect shape rejected, shape solved, clue collected, reset; no chapter completion.');
+ console.log('PASS: one shared viewpoint, continuous terrain, environmental silhouette alignment, incorrect shape rejected, shape solved, clue collected, reset; no chapter completion.');
 }finally{ws.close();}
