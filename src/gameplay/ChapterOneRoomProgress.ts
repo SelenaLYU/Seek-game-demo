@@ -10,8 +10,8 @@ import { readProgress, writeProgress } from './ProgressPersistence';
 export interface ChapterOneRoomProgress {
   /**
    * 第一关布局版本号。
-   * 阶段 3 改了通关路线（门楣金钥匙 + 滚浪限时平台），旧存档里「钥匙已拿到」是在旧
-   * 路线上成立的，直接沿用会让玩家跳过整段门楣摘钥匙/开门流程，所以 normalize 时按
+   * 阶段 4 改了通关路线（一只踏板海鸥 + 一只摆荡海鸥 + 悬浮石 + 海豚 + 终点钥匙），旧存档里「钥匙已拿到」是在旧
+   * 路线上成立的，直接沿用会让玩家跳过整段浮石挑战，所以 normalize 时按
    * 版本号把这项作废（房间解谜进度/分数不受影响）。
    */
   layoutVersion: number;
@@ -45,7 +45,7 @@ export interface ChapterOneRoomProgress {
 const STORAGE_KEY = 'seek-life-chapter-one-v1';
 const FRAGMENT_IDS = ['photo', 'radio', 'shadowBoat'] as const;
 /** 与 src/scenes/ForestScene.ts 的第一关布局版本对齐；改关卡路线时 +1 */
-export const CHAPTER_ONE_LAYOUT_VERSION = 2;
+export const CHAPTER_ONE_LAYOUT_VERSION = 3;
 const DEFAULT_PROGRESS: ChapterOneRoomProgress = {
   layoutVersion: CHAPTER_ONE_LAYOUT_VERSION,
   forestKeyCollected: false,

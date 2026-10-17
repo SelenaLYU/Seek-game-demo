@@ -35,7 +35,9 @@ RUNTIME_IMAGES: tuple[str, ...] = (
     # —— 第一关：海边 ——
     "scene/level1-watercolor-game-background-v1-1900x540.png",
     "assets/level1/level1-stepping-reef-v1.png",
+    "assets/level1/level1-floating-rock-v1.png",
     "assets/level1/level1-swing-seagull-v3-cute.png",
+    "assets/level1/level1-jumping-dolphin-v1.png",
     "assets/level1/level1-jump-wave-crest-v2.png",
     "assets/level1/level1-golden-jasmine-key-v1.png",
     "assets/level1/level1-memory-room-stone-door-v3.png",

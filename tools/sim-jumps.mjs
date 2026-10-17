@@ -57,13 +57,11 @@ export function readLayout(root = process.cwd()) {
     /\{\s*id:\s*'(W\d)',\s*ridgeCenter:\s*([\d.]+),\s*top:\s*([\d.]+),[\s\S]*?rollSpeed:\s*([\d.]+),\s*rollDistance:\s*([\d.]+)/g,
   )].map(m => ({ id: m[1], center: Number(m[2]), top: Number(m[3]), rollSpeed: Number(m[4]), rollDistance: Number(m[5]), scale: 0.18 }));
   const landing = src.match(/landing:\s*\{\s*left:\s*([\d.]+),\s*right:\s*([\d.]+),\s*top:\s*([\d.]+)\s*\}/);
-  const beach = src.match(/startBeach:\s*\{\s*left:\s*([\d.]+),\s*right:\s*([\d.]+),\s*top:\s*([\d.]+)\s*\}/);
   const key = src.match(/key:\s*\{\s*x:\s*([\d.]+),\s*y:\s*([\d.]+)\s*\}/);
   const door = num(/door:\s*\{\s*openingCenterX:\s*([\d.]+)/);
   const worldWidth = num(/const WORLD_WIDTH = ([\d.]+)/);
   return {
     reefs, waves,
-    startBeach: beach ? { left: +beach[1], right: +beach[2], top: +beach[3] } : { left: 0, right: 280, top: 440 },
     landing: landing ? { left: +landing[1], right: +landing[2], top: +landing[3] } : null,
     key: key ? { x: +key[1], y: +key[2] } : null,
     door, worldWidth,
@@ -188,7 +186,6 @@ const STRATEGIES = [
 
 export function checkLayout(layout) {
   const chain = [
-    { center: (layout.startBeach.left + layout.startBeach.right) / 2, top: layout.startBeach.top, scale: 1, label: '沙滩起点', left: layout.startBeach.left, right: layout.startBeach.right },
     ...layout.reefs.map(r => ({ ...r, kind: 'reef' })),
     ...layout.waves.map(w => ({ center: w.center, top: w.top, scale: w.scale, label: `浪 ${w.id}`, kind: 'wave' })),
     { center: (layout.landing.left + layout.landing.right) / 2, top: layout.landing.top, scale: 1, label: '右岸大陆', kind: 'landing', left: layout.landing.left, right: layout.landing.right },

@@ -207,11 +207,10 @@ const REASONABLE = ['hop:5', 'hop:12', 'hop:20', 'full'];
  */
 const GULL_CROSSING = ['full-double:20', 'full-double:45'];
 
-/** 按 x 排好整条平台链：沙滩 → 礁石 → 浪 → … → 右岸 */
+/** 按 x 排好整条平台链：第一块实体礁石 → 后续礁石 → 浪 → … → 右岸 */
 function buildChain(L) {
   const wavePlatform = p => ({ ...p, label: `浪 ${p.id}`, left: p.center - WAVE_HALF_WIDTH, right: p.center + WAVE_HALF_WIDTH, role: 'wave', waveId: p.id });
   return [
-    { center: (L.startBeach.left + L.startBeach.right) / 2, top: L.startBeach.top, scale: 0, label: '沙滩起点', left: L.startBeach.left, right: L.startBeach.right, role: 'start-beach' },
     ...L.reefs.map(reefPlatform),
     ...L.waves.map(wavePlatform),
     { center: (L.landing.left + L.landing.right) / 2, top: L.landing.top, scale: 0, label: '右岸大陆', left: L.landing.left, right: L.landing.right, role: 'landing' },
@@ -387,43 +386,22 @@ const jump = (i, strategy) => {
   );
 };
 
-test('出生点在用户标注的左侧背景岩台上', () => {
-  assert.deepEqual(layout.startBeach, { left: 155, right: 375, top: 378 },
-    '背景岩台碰撞面必须对齐用户标注的平顶区域');
-  assert.match(SOURCE, /x:\s*\(LAYOUT\.startBeach\.left \+ LAYOUT\.startBeach\.right\) \/ 2/,
-    '出生 x 应由岩台左右边界派生，避免手写坐标漂移');
-  assert.match(SOURCE, /y:\s*LAYOUT\.startBeach\.top - 45/,
-    '出生 y 应悬在岩台顶面上方供物理自然落地');
-  assert.match(SOURCE, /从左侧岩台出发/, '起点提示要与新出生位置一致');
+test('出生点绑定第一块有实际美术与碰撞的礁石', () => {
+  assert.match(SOURCE, /x:\s*LAYOUT\.reefs\[0\]\.standCenter/,
+    '出生 x 必须跟随第一块实体礁石，不能落在海面隐形平台上');
+  assert.match(SOURCE, /y:\s*LAYOUT\.reefs\[0\]\.top - 45/,
+    '出生 y 应悬在第一块实体礁石顶面上方供物理自然落地');
+  assert.doesNotMatch(SOURCE, /startBeach/, '旧海面隐形起点平台必须彻底删除');
+  assert.doesNotMatch(SOURCE, /routePreview/, '临时浮石预览入口不得覆盖正式出生点');
 });
 
-test('每一跳都存在"合理输入"能安全落地（不落海）', () => {
-  const rows = [];
-  for (let i = 0; i < chain.length - 1; i++) {
-    const hopName = `${chain[i].label}→${chain[i + 1].label}`;
-    const isGullCrossing = chain[i].role === 'gull-launch' && chain[i + 1].role === 'gull-landing';
-    const strategies = isGullCrossing ? GULL_CROSSING : REASONABLE;
-    const safe = strategies.filter(s => jump(i, s).landed);
-    rows.push(`${hopName}: ${safe.join('/') || '无'}${isGullCrossing ? '（海鸥海峡，门槛用二段跳）' : ''}`);
-    assert.ok(safe.length > 0, `${hopName} 没有任何合理输入能安全落地：${rows.at(-1)}`);
+test('起点到海鸥起跳台的热身礁逐段可达', () => {
+  const warmup = chain.filter(p => p.role?.startsWith('warmup-') || p.role === 'gull-launch');
+  for (let i = 0; i < warmup.length - 1; i++) {
+    const targets = warmup.slice(i + 1).map(p => ({ top: p.top, left: p.left, right: p.right, label: p.label }));
+    const safe = REASONABLE.some(strategy => simulateJump(warmup[i], targets, strategy).landed);
+    assert.ok(safe, `${warmup[i].label}→${warmup[i + 1].label} 至少应有一种正常跳法能落地`);
   }
-  console.log('  可落地的合理输入：\n   ' + rows.join('\n   '));
-});
-
-test('爬升礁必须能用轻按跳落上去（角净空回归）', () => {
-  const idx = chain.findIndex(p => p.role === 'wave-climb');
-  assert.ok(idx > 0, '布局里找不到浪前爬升礁');
-  const r = jump(idx - 1, 'hop:5');
-  assert.ok(r.landed, `从 ${chain[idx - 1].label} 轻按跳应当能落到浪前爬升礁，实测：${r.landed ? r.on.label : r.clip}`);
-  assert.equal(r.on.label, chain[idx].label, `轻按跳应当正好落在浪前爬升礁，实测落在 ${r.on.label}`);
-});
-
-test('从爬升礁全速走落要稳稳落到冲刺礁（余量 ≥ 10px）', () => {
-  const idx = chain.findIndex(p => p.role === 'wave-climb');
-  const r = jump(idx, 'walkoff');
-  assert.ok(r.landed, `从浪前爬升礁走落不应掉海，实测：${r.landed ? r.on.label : r.clip}`);
-  assert.equal(r.on.label, chain[idx + 1].label, `走落应当落在 ${chain[idx + 1].label}，实测落在 ${r.on.label}`);
-  assert.ok(r.margin >= 10, `落在冲刺礁上的余量只有 ${Math.round(r.margin)}px（要求 ≥10px），宽度/落差退化会导致玩家被掸下去`);
 });
 
 test('第一关只显示实体钥匙：不额外绘制寻钥匙光柱、提示牌或海面矩形覆盖', () => {
@@ -432,40 +410,80 @@ test('第一关只显示实体钥匙：不额外绘制寻钥匙光柱、提示�
   assert.match(SOURCE, /\.image\(LAYOUT\.key\.x, LAYOUT\.key\.y, ART\.key\)/, '实体金钥匙仍应正常显示');
 });
 
-test('浪的几何：只保留一朵长距离滚浪，并在岸侧配置实体落脚礁', () => {
-  const waves = chain.filter(p => p.role === 'wave');
-  assert.equal(waves.length, 1, `应当只有 1 朵浪，实测 ${waves.length}`);
-  assert.equal(Math.round(waves[0].center), layout.waves[0].center);
-  assert.ok(layout.waves[0].rollDistance >= 240, '单浪前移距离应足以将角色送入岸侧区域');
-  const landingReef = chain.find(p => p.role === 'wave-landing');
-  assert.ok(landingReef, '单浪消散后必须有实体礁石承接角色，不能只依赖背景画面');
+const gullBlock = readBlock(/gulls:\s*\[([\s\S]*?)\],\r?\n\s*floatingRocks:/, 'LAYOUT.gulls');
+const gulls = [...gullBlock.matchAll(/\{\s*id:\s*(\d+),\s*x:\s*([\d.]+),\s*top:\s*([\d.]+)(?:,\s*carryToX:\s*([\d.]+))?\s*\}/g)]
+  .map(([, id, x, top, carryToX]) => ({ id: +id, x: +x, top: +top, carryToX: carryToX ? +carryToX : undefined }));
+const rockBlock = readBlock(/floatingRocks:\s*\[([\s\S]*?)\],\r?\n\s*dolphins:/, 'LAYOUT.floatingRocks');
+const rocks = [...rockBlock.matchAll(/\{\s*id:\s*(\d+),\s*x:\s*([\d.]+),\s*top:\s*([\d.]+),\s*scale:\s*([\d.]+),\s*crumble:\s*(true|false)\s*\}/g)]
+  .map(([, id, x, top, scale, crumble]) => ({ id: +id, x: +x, top: +top, scale: +scale, crumble: crumble === 'true' }));
+const dolphinBlock = readBlock(/dolphins:\s*\[([\s\S]*?)\],\r?\n\s*waves:/, 'LAYOUT.dolphins');
+const dolphins = [...dolphinBlock.matchAll(/\{\s*id:\s*(\d+),\s*x:\s*([\d.]+),\s*phase:\s*([\d.]+),\s*leapHeight:\s*([\d.]+)\s*\}/g)]
+  .map(([, id, x, phase, leapHeight]) => ({ id: +id, x: +x, phase: +phase, leapHeight: +leapHeight }));
+
+test('海鸥段删除过低第一只，只保留一只踏板和一只更高的抓取摆荡海鸥', () => {
+  assert.equal(gulls.length, 2);
+  assert.ok(gulls[1].top < gulls[0].top, '摆荡海鸥应高于踏板海鸥');
+  assert.ok(gulls[1].carryToX > gulls[1].x, '摆荡海鸥必须把玩家荡向右侧浮石区');
+  assert.match(SOURCE, /LAYOUT\.gulls\.slice\(0, 1\)\.map/, '只能生成一只踏板海鸥');
+  assert.match(SOURCE, /this\.thirdGullVine\s*=\s*new Vine/, '高处海鸥必须使用摆荡抓点');
+  assert.match(SOURCE, /this\.player\.tryGrabVine\(this\.thirdGullVine\)/, '跳近高处海鸥必须可以抓住');
+  assert.doesNotMatch(SOURCE, /x:\s*1135,\s*top:\s*285/, '原先过低的第一只海鸥必须删除');
 });
 
-/** 二段跳最晚触发的水平行程（比"顶点触发"的口径远得多，才是真正要封的上限） */
-function doubleJumpReach(dy) {
-  let best = 0;
-  for (let n = 6; n <= 80; n += 2) best = Math.max(best, travelFor(dy, `full-double:${n}`));
-  return best;
-}
-
-test('浪区不可绕过：冲刺礁不能二段跳直达浪后落脚礁', () => {
-  const idx = chain.findIndex(p => p.role === 'wave-sprint');
-  assert.ok(idx > 0, '布局里找不到浪前冲刺礁');
-  const takeoffX = chain[idx].right - 18;
-  for (let j = idx + 1; j < chain.length; j++) {
-    const target = chain[j];
-    const drop = target.top - chain[idx].top; // 正=目标更低
-    const reach = doubleJumpReach(drop) + 18; // +18：身体半径（落在边缘也算够到）
-    const dist = target.left - takeoffX;
-    if (target.role === 'wave') {
-      assert.ok(dist <= reach, `${target.label} 应当踩得到（距离 ${Math.round(dist)}px，二段跳射程 ${Math.round(reach)}px）`);
-      continue;
-    }
-    assert.ok(
-      dist > reach,
-      `${target.label} 离冲刺礁只有 ${Math.round(dist)}px，二段跳（射程 ${Math.round(reach)}px）能直接绕过滚浪——浪区失去强制力`,
-    );
+test('十块悬浮石形成连续路线，第 8/9/10 块只能踩一次', () => {
+  assert.equal(rocks.length, 10);
+  assert.deepEqual(rocks.filter(r => r.crumble).map(r => r.id), [8, 9, 10]);
+  const rockJumps = ['hop:2', 'hop:5', 'hop:10', 'hop:12', 'hop:15', 'hop:20', 'full', 'full-double:20', 'full-double:45'];
+  const asPlatform = r => ({
+    center: r.x,
+    top: r.top,
+    scale: r.scale,
+    left: r.x - (425 * r.scale) / 2,
+    right: r.x + (425 * r.scale) / 2,
+    label: `浮石 ${r.id}`,
+  });
+  for (let i = 1; i < rocks.length; i++) {
+    assert.ok(rocks[i].x > rocks[i - 1].x, '悬浮石必须按路线向右排列');
+    assert.ok(rocks[i].x - rocks[i - 1].x >= 230, `浮石 ${i}→${i + 1} 仍太近，玩家会连续略过多块`);
+    assert.ok(rocks[i].x - rocks[i - 1].x <= 260, `浮石 ${i}→${i + 1} 间距过大`);
+    assert.ok(Math.abs(rocks[i].top - rocks[i - 1].top) <= 60, `浮石 ${i}→${i + 1} 高差过大`);
+    assert.ok(rockJumps.some(strategy => simulateJump(asPlatform(rocks[i - 1]), asPlatform(rocks[i]), strategy).landed),
+      `浮石 ${i}→${i + 1} 必须保留至少一种可靠跳法`);
   }
-  const landing = chain.find(p => p.role === 'wave-landing');
-  console.log(`  浪区强制力：冲刺礁起跳点 x=${Math.round(takeoffX)} · 浪后落脚礁左缘 ${Math.round(landing.left)} · 距离 ${Math.round(landing.left - takeoffX)}px`);
+  for (let i = 0; i < rocks.length - 3; i++) {
+    assert.ok(!rockJumps.some(strategy => simulateJump(asPlatform(rocks[i]), asPlatform(rocks[i + 3]), strategy).landed),
+      `浮石 ${i + 1} 不得直接越过两块落到浮石 ${i + 4}`);
+  }
+  assert.ok(rocks[9].scale > Math.max(...rocks.slice(0, 9).map(r => r.scale)), '最后钥匙石必须明显放大');
+  assert.ok(rocks.every(r => r.top <= 250), '摆荡海鸥之后的石头必须整体抬进天空，不能贴着海面');
+  assert.equal(Number(readBlock(/const WORLD_HEIGHT = (\d+)/, 'WORLD_HEIGHT')), 620, '画布必须向上扩展，为空中路线留出空间');
+  assert.match(SOURCE, /FINAL_ROCK_CRUMBLE_DELAY_MS/, '最后钥匙石仍会坠落，但应给拾取与起跳留出时间');
+  assert.ok(Number(readBlock(/const CRUMBLE_DELAY_MS = (\d+)/, 'CRUMBLE_DELAY_MS')) <= 300, '普通坍塌石不能等待太久');
+  assert.ok(Number(readBlock(/const FINAL_ROCK_CRUMBLE_DELAY_MS = (\d+)/, 'FINAL_ROCK_CRUMBLE_DELAY_MS')) <= 500, '钥匙石也必须保持紧迫感');
+  assert.match(SOURCE, /const fall = t \* t \* 230/, '一次性浮石应在反应时间结束后垂直坠落');
+  assert.doesNotMatch(SOURCE, /rock\.image\.x\s*=|rock\.glint\.x\s*=/, '坍塌石禁止横向走动');
+});
+
+test('两只海豚分别守住第 2→3 和第 4→5 块浮石的空隙，碰撞会死亡', () => {
+  assert.equal(dolphins.length, 2);
+  const expected = [(rocks[1].x + rocks[2].x) / 2, (rocks[3].x + rocks[4].x) / 2];
+  dolphins.forEach((d, i) => assert.ok(Math.abs(d.x - expected[i]) <= 4, `海豚 ${d.id} 应位于指定浮石间隙`));
+  const baseY = Number(readBlock(/const DOLPHIN_BASE_Y = (\d+)/, 'DOLPHIN_BASE_Y'));
+  const guardedPairs = [[rocks[1], rocks[2]], [rocks[3], rocks[4]]];
+  dolphins.forEach((d, i) => {
+    const apexY = baseY - d.leapHeight;
+    assert.ok(apexY <= Math.min(guardedPairs[i][0].top, guardedPairs[i][1].top), `海豚 ${d.id} 必须跃进玩家的跳跃通道`);
+  });
+  assert.notEqual(dolphins[0].phase, dolphins[1].phase, '两只海豚不能同时跃起');
+  assert.match(SOURCE, /respawnFromFall\('dolphin'\)/, '海豚碰撞必须走扣命重生');
+});
+
+test('空中路线不覆盖说明框，玩法由场景本身表达', () => {
+  assert.doesNotMatch(SOURCE, /gullPrompt|crestPrompt|踩过前两只 ·/, '不要在海鸥和浮石上方显示说明 UI');
+});
+
+test('钥匙固定在放大的最后一块浮石上，之后仍接原石门', () => {
+  assert.equal(layout.key.x, rocks[9].x);
+  assert.equal(layout.door, 4100);
+  assert.match(SOURCE, /waves:\s*\[\]/, '旧滚浪路线应从当前关卡布局移除');
 });
