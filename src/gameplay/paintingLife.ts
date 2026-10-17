@@ -56,7 +56,7 @@ export function applyPigment(s:PaintingLife,c:Pigment,target:LifeTarget):string 
     cloud:s.watered?msg('雨水送到了种子。借落日的橙色，点中间岛上的三颗种子。','Rain reaches the seeds. Borrow orange from the sunset and touch the three seeds on the middle island.'):msg('云开始下雨。用绿叶的颜色接通花园与湖泊，雨水就能送到种子。','The cloud rains. Connect the garden and lake with green leaves to carry water to the seeds.'),
     garden:msg('种子记住了落日的温暖，等雨水到来就会开花。','The seeds keep the sunset warmth. They will bloom when rain reaches them.'),
     reflectionTree:msg('紫花的颜色沿着根蔓延，把树影带出水面。再借紫色给门影。','Violet spreads along the roots and brings the tree out of the water. Borrow violet again for the door.'),
-    reflectionDoor:msg('树枝托起了门。再从画中借四种颜色，点亮上方的轮环。','The branches hold the door. Borrow the four colours from the world to light the ring.'),
+    reflectionDoor:msg('树枝托起了门。再从画中借四种颜色，点亮画面中央大轮环上的四个灰色落点。','The branches hold the door. Borrow the four colours to fill the four grey sockets around the large central ring.'),
     reflectionFlower:msg('花影也开出了紫花，原来的花仍在盛开。','The reflected flower blooms too. The original flowers keep blooming.')
   };
   return feedback[target]??msg('颜色留在了轮环上，原来的颜色也仍然在。','The ring keeps this colour, and so does its source.');
@@ -65,5 +65,5 @@ export function connectRoot(s:PaintingLife,target:'garden'|'lake') {
   if(s.complete||!hasPigment(s,'green','roots'))return msg('从绿叶借一点颜色给根结。','Borrow some colour from the green leaves for the root knot.');
   const wasGrown=s.grown;s.links[target]=true;settleLife(s);
   if(!wasGrown&&s.grown)return bloomMessage();
-  return s.links.garden&&s.links.lake?(s.watered?msg('水已送到种子，借落日的橙色给它们温暖。','Water reaches the seeds. Borrow orange from the sunset to warm them.'):msg('叶脉接通了。借蓝云的颜色给右上方的白云，让它下雨。','The veins are connected. Borrow blue for the white cloud at the upper right to make rain.')):msg('一条叶脉接好了，继续点另一端。','One vein is connected. Click the other destination.');
+  return s.links.garden&&s.links.lake?(s.watered?msg('水已送到种子，借落日的橙色给它们温暖。','Water reaches the seeds. Borrow orange from the sunset to warm them.'):msg('叶脉接通了。借蓝云的颜色给右上方的灰云，让它下雨。','The veins are connected. Borrow blue for the grey cloud at the upper right to make rain.')):msg('一条叶脉接好了，继续点另一端。','One vein is connected. Click the other destination.');
 }

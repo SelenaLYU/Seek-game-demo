@@ -35,6 +35,12 @@ RUNTIME_IMAGES: tuple[str, ...] = (
     # Chapter three: continuous valley and independent perspective scenery.
     "art/chapter3/painting-world/phase1/valley-flat-ground.png",
     "art/chapter3/painting-world/phase1/valley-flat-scenery.png",
+    "art/chapter3/painting-world/phase2/sky.png",
+    "art/chapter3/painting-world/phase2/whale.png",
+    "art/chapter3/painting-world/phase2/terrain.png",
+    "art/chapter3/painting-world/phase2/botanicals.png",
+    "art/chapter3/painting-world/phase2/effects.png",
+    "art/chapter3/painting-world/phase2/vine.png",
     # —— 第一关：海边 ——
     "scene/level1-watercolor-game-background-v1-1900x540.png",
     "assets/level1/level1-stepping-reef-v1.png",
@@ -194,7 +200,7 @@ def main() -> int:
         if write and not args.force and out.exists() and out.stat().st_mtime >= src.stat().st_mtime:
             write = False
         if write:
-            to_webp(src, out, lossless=False, quality=82 if src.stat().st_size < LARGE_BG else 82)
+            to_webp(src, out, lossless=rel.startswith("art/chapter3/painting-world/phase2/"), quality=82)
         if not out.exists():
             # report / check 模式下首次运行还没生成过 webp，体积按 0 记
             out_bytes = 0
