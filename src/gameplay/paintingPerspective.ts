@@ -79,4 +79,4 @@ export function seamPoints(handle:Point):[Point,Point][] {
 export function alignmentError(handle:Point):number {
   return Math.max(...seamPoints(handle).map(([a,b])=>Math.hypot(a.x-b.x,a.y-b.y)));
 }
-export function isAligned(handle:Point):boolean {return alignmentError(handle)<13;}
+export function isAligned(handle:Point):boolean {return alignmentError(handle)<22;}

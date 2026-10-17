@@ -6,6 +6,8 @@ test('one viewpoint changes all depths; both axes must align',()=>{
  assert.equal(isAligned({x:REST.x,y:START.y}),false);
  assert.equal(isAligned({x:START.x,y:REST.y}),false);
  assert.ok(isAligned({x:REST.x+3,y:REST.y-3}));
+ assert.ok(isAligned({x:REST.x+25,y:REST.y}),'near alignment should snap without pixel hunting');
+ assert.equal(isAligned({x:REST.x+60,y:REST.y}),false,'clearly separated edges must not solve');
  const p={x:600,y:300};const near=projectPoint(p,0,START),far=projectPoint(p,1,START);
  assert.ok(Math.hypot(near.x-far.x,near.y-far.y)>60,'depth parallax, not translating the entire picture');
 });

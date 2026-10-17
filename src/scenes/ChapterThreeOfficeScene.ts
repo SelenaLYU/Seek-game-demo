@@ -41,7 +41,7 @@ const COPY: Record<OfficeStage, [string, string]> = {
   roof: ['07 / 对楼的截止时间', '身后正在坍塌！越过障碍，到楼边按 E 抓绳 · Floors are collapsing! Keep moving. E to grab the rope.'],
   rope: ['08 / 把工作放下', '沿绳速降，按住 S 加速 · Hold S to slide faster'],
   phones: ['09 / 不接的电话', '观察电话摆动，按 S 低身穿过 · Watch the phones. Hold S to duck beneath them.'],
-  door: ['10 / 选择自己的颜色', '已拿到画笔，走近门按 E · Paintbrush found. Press E at the door.'],
+  door: ['10 / 选择自己的颜色', '已拿到画笔，走进门进入画中世界 · Paintbrush found. Walk through the door.'],
   done: ['第三关灰盒 · 闯关完成', '你把画笔带出了公司。后续房间尚未制作。 / The brush is yours. The next room is not built yet.'],
 };
 
@@ -389,7 +389,7 @@ export default class ChapterThreeOfficeScene extends Phaser.Scene {
       if (this.stage === 'phones' && Math.abs(this.px - R.brush) < 42 && this.py > 970) {
         this.brush = true; this.stage = 'door'; this.paintbrush.setVisible(false); this.notice('获得画笔 / Paintbrush collected');
       }
-      if (this.stage === 'door' && this.brush && use && Math.abs(this.px - R.door) < 65) this.finish();
+      if (this.stage === 'door' && this.brush && Math.abs(this.px - R.door) < 65 && Math.abs(this.py - 1050) < 85) this.finish();
       if (this.py > 1230) this.respawn();
     }
     this.animateThreats(dt, duck);

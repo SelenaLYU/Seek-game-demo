@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import backgroundUrl from '../../art/chapter3/painting-world/phase1/valley-flat-ground.webp?url';
 import atlasUrl from '../../art/chapter3/painting-world/phase1/valley-flat-scenery.webp?url';
-import { alignedPoint, projectPoint, projectGround, isAligned, seamPoints, CROP, REST, START, PAINTING_MARK as MARK, PAINTING_WIDTH as W, PAINTING_HEIGHT as H, type Point } from '../gameplay/paintingPerspective';
+import { alignedPoint, projectPoint, projectGround, isAligned, alignmentError, seamPoints, CROP, REST, START, PAINTING_MARK as MARK, PAINTING_WIDTH as W, PAINTING_HEIGHT as H, type Point } from '../gameplay/paintingPerspective';
 
 const BG='painting-valley-underpaint-v3',ATLAS='painting-valley-patches-v3',SURFACE='painting-valley-projection-v3';
 const COLS=24,ROWS=20;
@@ -10,6 +10,7 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
   private handle:Point={...START};
   private active=-1; private pointerId=-1; private offset:Point={x:0,y:0};
   private solved=false; private collected=false; private elapsed=0; private readyAt=Infinity;
+  private alignedFor=0;
   private art!:Phaser.GameObjects.Graphics;
   private surface!:Phaser.GameObjects.Mesh;
   private meshes:Phaser.GameObjects.Mesh[]=[];
@@ -24,7 +25,7 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
   }
   create(){
     this.handle={...START};this.active=-1;this.pointerId=-1;
-    this.solved=this.collected=false;this.elapsed=0;this.readyAt=Infinity;this.lastState='';this.hintValue='';
+    this.solved=this.collected=false;this.elapsed=0;this.alignedFor=0;this.readyAt=Infinity;this.lastState='';this.hintValue='';
     this.cameras.main.resetFX();this.cameras.main.setBackgroundColor('#d9d6c3');
     const fit=()=>{const {width,height}=this.scale.gameSize;this.cameras.main.setSize(width,height).setZoom(Math.min(width/W,height/H)).centerOn(W/2,H/2);};
     fit();this.scale.on(Phaser.Scale.Events.RESIZE,fit);
@@ -94,13 +95,15 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
     this.handle.x=Phaser.Math.Clamp(q.x+this.offset.x,300,850);
     this.handle.y=Phaser.Math.Clamp(q.y+this.offset.y,215,485);
   }
-  private cancel(){this.active=-1;this.pointerId=-1;}
+  private cancel(){this.active=-1;this.pointerId=-1;this.alignedFor=0;}
   private up(p:Phaser.Input.Pointer){
     if(this.active<0||p.id!==this.pointerId)return;this.cancel();
-    if(isAligned(this.handle)){
-      this.solved=true;this.readyAt=this.elapsed+.7;
-      this.tweens.add({targets:this.handle,x:REST.x,y:REST.y,duration:550,ease:'Sine.Out'});
-    }
+    if(isAligned(this.handle))this.completeAlignment();
+  }
+  private completeAlignment(){
+    if(this.solved)return;
+    this.cancel();this.solved=true;this.readyAt=this.elapsed+.6;
+    this.tweens.add({targets:this.handle,x:REST.x,y:REST.y,duration:500,ease:'Sine.Out'});
   }
   private prepareMeshes(){
     this.indices=[];this.meshes=[];
@@ -131,7 +134,12 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
     }
   }
   update(_t:number,delta:number){
-    this.elapsed+=delta/1000;if(!this.art)return;this.renderLandscape();
+    this.elapsed+=delta/1000;if(!this.art)return;
+    if(!this.solved&&this.active>=0&&isAligned(this.handle)){
+      this.alignedFor+=Math.min(delta/1000,.05);
+      if(this.alignedFor>=.45)this.completeAlignment();
+    }else this.alignedFor=0;
+    this.renderLandscape();
     const g=this.art;g.clear();
     if(!this.solved){
       [this.handle].forEach((c,i)=>{
@@ -141,7 +149,7 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
         g.lineBetween(c.x-2,c.y+3,c.x-7,c.y+26);g.lineBetween(c.x+3,c.y+3,c.x+9,c.y+22);
       });
       // A tiny glint at an actual near-contact offers feedback without revealing a ring.
-      if(this.active>=0)for(const [a,b] of seamPoints(this.handle))if(Math.hypot(a.x-b.x,a.y-b.y)<18){
+      if(this.active>=0)for(const [a,b] of seamPoints(this.handle))if(Math.hypot(a.x-b.x,a.y-b.y)<28){
         g.fillStyle(0xffe5a2,.7);g.fillCircle((a.x+b.x)/2,(a.y+b.y)/2,3);
       }
     }else if(!this.collected&&this.elapsed>=this.readyAt){
@@ -150,7 +158,7 @@ export default class ChapterThreePaintingScene extends Phaser.Scene {
       g.strokePoints([{x:MARK.x-20,y:MARK.y-20},{x:MARK.x+12,y:MARK.y-28},{x:MARK.x+26,y:MARK.y},{x:MARK.x+9,y:MARK.y+25},{x:MARK.x-24,y:MARK.y+16}],false);
       g.lineStyle(3,0xffefb6,alpha);g.strokePoints([{x:MARK.x-13,y:MARK.y+6},{x:MARK.x+1,y:MARK.y-12},{x:MARK.x+13,y:MARK.y+3},{x:MARK.x-3,y:MARK.y+16}],false);
     }
-    const message=this.collected?'印记正在打开另一处画境……<br>The mark opens another painted world…':this.solved?'触碰印记，继续前行。<br>Touch the mark to continue.':this.active>=0?'挪动视点，让远近景物在眼前相接。<br>Move the viewpoint. Let the distant edges meet.':'拉动风中的线结，山谷会随你的视线改变。<br>Pull the knot. The valley shifts with your viewpoint.';
+    const message=this.collected?'印记正在打开另一处画境……<br>The mark opens another painted world…':this.solved?'圆已对齐！点击中央金色印记，进入色彩世界。<br>Aligned! Touch the golden mark in the centre to enter the colour world.':this.active>=0?(isAligned(this.handle)?'已经对齐，稍作停留或松手即可。<br>Aligned — hold briefly or release.':alignmentError(this.handle)<40?'快要接上了，轻轻微调，让三处边缘同时相接。<br>Almost there. Adjust gently until all three edges meet.':'挪动视点，让远近景物在眼前相接。<br>Move the viewpoint. Let the distant edges meet.'):'拉动风中的线结，让三处景物拼成圆；对齐后停留或松手。<br>Drag the knot to form a circle. Hold or release when aligned.';
     if(message!==this.hintValue){this.hint.innerHTML=message;this.hintValue=message;}
   }
 }
