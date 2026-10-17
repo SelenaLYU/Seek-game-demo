@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { applyHDCamera, logicalWorldViewportWidth } from '../systems/Resolution';
 import { Player } from '../gameplay/Player';
-import { Terrain } from '../gameplay/Terrain';
 import { Vine } from '../gameplay/Vine';
+import { Terrain } from '../gameplay/Terrain';
 import { Effects } from '../gameplay/Effects';
 import { Sfx } from '../systems/Sfx';
 import { isBackgroundMusicEnabled, registerBackgroundMusic } from '../MusicSettings';
@@ -25,7 +25,9 @@ import forestBgmUrl from '../../assets/audio/seek-beach-challenge.m4a?url';
 const ART = {
   background: 'level1-background',
   reef: 'level1-stepping-reef',
+  floatingRock: 'level1-floating-rock',
   gull: 'level1-swing-seagull',
+  dolphin: 'level1-jumping-dolphin',
   wave: 'level1-jump-wave-crest',
   key: 'level1-golden-jasmine-key',
   door: 'level1-memory-room-stone-door',
@@ -33,8 +35,9 @@ const ART = {
 
 const LEVEL1_FILES: Array<[string, string]> = [
   [ART.reef, 'assets/level1/level1-stepping-reef-v1.png'],
+  [ART.floatingRock, 'assets/level1/level1-floating-rock-v1.png'],
   [ART.gull, 'assets/level1/level1-swing-seagull-v3-cute.png'],
-  [ART.wave, 'assets/level1/level1-jump-wave-crest-v2.png'],
+  [ART.dolphin, 'assets/level1/level1-jumping-dolphin-v1.png'],
   [ART.key, 'assets/level1/level1-golden-jasmine-key-v1.png'],
   [ART.door, 'assets/level1/level1-memory-room-stone-door-v3.png'],
 ].map(([key, path]) => [key, resolveImageUrl(path)] as [string, string]);
@@ -51,6 +54,16 @@ const REEF_ART = {
   contentRight: 1710,
   contentTop: 235,
   contentBottom: 738,
+} as const;
+
+/** 专用空中浮石（512×348 RGBA）：透明底、无海水/浪花，平顶约在源图 y=36。 */
+const FLOATING_ROCK_ART = {
+  width: 512,
+  height: 348,
+  standLeft: 45,
+  standRight: 470,
+  standTop: 36,
+  contentBottom: 332,
 } as const;
 
 /** 浪尖（源图 1536×1024）：最高暖白泡沫脊在源图 x 829..1263、顶面 y=158 */
@@ -94,8 +107,18 @@ const DOOR_UNLOCK_DELAY_MS = 700;
 /** 门还锁着时的状态栏提示节流 ms */
 const DOOR_HINT_THROTTLE_MS = 2200;
 
-/** 海鸥（源图 1774×887）：抓取点=双脚之间，源图 ≈(730, 800) */
-const GULL = { scale: 0.142, gripX: 730, gripY: 800 };
+/**
+ * 海鸥（源图 1774×887）：一只缩成踏板，后一只保持较大并以脚部为抓点。
+ * gripX/gripY 是源图中双脚中点；摆荡海鸥与 Vine 的握点共用这个锚点，避免“抓到空气”。
+ */
+const GULL = {
+  platformScale: 0.105,
+  swingScale: 0.142,
+  width: 128,
+  bodyHeight: 26,
+  gripX: 730,
+  gripY: 800,
+};
 
 /** 石门（源图 1536×1024）：木门开口 x 512..1023、y 183..903；贴图内容底边 y=908 */
 const DOOR = {
@@ -110,29 +133,27 @@ const DOOR = {
 /** 金钥匙（源图 1536×1024） */
 const KEY = { scale: 0.1, contentCenterX: 789, contentCenterY: 520 };
 
-/** 海鸥抓点摆长 */
+const GULL_CARRY_MS = 2200;
+const GULL_CARRY_ARC = 18;
 const GULL_SWING_LENGTH = 48;
+const CRUMBLE_DELAY_MS = 260;
+const FINAL_ROCK_CRUMBLE_DELAY_MS = 480;
+const CRUMBLE_FALL_MS = 380;
+const DOLPHIN_PERIOD_MS = 2350;
+const DOLPHIN_BASE_Y = 500;
 
-/**
- * 世界右界：由石门美术反推，不是拍脑袋的数。
- * 门贴图 1536×1024 @ scale 0.314，开口中心 2680 → 贴图占 2439.0..2921.3，
- * 不透明内容到 2913.2。旧值 2870 会把门右侧 43.2px 切掉（实拍就是一条竖直直边）。
- * 2930 = 2921.3 + 留白，右岸地面跟到同一条边界。
- */
-const WORLD_WIDTH = 2930;
-const WORLD_HEIGHT = 540;
-const FALL_Y = 620;
+/** 浮石路线拉开后，世界右界仍完整包住石门贴图与右岸。 */
+const WORLD_WIDTH = 4350;
+// 画布向上扩展，让海鸥与浮石路线真正进入天空，而不是贴着海面排开。
+const WORLD_HEIGHT = 620;
+const FALL_Y = 700;
 
 /** 礁石在路线中的角色：路标、复活点一律按 role 查找，禁止按数组下标取（数组随布局增删） */
 export type ReefRole =
   | 'warmup-low' // 初级低礁：热身起步
   | 'warmup-tall' // 耸立高礁：第一次大爬升
   | 'warmup-flat' // 低位平礁：俯冲回落
-  | 'gull-launch' // 起跳高台：全线最高点，跃起抓海鸥
-  | 'gull-landing' // 海心落脚礁：海鸥甩落后的落脚点
-  | 'wave-climb' // 浪前爬升礁：+60 爬升，为浪区抬升难度
-  | 'wave-sprint' // 浪前冲刺礁：助跑起跳上滚浪
-  | 'wave-landing'; // 浪后落脚礁：接住浪上跳下来的角色
+  | 'gull-launch'; // 起跳高台：由此跳上踏板海鸥，再抓住摆荡海鸥
 
 /**
  * 可站立面档案的一段（源图坐标，srcRight 为开区间）：
@@ -175,12 +196,14 @@ export type WaveSpec = {
 };
 
 type LayoutSpec = {
-  /** 背景左侧岩台的可站立区域；沿用 startBeach 字段名以兼容跳跃审计工具 */
-  startBeach: { left: number; right: number; top: number };
   /** 礁石阵（standCenter 升序：复活点派生依赖该顺序） */
   reefs: readonly ReefSpec[];
-  /** 单只海鸥横渡核心深海海峡的往返航线 */
-  gull: { fromX: number; toX: number; fromY: number; toY: number; speed: number };
+  /** 第一只为踏板，后一只升高并把玩家荡到浮石路线起点 */
+  gulls: readonly { id: 1 | 2; x: number; top: number; carryToX?: number }[];
+  /** 十块悬浮石；8/9/10 踩后坠落，10 号为放大钥匙石。 */
+  floatingRocks: readonly { id: number; x: number; top: number; scale: number; crumble: boolean }[];
+  /** 在第 2→3 与第 4→5 块石头之间跃出的海豚。 */
+  dolphins: readonly { id: 1 | 2; x: number; phase: number; leapHeight: number }[];
   /** 单朵长距离滚浪（向前滚 → 消散的限时平台） */
   waves: readonly WaveSpec[];
   key: { x: number; y: number };
@@ -197,12 +220,6 @@ const REEFS: readonly ReefPlacement[] = [
   // 按反馈略抬高第三、第四块，让上升节奏更连贯。
   { standCenter: 830, top: 375, scale: 0.14, label: '低位平礁', role: 'warmup-flat' },
   { standCenter: 1040, top: 235, scale: 0.185, label: '▲ 起跳高台', role: 'gull-launch' },
-  { standCenter: 1620, top: 360, scale: 0.17, label: '海心落脚礁', role: 'gull-landing' },
-  // 浪前爬升与冲刺平台保留，确保起跳浪区有明确准备段。
-  { standCenter: 1750, top: 300, scale: 0.15, label: '▲ 浪前爬升礁', role: 'wave-climb' },
-  { standCenter: 1850, top: 405, scale: 0.24, label: '浪前冲刺礁', role: 'wave-sprint' },
-  // 单浪之后补上实体落脚面：后景水彩礁石本身没有碰撞，不能让角色落到背景后继续坠海。
-  { standCenter: 2590, top: 360, scale: 0.18, label: '浪后落脚礁', role: 'wave-landing' },
 ];
 
 /**
@@ -246,10 +263,6 @@ const REEF_STANDS: Record<ReefRole, readonly ReefStandStep[]> = {
   'warmup-tall': REEF_STAND_FLAT_TOP,
   'warmup-flat': REEF_STAND_FLAT_TOP,
   'gull-launch': REEF_STAND_FLAT_TOP,
-  'gull-landing': REEF_STAND_FLAT_TOP,
-  'wave-climb': REEF_STAND_FLAT_TOP,
-  'wave-sprint': REEF_STAND_FLAT_TOP,
-  'wave-landing': REEF_STAND_FLAT_TOP,
 };
 
 /** 取某块礁石的可站立面档案（role 漏登记直接抛，避免静默退回旧常量） */
@@ -296,28 +309,44 @@ const WAVES: readonly WaveSpec[] = [
 ];
 
 /**
- * 完整高低起伏跑酷关卡路线（世界 2930×540）：
- * 阶段 1：从第一块低礁（420）起步 → 错落礁石阶梯（低 430 → 高崖 320 → 平礁 375 → 起跳台 235）
- * 阶段 2：自高台跳起抓唯一一只飞鸥（1100~1460）→ 翱翔掠过深洋 → 甩向海心落脚礁（1620）
- * 阶段 3：浪前爬升礁（1750）→ 浪前冲刺礁（1850）→ 单朵滚浪（2000）→ 浪后落脚礁（2590）→ 右岸大陆（2660）
- * 阶段 4：右岸大陆（2660..2930）→ 跳起摘取门楣上的金钥匙（2680, 196）→ 落地走回石门进入记忆之房！
+ * 完整路线：左侧原礁石出生 → 四块热身礁 → 一只踏板海鸥 → 一只摆荡海鸥
+ * → 十块高低错落的空中浮石（2→3、4→5 有海豚）→ 放大钥匙石 → 原石门。
  */
 export const LAYOUT: LayoutSpec = {
-  // 用户标注的左侧背景岩台：只补碰撞，不叠加新图片，避免遮住原画。
-  // 平台右缘停在第一块实体礁石之前，角色从岩台中心开始，再向右进入原有路线。
-  startBeach: { left: 155, right: 375, top: 378 },
   reefs: REEFS.map(placement => ({ ...placement, stand: reefStand(placement.role) })),
-  gull: { fromX: 1100, toX: 1460, fromY: 145, toY: 165, speed: 95 },
-  waves: WAVES,
-  key: { x: 2680, y: 196 },
-  landing: { left: 2660, right: 2930, top: 440 },
-  door: { openingCenterX: 2680 },
+  gulls: [
+    // 删除过低的第一只；保留一只踏板与一只更高的摆荡海鸥。
+    { id: 1, x: 1275, top: 235 },
+    { id: 2, x: 1425, top: 165, carryToX: 1570 },
+  ],
+  floatingRocks: [
+    // 中心距由约 110px 拉到 245px：相邻块仍可正常跳到，但不能再一口气略过好几块。
+    { id: 1, x: 1605, top: 250, scale: 0.22, crumble: false },
+    { id: 2, x: 1850, top: 190, scale: 0.19, crumble: false },
+    { id: 3, x: 2095, top: 245, scale: 0.19, crumble: false },
+    { id: 4, x: 2340, top: 185, scale: 0.19, crumble: false },
+    { id: 5, x: 2585, top: 235, scale: 0.19, crumble: false },
+    { id: 6, x: 2830, top: 180, scale: 0.2, crumble: false },
+    { id: 7, x: 3075, top: 230, scale: 0.19, crumble: false },
+    { id: 8, x: 3320, top: 175, scale: 0.18, crumble: true },
+    { id: 9, x: 3565, top: 225, scale: 0.18, crumble: true },
+    { id: 10, x: 3810, top: 165, scale: 0.28, crumble: true },
+  ],
+  dolphins: [
+    // 海豚的最高点穿过玩家从相邻浮石起跳时的必经空间，必须观察节奏后再跳。
+    { id: 1, x: 1972.5, phase: 0, leapHeight: 335 },
+    { id: 2, x: 2462.5, phase: 0.48, leapHeight: 345 },
+  ],
+  waves: [],
+  key: { x: 3810, y: 97 },
+  landing: { left: 3970, right: 4350, top: 440 },
+  door: { openingCenterX: 4100 },
 };
 
-/** 出生点落在用户圈出的左侧背景岩台中央，悬在站立面上方供物理自然落地。 */
+/** 出生点绑定第一块有实际美术与碰撞的礁石，避免站在海面上的隐形平台。 */
 const START_POINT = {
-  x: (LAYOUT.startBeach.left + LAYOUT.startBeach.right) / 2,
-  y: LAYOUT.startBeach.top - 45,
+  x: LAYOUT.reefs[0].standCenter,
+  y: LAYOUT.reefs[0].top - 45,
 };
 
 /** 复活点：standCenter 为触发用的站立中心 x（角色 x + 40 内即命中） */
@@ -325,23 +354,17 @@ type RespawnPoint = { standCenter: number; x: number; y: number };
 
 /**
  * 落水后的安全复活点（由 LAYOUT 派生并按 standCenter 升序）：
- * 左侧背景岩台 → 其他礁石（顶面上方 40px）；越靠右的落点越近，复活不倒退。
+ * 从第一块实体礁石开始；越靠右的落点越近，复活不倒退。
  */
 const RESPAWN_POINTS: readonly RespawnPoint[] = [
-  { standCenter: START_POINT.x, x: START_POINT.x, y: START_POINT.y },
   ...LAYOUT.reefs
     .map(r => ({ standCenter: r.standCenter, x: r.standCenter, y: r.top - 40 })),
+  ...LAYOUT.floatingRocks
+    .filter(r => r.id === 1 || r.id === 6)
+    .map(r => ({ standCenter: r.x, x: r.x, y: r.top - 40 })),
 ].sort((a, b) => a.standCenter - b.standCenter);
 // 注：右岸大陆不作为复活点，避免复活时直接落入石门交互区；浪后落脚礁是浪区唯一的安全复活面。
 
-/** 海鸥引导标签的触发范围（由海鸥航线派生） */
-const GULL_PROMPT_RANGE = { left: LAYOUT.gull.fromX - 150, right: LAYOUT.gull.toX + 90 };
-
-/** 浪区提示标签的触发范围（由浪峰位置派生） */
-const WAVE_PROMPT_RANGE = {
-  left: Math.min(...LAYOUT.waves.map(w => w.ridgeCenter)) - 100,
-  right: Math.max(...LAYOUT.waves.map(w => w.ridgeCenter)) + 120,
-};
 
 /** 起点教学卡片淡出时机：从起始低礁向前移动 80px 后 */
 const TUTORIAL_FADE_X = START_POINT.x + 80;
@@ -415,6 +438,31 @@ interface WaveEntity {
   dissolveStartedAt: number;
 }
 
+interface GullPlatform {
+  id: 1 | 2;
+  image: Phaser.GameObjects.Image;
+  body: Phaser.GameObjects.Rectangle;
+}
+
+interface FloatingRockEntity {
+  id: number;
+  image: Phaser.GameObjects.Image;
+  glint: Phaser.GameObjects.Graphics;
+  body: Phaser.GameObjects.Rectangle;
+  startY: number;
+  crumble: boolean;
+  triggeredAt: number;
+}
+
+interface DolphinEntity {
+  id: 1 | 2;
+  image: Phaser.GameObjects.Image;
+  hitZone: Phaser.GameObjects.Zone;
+  x: number;
+  phase: number;
+  leapHeight: number;
+}
+
 export default class ForestScene extends Phaser.Scene {
   private player!: Player;
   private terrain!: Terrain;
@@ -455,17 +503,17 @@ export default class ForestScene extends Phaser.Scene {
   // —— 场景内操作与交互引导 ——
   private startTutorialBadge?: Phaser.GameObjects.Container;
   private tutorialFading = false;
-  private gullPrompt!: Phaser.GameObjects.Text;
-  private gullGrabRing!: Phaser.GameObjects.Arc;
-  private crestPrompt!: Phaser.GameObjects.Text;
   private helpModal?: Phaser.GameObjects.Container;
 
-  // —— 单只海鸥 ——
-  private gullVine!: Vine;
-  private gullImage!: Phaser.GameObjects.Image;
-  private gullFeetX: number = LAYOUT.gull.fromX;
-  private gullFeetY: number = LAYOUT.gull.fromY;
-  private gullFacing: -1 | 1 = 1;
+  // —— 一只可踩海鸥、一只抓取摆荡海鸥、浮石与跃起海豚 ——
+  private gulls: GullPlatform[] = [];
+  private thirdGullVine!: Vine;
+  private thirdGullImage!: Phaser.GameObjects.Image;
+  private thirdGullTransitStartedAt = 0;
+  private thirdGullLastAnchorX = LAYOUT.gulls[1].x;
+  private thirdGullFacing: -1 | 1 = 1;
+  private floatingRocks: FloatingRockEntity[] = [];
+  private dolphins: DolphinEntity[] = [];
 
   // —— 浪尖阵列 ——
   private waves: WaveEntity[] = [];
@@ -534,7 +582,7 @@ export default class ForestScene extends Phaser.Scene {
     this.sfx = new Sfx(this);
     this.cameras.main.setBackgroundColor('#12506b');
 
-    // 正式水彩大背景（1900宽）：第一段正常，第二段镜像平铺衔接，无缝延展至 3800 的海天视界（覆盖世界 2930）
+    // 正式水彩大背景（1900宽）：交替镜像延展，完整覆盖拉长后的空中浮石路线。
     this.add
       .image(0, 0, ART.background)
       .setOrigin(0, 0)
@@ -546,6 +594,11 @@ export default class ForestScene extends Phaser.Scene {
       .setDisplaySize(1900, WORLD_HEIGHT)
       .setFlipX(true)
       .setDepth(-20);
+    this.add
+      .image(3800, 0, ART.background)
+      .setOrigin(0, 0)
+      .setDisplaySize(1900, WORLD_HEIGHT)
+      .setDepth(-20);
 
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT + 360);
     camera.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
@@ -555,7 +608,7 @@ export default class ForestScene extends Phaser.Scene {
 
     // 地面碰撞与错落高低起伏的礁石群
     this.terrain = new Terrain(this, false);
-    for (const span of [LAYOUT.startBeach, LAYOUT.landing]) {
+    for (const span of [LAYOUT.landing]) {
       this.terrain.addPlatform({
         x: span.left,
         y: span.top,
@@ -580,8 +633,9 @@ export default class ForestScene extends Phaser.Scene {
     });
     this.physics.add.collider(this.player.view, this.terrain.solids);
 
-    this.createWaves();
-    this.createGull();
+    this.createGulls();
+    this.createFloatingRocks();
+    this.createDolphins();
 
     this.createKey();
     // 石门常显（锁着等钥匙）：不再等拾取钥匙才显形
@@ -592,8 +646,8 @@ export default class ForestScene extends Phaser.Scene {
       .text(STATUS_TEXT_BASE.x, STATUS_TEXT_BASE.y, this.keyCollected
         ? '钥匙已到手 · 落地走近右侧石门进入记忆之房'
         : this.touchMode
-          ? '点按 ◀ ▶ 移动   点按 ↑ 跳跃   触碰海鸥自动抓牢   点右上「指南」看说明'
-          : '移动 [A/D]   跳跃 [空格]   触碰海鸥自动抓牢   按 [H] 查看操作指南', {
+          ? '点按 ◀ ▶ 移动   点按 ↑ 跳跃'
+          : '移动 [A/D]   跳跃 [空格]', {
         fontFamily: 'sans-serif',
         fontSize: '14px',
         color: '#dedede',
@@ -721,7 +775,7 @@ export default class ForestScene extends Phaser.Scene {
       initialLives: this.progress.lives,
       initialObjective: this.keyCollected
         ? '带着金钥匙落地，走进右侧石门'
-        : '越过海面滚浪区，跳起摘取右侧门楣上的金钥匙',
+        : '穿越空中路线，避开海豚并取得钥匙',
       onRestart: () => this.restartLevel(),
       onHelp: () => this.toggleHelpModal(),
       onHome: () => this.scene.start('menu'),
@@ -742,25 +796,29 @@ export default class ForestScene extends Phaser.Scene {
     if (this.physics.world.isPaused) this.physics.world.resume();
     this.levelClockMs += delta;
 
-    this.updateGull(delta);
-    this.updateWaves();
-
-    // 检查海鸥自动抓取：跳跃中只要触碰海鸥双脚即刻抓牢
-    if (this.player.attached) {
-      this.gullVine.setNear(false);
+    this.updateThirdGullAnchor();
+    if (this.player.attached === this.thirdGullVine) {
+      this.thirdGullVine.setNear(false);
     } else {
-      this.gullVine.idleUpdate(delta);
+      this.thirdGullVine.idleUpdate(delta);
       const handY = this.player.view.y - 34;
-      const nearGull =
-        Phaser.Math.Distance.Between(this.player.view.x, handY, this.gullVine.handX, this.gullVine.handY) < 95;
-      this.gullVine.setNear(nearGull && this.gullVine.available);
-      if (nearGull && this.gullVine.available && this.player.tryGrabVine(this.gullVine)) {
-        this.setStatus('抓住海鸥了！按空格甩出，飞向海心落脚礁。');
+      const nearThirdGull = Phaser.Math.Distance.Between(
+        this.player.view.x,
+        handY,
+        this.thirdGullVine.handX,
+        this.thirdGullVine.handY,
+      ) < 95;
+      this.thirdGullVine.setNear(nearThirdGull && this.thirdGullVine.available);
+      if (nearThirdGull && this.thirdGullVine.available && this.player.tryGrabVine(this.thirdGullVine)) {
+        this.thirdGullTransitStartedAt = this.levelClockMs;
+        this.setStatus('抓住摆荡海鸥了！左右摆荡蓄力，再按跳跃松手飞向第一块悬浮石。');
       }
     }
+    this.updateDolphins();
 
     this.player.update(delta);
-    this.syncGullVisual();
+    this.syncThirdGullVisual();
+    this.updateCrumblingRocks();
     // 限时滚浪：必须在 player.update 之后 —— 先把角色停在浪上，再判托举/落水
     this.checkWaveRide();
     this.checkWaveHazard();
@@ -768,9 +826,6 @@ export default class ForestScene extends Phaser.Scene {
     const body = this.player.view.body as Phaser.Physics.Arcade.Body;
     const x = this.player.view.x;
     const grounded = body.blocked.down || body.touching.down;
-    this.gullPrompt.setVisible(false);
-    this.crestPrompt.setVisible(false);
-
     // 走出起点后平滑淡出教学卡片
     if (!this.tutorialFading && x > TUTORIAL_FADE_X && this.startTutorialBadge) {
       this.tutorialFading = true;
@@ -809,8 +864,6 @@ export default class ForestScene extends Phaser.Scene {
     this.gameHud.setProgressPercent(prog, `海岸探索 ${Math.round(prog)}%`);
 
     // 浪滚走了就往左后方复位：否则主路线被永久切断（不能跳过去就卡死）
-    this.resetWavesLeftBehind();
-
     // 落水重生
     if (this.player.view.y > FALL_Y && !this.enteredRoom) {
       this.respawnFromFall('fall');
@@ -821,7 +874,7 @@ export default class ForestScene extends Phaser.Scene {
    * 掉进海里/被浪卷走：扣命 + 回最近安全点 + 浪全量复位。
    * 物理死亡与浪散死亡共用这一条路径，带 800ms 重入锁防同帧重复扣命。
    */
-  private respawnFromFall(reason: 'fall' | 'wave'): void {
+  private respawnFromFall(reason: 'fall' | 'wave' | 'dolphin'): void {
     if (this.levelClockMs < this.respawnLockUntil) return;
     this.respawnLockUntil = this.levelClockMs + RESPAWN_LOCK_MS;
     const nextLives = this.progress.lives - 1;
@@ -830,11 +883,14 @@ export default class ForestScene extends Phaser.Scene {
     this.saveProgress();
     this.gameHud.setLives(respawnLives);
     this.resetWaves();
+    this.resetRouteHazards();
     this.player.teleportTo(this.checkpoint.x, this.checkpoint.y);
     this.sfx.fall();
     this.cameras.main.flash(180, 245, 238, 215, false);
     if (nextLives <= 0) {
       this.setStatus('生命耗尽 —— 重新补满 3 颗心，回到最近的礁石再试一次！');
+    } else if (reason === 'dolphin') {
+      this.setStatus(`撞上海豚了！观察它跃起的节奏再跳，剩余生命: ${respawnLives}/3`);
     } else if (reason === 'wave') {
       this.setStatus(`浪散了，被卷进海里！回到最近的礁石，剩余生命: ${respawnLives}/3`);
     } else {
@@ -848,6 +904,7 @@ export default class ForestScene extends Phaser.Scene {
     // 通关弹窗里进过关（enteredRoom=true 会让门 overlap 首行 return、落水重生也被挡）——重开必须清掉，否则关卡锁死
     this.enteredRoom = false;
     this.resetWaves();
+    this.resetRouteHazards();
     this.player.teleportTo(START_POINT.x, START_POINT.y);
     this.checkpoint = { x: START_POINT.x, y: START_POINT.y };
     this.setStatus('已回到关卡起点。');
@@ -1099,59 +1156,211 @@ export default class ForestScene extends Phaser.Scene {
       .sort((a, b) => Math.abs(a.body.x + a.body.width / 2 - x) - Math.abs(b.body.x + b.body.width / 2 - x))[0];
   }
 
-  private createGull(): void {
-    this.gullFeetX = LAYOUT.gull.fromX;
-    this.gullFeetY = LAYOUT.gull.fromY;
-    this.gullImage = this.add
-      .image(this.gullFeetX, this.gullFeetY, ART.gull)
-      .setOrigin(GULL.gripX / 1774, GULL.gripY / 887)
-      .setScale(GULL.scale)
-      .setDepth(-5);
+  private createGulls(): void {
+    // 唯一的踏板海鸥：删除原先过低、几乎贴着起跳台的第一只。
+    this.gulls = LAYOUT.gulls.slice(0, 1).map(spec => {
+      const image = this.add
+        .image(spec.x, spec.top + 7, ART.gull)
+        .setScale(GULL.platformScale)
+        .setDepth(-4);
+      const body = this.add
+        .rectangle(spec.x, spec.top, GULL.width, GULL.bodyHeight, 0xffffff, 0)
+        .setOrigin(0.5, 0);
+      this.physics.add.existing(body, true);
+      const gull: GullPlatform = {
+        id: spec.id as 1,
+        image,
+        body,
+      };
+      this.physics.add.collider(this.player.view, body);
+      return gull;
+    });
 
-    this.gullVine = new Vine(this, this.gullFeetX, this.gullFeetY - GULL_SWING_LENGTH, {
+    // 后一只没有站立碰撞：跳近双脚会自动抓住，随后由摆荡系统控制。
+    const third = LAYOUT.gulls[1];
+    this.thirdGullVine = new Vine(this, third.x, third.top - GULL_SWING_LENGTH, {
       length: GULL_SWING_LENGTH,
-      minLength: GULL_SWING_LENGTH,
-      maxLength: GULL_SWING_LENGTH,
+      minLength: GULL_SWING_LENGTH - 8,
+      maxLength: GULL_SWING_LENGTH + 12,
       stiffness: 520,
       placeholder: false,
     });
-
-    this.gullGrabRing = this.add
-      .circle(this.gullFeetX, this.gullFeetY, 20, 0xffebaa, 0.45)
-      .setStrokeStyle(2, 0xfff6d4, 0.9)
+    this.thirdGullImage = this.add
+      .image(this.thirdGullVine.handX, this.thirdGullVine.handY, ART.gull)
+      .setOrigin(GULL.gripX / 1774, GULL.gripY / 887)
+      .setScale(GULL.swingScale)
       .setDepth(-4);
-    this.tweens.add({
-      targets: this.gullGrabRing,
-      scale: { from: 0.85, to: 1.3 },
-      alpha: { from: 0.85, to: 0.2 },
-      duration: 800,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
+    this.thirdGullLastAnchorX = third.x;
+    this.syncThirdGullVisual();
+  }
+
+  /** 抓住摆荡海鸥后，它沿空中短航线前移；玩家仍需主动左右摆荡并松手。 */
+  private updateThirdGullAnchor(): void {
+    const third = LAYOUT.gulls[1];
+    const carryToX = third.carryToX ?? third.x;
+    const t = this.thirdGullTransitStartedAt > 0
+      ? Phaser.Math.Clamp((this.levelClockMs - this.thirdGullTransitStartedAt) / GULL_CARRY_MS, 0, 1)
+      : 0;
+    const eased = Phaser.Math.Easing.Sine.InOut(t);
+    const anchorX = Phaser.Math.Linear(third.x, carryToX, eased);
+    const anchorY = third.top - GULL_SWING_LENGTH - Math.sin(Math.PI * t) * GULL_CARRY_ARC;
+    const frameSeconds = Math.max(this.game.loop.delta, 1) / 1000;
+    this.thirdGullVine.driftVx = (anchorX - this.thirdGullLastAnchorX) / frameSeconds;
+    if (Math.abs(anchorX - this.thirdGullLastAnchorX) > 0.01) {
+      this.thirdGullFacing = anchorX >= this.thirdGullLastAnchorX ? 1 : -1;
+    }
+    this.thirdGullLastAnchorX = anchorX;
+    this.thirdGullVine.setAnchor(anchorX, anchorY);
+  }
+
+  private syncThirdGullVisual(): void {
+    this.thirdGullImage
+      .setPosition(this.thirdGullVine.handX, this.thirdGullVine.handY)
+      .setRotation(-this.thirdGullVine.angle * 0.35)
+      .setScale(GULL.swingScale * this.thirdGullFacing, GULL.swingScale);
+  }
+
+  private createFloatingRocks(): void {
+    this.floatingRocks = LAYOUT.floatingRocks.map(spec => {
+      const image = this.add
+        .image(
+          spec.x,
+          spec.top + (FLOATING_ROCK_ART.height / 2 - FLOATING_ROCK_ART.standTop) * spec.scale,
+          ART.floatingRock,
+        )
+        .setScale(spec.scale)
+        .setDepth(-3);
+      const width = Math.max(74, (FLOATING_ROCK_ART.standRight - FLOATING_ROCK_ART.standLeft) * spec.scale);
+      const body = this.add
+        .rectangle(
+          spec.x,
+          spec.top,
+          width,
+          Math.max(30, (FLOATING_ROCK_ART.contentBottom - FLOATING_ROCK_ART.standTop) * spec.scale),
+          0xffffff,
+          0,
+        )
+        .setOrigin(0.5, 0);
+      this.physics.add.existing(body, true);
+      // 空中段不画碰撞提示线或亮条，浮石本身就是唯一的路线语言。
+      const glint = this.add.graphics().setDepth(-2);
+      const rock: FloatingRockEntity = {
+        id: spec.id,
+        image,
+        glint,
+        body,
+        startY: spec.top,
+        crumble: spec.crumble,
+        triggeredAt: 0,
+      };
+      this.physics.add.collider(this.player.view, body, () => this.onFloatingRockContact(rock));
+      return rock;
     });
   }
 
-  private updateGull(delta: number): void {
-    const span = Math.abs(LAYOUT.gull.toX - LAYOUT.gull.fromX);
-    const periodMs = ((span * 2) / LAYOUT.gull.speed) * 1000;
-    const cycle = (this.time.now % periodMs) / periodMs;
-    const p = cycle < 0.5 ? cycle * 2 : 2 - cycle * 2;
-    const feetX = Phaser.Math.Linear(LAYOUT.gull.fromX, LAYOUT.gull.toX, p);
-    const feetY = Phaser.Math.Linear(LAYOUT.gull.fromY, LAYOUT.gull.toY, p);
-    this.gullFacing = cycle < 0.5 ? 1 : -1;
-    this.gullVine.driftVx = delta > 0 ? ((feetX - this.gullFeetX) / delta) * 1000 : 0;
-    this.gullFeetX = feetX;
-    this.gullFeetY = feetY;
-    this.gullVine.setAnchor(feetX, feetY - GULL_SWING_LENGTH);
+  private onFloatingRockContact(rock: FloatingRockEntity): void {
+    if (!rock.crumble || rock.triggeredAt > 0 || !this.isPlayerStandingOnBody(rock.body, 12)) return;
+    rock.triggeredAt = this.levelClockMs;
+    this.setStatus(rock.id === 10 ? '钥匙石也开始坠落了，快拿钥匙并跳向石门！' : '这块浮石只能踩一次，快跳！');
   }
 
-  private syncGullVisual(): void {
-    this.gullImage.setPosition(this.gullVine.handX, this.gullVine.handY);
-    this.gullImage.setRotation(this.gullVine.angle * 0.35);
-    this.gullImage.setScale(this.gullFacing * GULL.scale, GULL.scale);
-    if (this.gullGrabRing) {
-      this.gullGrabRing.setPosition(this.gullVine.handX, this.gullVine.handY);
-      this.gullGrabRing.setVisible(!this.player.attached);
+  private updateCrumblingRocks(): void {
+    for (const rock of this.floatingRocks) {
+      if (!rock.crumble || rock.triggeredAt <= 0) continue;
+      const delay = rock.id === 10 ? FINAL_ROCK_CRUMBLE_DELAY_MS : CRUMBLE_DELAY_MS;
+      const elapsed = this.levelClockMs - rock.triggeredAt;
+      if (elapsed < delay) {
+        // 只做很短的竖向颤动作为预警；禁止横向位移，石头不能像在“走路”。
+        const warningDip = Math.abs(Math.sin(elapsed * 0.11)) * Math.min(2.5, elapsed / 90);
+        const spec = LAYOUT.floatingRocks[rock.id - 1];
+        rock.image
+          .setX(spec.x)
+          .setY(rock.startY + (FLOATING_ROCK_ART.height / 2 - FLOATING_ROCK_ART.standTop) * spec.scale + warningDip);
+        rock.glint.setPosition(0, warningDip);
+        continue;
+      }
+      const t = Phaser.Math.Clamp((elapsed - delay) / CRUMBLE_FALL_MS, 0, 1);
+      if (t > 0.08) (rock.body.body as Phaser.Physics.Arcade.StaticBody).enable = false;
+      const fall = t * t * 230;
+      const spec = LAYOUT.floatingRocks[rock.id - 1];
+      rock.image
+        .setX(spec.x)
+        .setY(rock.startY + (FLOATING_ROCK_ART.height / 2 - FLOATING_ROCK_ART.standTop) * spec.scale + fall);
+      rock.image.setAlpha(1 - t);
+      rock.glint.setPosition(0, fall).setAlpha(1 - t);
+      if (t >= 1) {
+        rock.image.setVisible(false);
+        rock.glint.setVisible(false);
+      }
+    }
+  }
+
+  private createDolphins(): void {
+    this.dolphins = LAYOUT.dolphins.map(spec => {
+      const image = this.add.image(spec.x, DOLPHIN_BASE_Y, ART.dolphin).setScale(0.095).setDepth(-2).setVisible(false);
+      const hitZone = this.add.zone(spec.x, DOLPHIN_BASE_Y, 112, 70);
+      this.physics.add.existing(hitZone, false);
+      const zoneBody = hitZone.body as Phaser.Physics.Arcade.Body;
+      zoneBody.setAllowGravity(false).setImmovable(true);
+      zoneBody.enable = false;
+      const dolphin: DolphinEntity = { ...spec, image, hitZone };
+      this.physics.add.overlap(this.player.view, hitZone, () => this.respawnFromFall('dolphin'));
+      return dolphin;
+    });
+  }
+
+  private updateDolphins(): void {
+    for (const dolphin of this.dolphins) {
+      const cycle = ((this.levelClockMs / DOLPHIN_PERIOD_MS) + dolphin.phase) % 1;
+      const active = cycle < 0.64;
+      const p = Phaser.Math.Clamp(cycle / 0.64, 0, 1);
+      // 横向只移动少量，完整跃起轨迹始终锁在两块浮石的空隙里。
+      const x = dolphin.x + Phaser.Math.Linear(-12, 12, p);
+      const y = DOLPHIN_BASE_Y - Math.sin(Math.PI * p) * dolphin.leapHeight;
+      dolphin.image
+        .setVisible(active)
+        .setPosition(x, y)
+        .setRotation(Phaser.Math.Linear(-0.42, 0.48, p));
+      dolphin.hitZone.setPosition(x, y);
+      const body = dolphin.hitZone.body as Phaser.Physics.Arcade.Body;
+      body.enable = active && y < 430;
+      if (body.enable) body.reset(x, y);
+    }
+  }
+
+  private isPlayerStandingOnBody(platform: Phaser.GameObjects.Rectangle, tolerance: number): boolean {
+    const body = this.player.view.body as Phaser.Physics.Arcade.Body;
+    if (!body.enable || body.velocity.y < -30) return false;
+    const overX = body.right > platform.x - platform.width / 2 && body.left < platform.x + platform.width / 2;
+    return overX && Math.abs(body.bottom - platform.y) <= tolerance;
+  }
+
+  private resetRouteHazards(): void {
+    const third = LAYOUT.gulls[1];
+    this.thirdGullTransitStartedAt = 0;
+    this.thirdGullLastAnchorX = third.x;
+    this.thirdGullFacing = 1;
+    this.thirdGullVine.angle = 0;
+    this.thirdGullVine.angVel = 0;
+    this.thirdGullVine.driftVx = 0;
+    this.thirdGullVine.startCooldown(0);
+    this.thirdGullVine.setNear(false);
+    this.thirdGullVine.setAnchor(third.x, third.top - GULL_SWING_LENGTH);
+    this.syncThirdGullVisual();
+    for (const rock of this.floatingRocks) {
+      rock.triggeredAt = 0;
+      rock.body.setPosition(rock.body.x, rock.startY);
+      (rock.body.body as Phaser.Physics.Arcade.StaticBody).enable = true;
+      (rock.body.body as Phaser.Physics.Arcade.StaticBody).updateFromGameObject();
+      const spec = LAYOUT.floatingRocks[rock.id - 1];
+      rock.image
+        .setPosition(
+          spec.x,
+          rock.startY + (FLOATING_ROCK_ART.height / 2 - FLOATING_ROCK_ART.standTop) * spec.scale,
+        )
+        .setVisible(true)
+        .setAlpha(1);
+      rock.glint.setPosition(0, 0).setVisible(true).setAlpha(1);
     }
   }
 
@@ -1190,9 +1399,9 @@ export default class ForestScene extends Phaser.Scene {
   }
 
   private markKeyCollected(announce: boolean): void {
-    // 不额外显示钥匙方向/状态牌：门楣上只保留可拾取的实体钥匙。
+    // 不额外显示钥匙方向/状态牌：终点浮石上只保留可拾取的实体钥匙。
     this.gameHud?.setObjective('带着金钥匙落地，走进右侧石门');
-    if (announce) this.setStatus('摘到了门楣上的金钥匙！落地后就能从门口进入记忆之房。');
+    if (announce) this.setStatus('拿到终点浮石上的金钥匙了！快跳向右侧石门。');
   }
 
   /** 摘到钥匙的反馈：门已存在，只闪烁提示解锁（不额外显示钥匙提示牌） */
@@ -1212,7 +1421,7 @@ export default class ForestScene extends Phaser.Scene {
     });
   }
 
-  /** 石门：一开始就立在那里、锁着；摘到门楣钥匙 + 落地才推得开 */
+  /** 石门：一开始就立在那里、锁着；拿到终点浮石钥匙 + 落地才推得开 */
   private showDoor(): void {
     if (this.door) return;
     const imageLeft = LAYOUT.door.openingCenterX - ((DOOR.openingLeft + DOOR.openingRight) / 2) * DOOR.scale;
@@ -1229,11 +1438,11 @@ export default class ForestScene extends Phaser.Scene {
     this.physics.add.existing(doorZone, true);
     this.physics.add.overlap(this.player.view, doorZone, () => {
       if (this.enteredRoom) return;
-      // 门锁：还没摘钥匙 → 节流提示「先去摘门楣钥匙」
+      // 门锁：还没拿钥匙 → 节流提示终点浮石
       if (!this.keyCollected) {
         if (this.levelClockMs >= this.doorHintAt) {
           this.doorHintAt = this.levelClockMs + DOOR_HINT_THROTTLE_MS;
-          this.setStatus('石门还差一点力气推开…（先去门楣上摘金钥匙）');
+          this.setStatus('石门还差一点力气推开…（先去最后一块浮石拿金钥匙）');
         }
         return;
       }
@@ -1271,7 +1480,7 @@ export default class ForestScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const line2 = this.add
-      .text(0, 13, this.touchMode ? '点按 ↑ 跳跃 · 空中再点一次二段跳' : '从左侧岩台出发 · 轻按/长按跳跃 · 空中二段跳', {
+      .text(0, 13, this.touchMode ? '点按 ↑ 跳跃 · 空中再点一次二段跳' : '从礁石出发 · 轻按/长按跳跃 · 空中二段跳', {
         fontFamily: 'sans-serif',
         fontSize: '10px',
         color: '#bed4c5',
@@ -1287,32 +1496,6 @@ export default class ForestScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
 
-    // 海鸥抓取动态引导标签
-    this.gullPrompt = this.add
-      .text(LAYOUT.gull.fromX, LAYOUT.gull.fromY + 36, '跳起触碰即可抓紧海鸥', {
-        fontFamily: 'sans-serif',
-        fontSize: '13px',
-        color: '#fff3cd',
-        backgroundColor: '#16332bf0',
-        padding: { x: 8, y: 5 },
-      })
-      .setOrigin(0.5)
-      .setDepth(20)
-      .setVisible(false);
-
-    // 滚浪提示：文案与位置每帧跟随当前活动浪（见 update 里的三态切换）
-    this.crestPrompt = this.add
-      .text(0, 0, '∿ 滚浪 · 等浪靠近，跳上浪脊向前', {
-        fontFamily: 'sans-serif',
-        fontSize: '12px',
-        color: '#eef8ff',
-        backgroundColor: '#1b3b4bf2',
-        padding: { x: 7, y: 4 },
-      })
-      .setOrigin(0.5)
-      .setDepth(20)
-      .setVisible(false);
-
     // 起跳高台路标
     const launchReef = reefByRole('gull-launch');
     const reefSign = this.add.container(launchReef.standCenter, launchReef.top - 24).setDepth(10);
@@ -1320,7 +1503,7 @@ export default class ForestScene extends Phaser.Scene {
       .rectangle(0, 0, 190, 26, 0x14342bf2)
       .setStrokeStyle(1.2, 0xe2ce9b, 0.7);
     const signText = this.add
-      .text(0, 0, '▲ 起跳高台 · 跳向海鸥自动抓牢', {
+      .text(0, 0, '▲ 起跳高台 · 跳上海鸥', {
         fontFamily: 'sans-serif',
         fontSize: '11px',
         color: '#fff5d2',
@@ -1336,38 +1519,6 @@ export default class ForestScene extends Phaser.Scene {
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
-
-    // 海心礁石路标：跳向 +75 的爬升礁需从礁石后半段起跳（礁石左缘起跳会撞上爬升礁侧壁）
-    const landingReef = reefByRole('gull-landing');
-    const reefBSign = this.add.container(landingReef.standCenter, landingReef.top - 24).setDepth(10);
-    const signBBox = this.add
-      .rectangle(0, 0, 178, 26, 0x2d2b17f0)
-      .setStrokeStyle(1.2, 0xf0d88e, 0.65);
-    const signBText = this.add
-      .text(0, 0, '▼ 海心落脚礁 · 从后半段起跳爬升', {
-        fontFamily: 'sans-serif',
-        fontSize: '11px',
-        color: '#fffae5',
-      })
-      .setOrigin(0.5);
-    reefBSign.add([signBBox, signBText]);
-    reefBSign.setVisible(false);
-
-    // 浪前冲刺礁路标：从爬升礁上落下来时要提前松手，否则全速会飞过这块窄礁
-    const sprintReef = reefByRole('wave-sprint');
-    const sprintSign = this.add.container(sprintReef.standCenter, sprintReef.top - 24).setDepth(10);
-    const sprintSignBox = this.add
-      .rectangle(0, 0, 186, 26, 0x17333cf0)
-      .setStrokeStyle(1.2, 0x9fd0e6, 0.6);
-    const sprintSignText = this.add
-      .text(0, 0, '▼ 浪前冲刺礁 · 落下来时记得松手', {
-        fontFamily: 'sans-serif',
-        fontSize: '11px',
-        color: '#e8f6ff',
-      })
-      .setOrigin(0.5);
-    sprintSign.add([sprintSignBox, sprintSignText]);
-    sprintSign.setVisible(false);
 
   }
 
@@ -1411,24 +1562,18 @@ export default class ForestScene extends Phaser.Scene {
       ? [
           '🏃 基础移动：点按屏幕左下角的 ◀ / ▶ 左右平稳移动',
           '🦘 跳跃身法：点按右下角的 ↑ 轻按小跳，按住大跳；空中再点一次二段跳',
-          '🕊️ 核心技巧 · 飞鸥摆荡：',
-          '    1. 跨越阶梯礁石，登上巍峨的【起跳高台】；',
-          '    2. 跳向迎面飞来的海鸥，触碰双脚即可【自动抓牢】！',
-          '    3. 抓牢后海鸥载你向右飞，点按 ◀ / ▶ 蓄力前后荡秋千；',
-          '    4. 点按 ↑ 即可借力潇洒跳上海心礁石！',
-          '🌊 限时滚浪：跳上浪脊，浪会托着你往前滚；浪滚到尽头会散掉，\n     没在散掉前跳走就会被卷进海里！',
-          '🔑 终极目标：跳上右岸，跳起摘下石门门楣上的金钥匙，\n     落地后走近石门，推开它进入记忆之房！',
+          '🕊️ 飞鸥摆荡：先踩踏板海鸥，再跳起抓住高处海鸥；左右蓄力，再点跳跃松手飞出',
+          '🐬 海豚障碍：海豚会从第 2→3 与第 4→5 块浮石之间跃起，碰到会失去生命',
+          '🪨 一次性浮石：第 8、9、10 块踩上后会坠落，不能停留',
+          '🔑 终极目标：在放大的第 10 块浮石上拿到钥匙，再跳向原来的石门',
         ]
       : [
           '🏃 基础移动：按 [ A / D ] 或 [ ← / → ] 左右平稳移动',
           '🦘 跳跃身法：按 [ 空格 / W / ↑ ] 轻按小跳，长按大跳；空中再按二段跳',
-          '🕊️ 核心技巧 · 飞鸥摆荡：',
-          '    1. 跨越阶梯礁石，登上巍峨的【起跳高台】；',
-          '    2. 跳向迎面飞来的海鸥，触碰双脚即可【自动抓牢】！',
-          '    3. 抓牢后海鸥载你向右飞，按 [ A / D ] 蓄力前后荡秋千；',
-          '    4. 按 [ 空格 / ↑ ] 即可借力潇洒跳上海心礁石！',
-          '🌊 限时滚浪：跳上浪脊，浪会托着你往前滚；浪滚到尽头会散掉，\n     没在散掉前跳走就会被卷进海里！',
-          '🔑 终极目标：跳上右岸，跳起摘下石门门楣上的金钥匙，\n     落地后走近石门，推开它进入记忆之房！',
+          '🕊️ 飞鸥摆荡：先踩踏板海鸥，再跳起抓住高处海鸥；按左右蓄力，再按跳跃松手飞出',
+          '🐬 海豚障碍：海豚会从第 2→3 与第 4→5 块浮石之间跃起，碰到会失去生命',
+          '🪨 一次性浮石：第 8、9、10 块踩上后会坠落，不能停留',
+          '🔑 终极目标：在放大的第 10 块浮石上拿到钥匙，再跳向原来的石门',
         ]
     ).join('\n\n');
 
