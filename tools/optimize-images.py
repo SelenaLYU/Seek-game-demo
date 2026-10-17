@@ -32,6 +32,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # 运行时通过 Vite import 或 Phaser 字面路径真正加载的图（= 会进 dist 的图）。
 # 不含角色序列帧（见文件头规则 2），也不含测试专用取样图。
 RUNTIME_IMAGES: tuple[str, ...] = (
+    # Chapter three: continuous valley and independent perspective scenery.
+    "art/chapter3/painting-world/phase1/valley-flat-ground.png",
+    "art/chapter3/painting-world/phase1/valley-flat-scenery.png",
     # —— 第一关：海边 ——
     "scene/level1-watercolor-game-background-v1-1900x540.png",
     "assets/level1/level1-stepping-reef-v1.png",
